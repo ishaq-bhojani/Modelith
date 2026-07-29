@@ -81,8 +81,13 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
   ipcMain.handle(CHANNELS.sessionDelete, (_e, raw: unknown) => store.remove(SessionIdSchema.parse(raw).id))
   ipcMain.handle(CHANNELS.modelsList, async (_e, raw: unknown) => {
     const { providerId, baseUrl } = ModelsListSchema.parse(raw)
+    const provider = getProvider(providerId)
     const apiKey = await getKeystore().read(providerId)
-    if (!apiKey) return []
-    return getProvider(providerId).listModels({ apiKey, ...(baseUrl ? { baseUrl } : {}), fetch: mainFetch })
+    // Mirrors the stream-engine's guard (Task 8): providers that declare
+    // `requiresKey: false` (local runtimes, the E2E fake) must be listable
+    // with no stored credential. Only bail out early for providers that
+    // actually need one.
+    if (provider.requiresKey && !apiKey) return []
+    return provider.listModels({ apiKey: apiKey ?? '', ...(baseUrl ? { baseUrl } : {}), fetch: mainFetch })
   })
 }

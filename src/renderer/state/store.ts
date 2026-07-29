@@ -50,6 +50,7 @@ interface AppState {
   openSettings(): void
   closeSettings(): void
   loadSessions(): Promise<void>
+  loadProviders(): Promise<void>
   selectSession(id: string): Promise<void>
   newSession(): Promise<void>
   send(content: string): Promise<void>
@@ -82,6 +83,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   async loadSessions() {
     try {
       set({ sessions: await window.openCoder.sessions.list() })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Selects the first provider (and its first model) only when nothing is
+  // chosen yet, or the current selection no longer exists. This is what lets
+  // the E2E fake provider (registered first under OPEN_CODER_FAKE_PROVIDER)
+  // become the active selection with no test-only code in the renderer.
+  async loadProviders() {
+    try {
+      const list = await window.openCoder.providers.list()
+      set({ providers: list })
+      const current = get().providerId
+      if (!current || !list.some((p) => p.id === current)) {
+        const first = list[0]
+        if (!first) return
+        set({ providerId: first.id })
+        const models = await window.openCoder.providers.models(first.id).catch(() => [])
+        if (models[0]) set({ model: models[0].id })
+      }
     } catch (err) {
       set({ error: toProviderError(err) })
     }
