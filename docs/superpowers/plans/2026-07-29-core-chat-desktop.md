@@ -284,16 +284,30 @@ test('renderer has no Node globals', async () => {
   expect(leaked.process).toBe('undefined')
 })
 
-test('a response carries a Content-Security-Policy', async () => {
+test('the packaged renderer carries a restrictive CSP', async () => {
   const page = await app.firstWindow()
-  const csp = await page.evaluate(() =>
-    document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content') ?? null,
+  const csp = await page.evaluate(
+    () =>
+      document
+        .querySelector('meta[http-equiv="Content-Security-Policy"]')
+        ?.getAttribute('content') ?? null,
   )
-  // CSP is delivered by header, not meta; assert the page loaded and has no inline-script violations.
-  expect(csp).toBeNull()
-  const errors: string[] = []
-  page.on('pageerror', (e) => errors.push(e.message))
-  expect(errors).toEqual([])
+  expect(csp).toContain("script-src 'self'")
+  expect(csp).toContain("connect-src 'self'")
+  expect(csp).toContain("object-src 'none'")
+})
+
+test('the CSP actually blocks an injected inline script', async () => {
+  const page = await app.firstWindow()
+  // Proves the policy is enforced, not merely present in the document.
+  const executed = await page.evaluate(() => {
+    const marker = '__csp_probe__'
+    const script = document.createElement('script')
+    script.textContent = `window.${marker} = true`
+    document.body.appendChild(script)
+    return Boolean((window as unknown as Record<string, unknown>)[marker])
+  })
+  expect(executed).toBe(false)
 })
 ```
 
@@ -375,7 +389,9 @@ export function applySecurityPolicy(session: Session, window: BrowserWindow): vo
 }
 ```
 
-> Note: `connect-src 'self'` is deliberate. The renderer has no reason to reach the network — all provider traffic is in main. This CSP is itself an enforcement of the global constraint.
+> Note: `connect-src 'self'` is deliberate. The renderer has no reason to reach the network — all provider traffic is in main.
+>
+> **This header covers the dev server only.** `webRequest.onHeadersReceived` does not fire for `file://` loads, so the packaged build — which uses `loadFile` — is governed by the `<meta http-equiv="Content-Security-Policy">` tag in `index.html` instead. Both paths must carry the same policy; changing one without the other silently weakens whichever build you forgot.
 
 - [ ] **Step 7: Write the main entry point**
 
@@ -432,6 +448,16 @@ export {}
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The packaged app loads this file over file://, where
+      webRequest.onHeadersReceived never fires — so the header-based policy in
+      src/main/security/csp.ts covers ONLY the dev server. This meta tag is the
+      enforcement path for the shipped build. Keep the two policies in sync.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>Open Coder</title>
   </head>
   <body>
