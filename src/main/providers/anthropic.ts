@@ -1,9 +1,48 @@
 import { parseSse } from '../chat/sse-parser.js'
 import { statusToError } from './openai-compat.js'
+import { consumeStream, type ChunkResult } from './stream-consumer.js'
 import type { ChatRequest, Provider, ProviderConfig } from './types.js'
 import type { ModelInfo, StreamEvent } from '../../shared/types.js'
 
 const DEFAULT_BASE_URL = 'https://api.anthropic.com/v1'
+
+/** Per-stream SSE framing for Anthropic's `messages` streaming wire format. */
+function makeAnthropicChunkHandler(): (chunk: string) => ChunkResult {
+  let residual = ''
+  return (chunk) => {
+    const parsed = parseSse(chunk, residual)
+    residual = parsed.residual
+
+    const events: StreamEvent[] = []
+    for (const record of parsed.events) {
+      let payload: {
+        type?: string
+        delta?: { type?: string; text?: string; thinking?: string }
+        error?: { message?: string }
+      }
+      try {
+        payload = JSON.parse(record.data) as typeof payload
+      } catch {
+        continue
+      }
+
+      if (payload.type === 'error') {
+        // Anthropic can report an error mid-stream after a 200 response;
+        // the message text itself is provider-authored and not echoed.
+        events.push({ type: 'error', error: { kind: 'unknown', message: 'The provider reported an error.' } })
+        return { events, stop: true }
+      }
+      if (payload.type === 'message_stop') return { events, complete: true }
+      if (payload.delta?.type === 'thinking_delta' && payload.delta.thinking) {
+        events.push({ type: 'reasoning', delta: payload.delta.thinking })
+      }
+      if (payload.delta?.type === 'text_delta' && payload.delta.text) {
+        events.push({ type: 'text', delta: payload.delta.text })
+      }
+    }
+    return { events }
+  }
+}
 
 export function createAnthropicProvider(): Provider {
   const urlFor = (config: ProviderConfig, path: string) =>
@@ -79,57 +118,7 @@ export function createAnthropicProvider(): Provider {
         return
       }
 
-      const decoder = new TextDecoder()
-      const reader = response.body.getReader()
-      let residual = ''
-
-      try {
-        for (;;) {
-          if (signal.aborted) break
-          let result: Awaited<ReturnType<typeof reader.read>>
-          try {
-            result = await reader.read()
-          } catch {
-            // The underlying stream rejected the pending read — most commonly
-            // because `signal` (shared with the fetch call) fired mid-read.
-            if (signal.aborted) break
-            yield { type: 'error', error: { kind: 'network', message: 'The response stream ended unexpectedly.' } }
-            return
-          }
-          if (result.done) break
-          const { value } = result
-
-          const parsed = parseSse(decoder.decode(value, { stream: true }), residual)
-          residual = parsed.residual
-
-          for (const record of parsed.events) {
-            let payload: {
-              type?: string
-              delta?: { type?: string; text?: string; thinking?: string }
-              error?: { message?: string }
-            }
-            try { payload = JSON.parse(record.data) } catch { continue }
-
-            if (payload.type === 'error') {
-              // Anthropic can report an error mid-stream after a 200 response;
-              // the message text itself is provider-authored and not echoed.
-              yield { type: 'error', error: { kind: 'unknown', message: 'The provider reported an error.' } }
-              return
-            }
-            if (payload.type === 'message_stop') { yield { type: 'done' }; return }
-            if (payload.delta?.type === 'thinking_delta' && payload.delta.thinking) {
-              yield { type: 'reasoning', delta: payload.delta.thinking }
-            }
-            if (payload.delta?.type === 'text_delta' && payload.delta.text) {
-              yield { type: 'text', delta: payload.delta.text }
-            }
-          }
-        }
-      } finally {
-        await reader.cancel().catch(() => undefined)
-      }
-
-      yield { type: 'done' }
+      yield* consumeStream(response.body, signal, makeAnthropicChunkHandler())
     },
   }
 }

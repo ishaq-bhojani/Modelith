@@ -1,4 +1,5 @@
 import { parseSse } from '../chat/sse-parser.js'
+import { consumeStream, type ChunkResult } from './stream-consumer.js'
 import type { ChatRequest, Provider, ProviderConfig } from './types.js'
 import type { ModelInfo, ProviderError, StreamEvent } from '../../shared/types.js'
 
@@ -39,6 +40,30 @@ export function statusToError(
     return { kind: 'unknown', message: 'The provider rejected the request as malformed.' }
   }
   return { kind: 'unknown', message: `Unexpected status ${status}.` }
+}
+
+/** Per-stream SSE framing for the OpenAI-compatible `chat/completions` wire format. */
+function makeOpenAiChunkHandler(): (chunk: string) => ChunkResult {
+  let residual = ''
+  return (chunk) => {
+    const parsed = parseSse(chunk, residual)
+    residual = parsed.residual
+
+    const events: StreamEvent[] = []
+    for (const record of parsed.events) {
+      if (record.data === '[DONE]') return { events, complete: true }
+      let payload: { choices?: { delta?: { content?: string; reasoning_content?: string } }[] }
+      try {
+        payload = JSON.parse(record.data) as typeof payload
+      } catch {
+        continue
+      }
+      const delta = payload.choices?.[0]?.delta
+      if (delta?.reasoning_content) events.push({ type: 'reasoning', delta: delta.reasoning_content })
+      if (delta?.content) events.push({ type: 'text', delta: delta.content })
+    }
+    return { events }
+  }
 }
 
 export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
@@ -106,43 +131,7 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
         return
       }
 
-      const decoder = new TextDecoder()
-      const reader = response.body.getReader()
-      let residual = ''
-
-      try {
-        for (;;) {
-          if (signal.aborted) break
-          let result: Awaited<ReturnType<typeof reader.read>>
-          try {
-            result = await reader.read()
-          } catch {
-            // The underlying stream rejected the pending read — most commonly
-            // because `signal` (shared with the fetch call) fired mid-read.
-            if (signal.aborted) break
-            yield { type: 'error', error: { kind: 'network', message: 'The response stream ended unexpectedly.' } }
-            return
-          }
-          if (result.done) break
-          const { value } = result
-
-          const parsed = parseSse(decoder.decode(value, { stream: true }), residual)
-          residual = parsed.residual
-
-          for (const record of parsed.events) {
-            if (record.data === '[DONE]') { yield { type: 'done' }; return }
-            let payload: { choices?: { delta?: { content?: string; reasoning_content?: string } }[] }
-            try { payload = JSON.parse(record.data) } catch { continue }
-            const delta = payload.choices?.[0]?.delta
-            if (delta?.reasoning_content) yield { type: 'reasoning', delta: delta.reasoning_content }
-            if (delta?.content) yield { type: 'text', delta: delta.content }
-          }
-        }
-      } finally {
-        await reader.cancel().catch(() => undefined)
-      }
-
-      yield { type: 'done' }
+      yield* consumeStream(response.body, signal, makeOpenAiChunkHandler())
     },
   }
 }
