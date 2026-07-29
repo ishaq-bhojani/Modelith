@@ -119,6 +119,7 @@ Security invariants land first. A security property verified at the end of a pro
     "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
+    "dompurify": "3.4.12",
     "marked": "18.0.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -132,6 +133,7 @@ Security invariants land first. A security property verified at the end of a pro
     "@vitejs/plugin-react": "6.0.4",
     "electron": "43.2.0",
     "electron-vite": "5.0.0",
+    "jsdom": "27.0.0",
     "typescript": "5.9.3",
     "vite": "8.1.5",
     "vitest": "4.1.10"
@@ -229,17 +231,37 @@ playwright-report/
 
 - [ ] **Step 3: Write the failing security invariant test**
 
+First create the shared launcher `tests/e2e/launch.ts`, used by every E2E spec so no test ever touches the developer's real app data:
+
+```ts
+import { _electron as electron } from '@playwright/test'
+import type { ElectronApplication } from '@playwright/test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+export function launchApp(extraEnv: Record<string, string> = {}): Promise<ElectronApplication> {
+  return electron.launch({
+    args: ['out/main/index.js'],
+    env: {
+      ...process.env,
+      OPEN_CODER_USER_DATA: mkdtempSync(join(tmpdir(), 'oc-e2e-')),
+      ...extraEnv,
+    },
+  })
+}
+```
+
 `tests/e2e/security.spec.ts`:
 
 ```ts
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import { launchApp } from './launch.js'
 
 let app: ElectronApplication
 
-test.beforeAll(async () => {
-  app = await electron.launch({ args: ['out/main/index.js'] })
-})
+test.beforeAll(async () => { app = await launchApp() })
 test.afterAll(async () => { await app.close() })
 
 test('main window enforces the isolation invariants', async () => {
@@ -364,6 +386,11 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
+
+// Portable-mode override. Keeps E2E runs out of the developer's real app data,
+// and lets users run from a USB stick. Must be set before anything reads the path.
+const portableDir = process.env['OPEN_CODER_USER_DATA']
+if (portableDir) app.setPath('userData', portableDir)
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow(WINDOW_OPTIONS)
@@ -2132,11 +2159,12 @@ git commit -m "feat: stream engine with streamId routing, abort, and persistence
 `tests/e2e/layout.spec.ts`:
 
 ```ts
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import { launchApp } from './launch.js'
 
 let app: ElectronApplication
-test.beforeAll(async () => { app = await electron.launch({ args: ['out/main/index.js'] }) })
+test.beforeAll(async () => { app = await launchApp() })
 test.afterAll(async () => { await app.close() })
 
 test('renders the sidebar and composer', async () => {
@@ -2436,78 +2464,83 @@ git commit -m "feat: renderer shell, zustand store, and pointer-capture splitter
 
 - [ ] **Step 1: Add a fake provider for deterministic E2E**
 
-In `src/main/providers/registry.ts`, register a fake provider when `process.env['OPEN_CODER_FAKE_PROVIDER'] === '1'`:
+In `src/main/providers/registry.ts`, prepend a fake provider when `process.env['OPEN_CODER_FAKE_PROVIDER'] === '1'`, so it becomes the first entry and therefore the renderer's default selection:
 
 ```ts
-if (process.env['OPEN_CODER_FAKE_PROVIDER'] === '1') {
-  registry.set('fake', {
-    id: 'fake', label: 'Fake (test)', defaultBaseUrl: 'http://localhost', requiresKey: false,
-    listModels: async () => [{ id: 'fake-1', label: 'fake-1', contextWindow: 8000 }],
-    async *streamChat(_req, signal) {
-      for (const word of ['Hello', ' from', ' the', ' fake', ' provider']) {
-        if (signal.aborted) return
-        await new Promise((r) => setTimeout(r, 20))
-        yield { type: 'text' as const, delta: word }
-      }
-      yield { type: 'done' as const }
-    },
-  })
+const fakeProvider: Provider = {
+  id: 'fake', label: 'Fake (test)', defaultBaseUrl: 'http://localhost', requiresKey: false,
+  listModels: async () => [{ id: 'fake-1', label: 'fake-1', contextWindow: 8000 }],
+  async *streamChat(_req, signal) {
+    for (const word of ['Hello', ' from', ' the', ' fake', ' provider']) {
+      if (signal.aborted) return
+      await new Promise((r) => setTimeout(r, 20))
+      yield { type: 'text' as const, delta: word }
+    }
+    yield { type: 'done' as const }
+  },
 }
+
+const providers: Provider[] = [
+  ...(process.env['OPEN_CODER_FAKE_PROVIDER'] === '1' ? [fakeProvider] : []),
+  createOpenAiCompatProvider({ id: 'kimi', /* …unchanged… */ }),
+  // …the rest, unchanged
+]
 ```
 
-The fake declares `requiresKey: false`, so the engine's guard from Task 8 already lets it through without a stored key. No engine change is needed.
+The fake declares `requiresKey: false`, so the engine's guard from Task 8 lets it through without a stored key. No engine change is needed.
+
+Then add a `loadProviders()` action to the store from Task 9, called from `App`'s mount effect alongside `loadSessions()`. It selects the first provider and its first model when nothing is chosen yet, which is what makes the fake the active provider under the test env var — with no test-only code in the shipped renderer:
+
+```ts
+  async loadProviders() {
+    const list = await window.openCoder.providers.list()
+    set({ providers: list })
+    const current = get().providerId
+    if (!current || !list.some((p) => p.id === current)) {
+      const first = list[0]
+      if (!first) return
+      set({ providerId: first.id })
+      const models = await window.openCoder.providers.models(first.id).catch(() => [])
+      if (models[0]) set({ model: models[0].id })
+    }
+  },
+```
+
+Add `providers: { id: string; label: string }[]` to the store's state, initialized to `[]`, and change the initial `providerId` from `'kimi'` to `''` so the selection above always runs.
 
 - [ ] **Step 2: Write the failing E2E test**
 
 `tests/e2e/chat.spec.ts`:
 
 ```ts
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import { launchApp } from './launch.js'
 
 let app: ElectronApplication
-test.beforeAll(async () => {
-  app = await electron.launch({
-    args: ['out/main/index.js'],
-    env: { ...process.env, OPEN_CODER_FAKE_PROVIDER: '1' },
-  })
-})
+test.beforeAll(async () => { app = await launchApp({ OPEN_CODER_FAKE_PROVIDER: '1' }) })
 test.afterAll(async () => { await app.close() })
 
 test('streams a reply into the transcript', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('new-session').click()
-  await page.evaluate(() => {
-    const w = window as unknown as { __setProvider?: (p: string, m: string) => void }
-    w.__setProvider?.('fake', 'fake-1')
-  })
   await page.getByTestId('composer-input').fill('hi there')
   await page.getByTestId('composer-send').click()
   await expect(page.getByTestId('transcript')).toContainText('hi there')
   await expect(page.getByTestId('transcript')).toContainText('Hello from the fake provider', { timeout: 10_000 })
 })
 
-test('shows a recovery action when the provider has no key', async () => {
+test('stopping mid-stream marks the reply incomplete', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('new-session').click()
-  await page.evaluate(() => {
-    const w = window as unknown as { __setProvider?: (p: string, m: string) => void }
-    w.__setProvider?.('kimi', 'kimi-k2')
-  })
-  await page.getByTestId('composer-input').fill('hello')
+  await page.getByTestId('composer-input').fill('second turn')
   await page.getByTestId('composer-send').click()
-  await expect(page.getByTestId('error-action')).toHaveText('Open settings')
+  await page.getByTestId('composer-stop').click()
+  await expect(page.getByTestId('composer-send')).toBeVisible()
 })
 ```
 
-Expose the test hook in `src/renderer/main.tsx` (guarded, harmless in production):
-
-```tsx
-;(window as unknown as { __setProvider: (p: string, m: string) => void }).__setProvider = (p, m) => {
-  useAppStore.getState().setProvider(p)
-  useAppStore.getState().setModel(m)
-}
-```
+The fake provider is first in the registry under `OPEN_CODER_FAKE_PROVIDER=1`, so `loadProviders()` selects it on mount. No test-only code exists in the renderer.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
@@ -2555,23 +2588,59 @@ export function useAutoScroll(dep: unknown): React.RefObject<HTMLDivElement | nu
 ```tsx
 import { memo } from 'react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import type { ChatMessage } from '@shared/types'
+
+/**
+ * Model output is attacker-influenceable (prompt injection via pasted
+ * content), so markdown HTML is sanitized before injection. The renderer's
+ * CSP is a second layer, not the only one.
+ */
+function renderMarkdown(source: string): string {
+  return DOMPurify.sanitize(marked.parse(source, { async: false }), {
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'iframe', 'object', 'embed'],
+    FORBID_ATTR: ['style', 'srcset', 'formaction'],
+  })
+}
 
 /** Memoized so a streaming append re-renders only the in-flight message. */
 export const MessageView = memo(function MessageView({ message }: { message: ChatMessage }) {
   return (
     <article className={`msg msg-${message.role}`}>
-      <div
-        className="msg-body"
-        dangerouslySetInnerHTML={{ __html: marked.parse(message.content, { async: false }) }}
-      />
+      <div className="msg-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
       {message.incomplete ? <p className="msg-incomplete">Stopped before completion.</p> : null}
     </article>
   )
 })
 ```
 
-> `marked` output is inserted into the renderer, which runs under the CSP from Task 1 (`script-src 'self'`), so inline scripts in model output cannot execute. Sanitizing model markdown further is tracked as a follow-up in Task 13's ADR list.
+Add a unit test at `tests/unit/render-markdown.test.ts` proving the sanitizer holds. Export `renderMarkdown` from the module, and configure Vitest to run it in a DOM environment by adding `// @vitest-environment jsdom` at the top of the file (add `jsdom` to devDependencies as `27.0.0`):
+
+```ts
+// @vitest-environment jsdom
+import { describe, it, expect } from 'vitest'
+import { renderMarkdown } from '../../src/renderer/chat/MessageView.js'
+
+describe('renderMarkdown', () => {
+  it('keeps ordinary formatting', () => {
+    expect(renderMarkdown('**bold** and `code`')).toContain('<strong>bold</strong>')
+  })
+  it('strips script tags', () => {
+    expect(renderMarkdown('<script>alert(1)</script>hi')).not.toContain('<script')
+  })
+  it('strips inline event handlers', () => {
+    expect(renderMarkdown('<img src=x onerror="alert(1)">')).not.toContain('onerror')
+  })
+  it('strips javascript: urls', () => {
+    expect(renderMarkdown('[x](javascript:alert(1))')).not.toContain('javascript:')
+  })
+  it('strips style tags used for exfiltration', () => {
+    expect(renderMarkdown('<style>body{background:url(http://evil)}</style>')).not.toContain('<style')
+  })
+})
+```
+
+Extend `vitest.config.ts`'s `include` to `['tests/unit/**/*.test.ts']` (already correct) — the per-file environment comment handles the DOM.
 
 `src/renderer/chat/ErrorNotice.tsx`:
 
@@ -2708,11 +2777,12 @@ git commit -m "feat: streaming transcript, composer, auto-scroll, and error reco
 `tests/e2e/settings.spec.ts`:
 
 ```ts
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
+import { launchApp } from './launch.js'
 
 let app: ElectronApplication
-test.beforeAll(async () => { app = await electron.launch({ args: ['out/main/index.js'] }) })
+test.beforeAll(async () => { app = await launchApp() })
 test.afterAll(async () => { await app.close() })
 
 test('stores a key and reports it as configured without revealing it', async () => {
@@ -2723,6 +2793,19 @@ test('stores a key and reports it as configured without revealing it', async () 
   await page.getByTestId('api-key-save').click()
   await expect(page.getByTestId('key-status')).toHaveText('Configured')
   await expect(page.getByTestId('api-key-input')).toHaveValue('')
+})
+
+test('offers a recovery action when the selected provider has no key', async () => {
+  const page = await app.firstWindow()
+  await page.getByTestId('open-settings').click()
+  // deepseek is deliberately a provider the previous test did not configure.
+  await page.getByTestId('provider-select').selectOption('deepseek')
+  await expect(page.getByTestId('key-status')).toHaveText('Not configured')
+  await page.getByTestId('settings-close').click()
+  await page.getByTestId('new-session').click()
+  await page.getByTestId('composer-input').fill('hello')
+  await page.getByTestId('composer-send').click()
+  await expect(page.getByTestId('error-action')).toHaveText('Open settings')
 })
 ```
 
