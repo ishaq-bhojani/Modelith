@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ModelInfo, StreamEvent } from '../shared/types.js'
+import type { ChatMessage, ModelInfo, StreamEnvelope } from '../shared/types.js'
 
-export interface StreamEnvelope { streamId: string; sessionId: string; event: StreamEvent }
+export type { StreamEnvelope } from '../shared/types.js'
 
 export interface OpenCoderBridge {
   appInfo(): Promise<AppInfo>

@@ -21,6 +21,7 @@ export type ErrorKind =
   | 'network'
   | 'provider_5xx'
   | 'aborted'
+  | 'busy'
   | 'unknown'
 
 export interface ProviderError {
@@ -39,3 +40,10 @@ export type StreamEvent =
   | { type: 'reasoning'; delta: string }
   | { type: 'done'; usage?: Usage }
   | { type: 'error'; error: ProviderError }
+
+/** One chat-stream event, tagged with the stream and session it belongs to. */
+export interface StreamEnvelope {
+  streamId: string
+  sessionId: string
+  event: StreamEvent
+}

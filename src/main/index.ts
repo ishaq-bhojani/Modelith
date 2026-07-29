@@ -2,12 +2,17 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers, registerSecretHandlers } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers, registerChatHandlers } from './ipc/handlers.js'
 
 // Portable-mode override. Keeps E2E runs out of the developer's real app data,
 // and lets users run from a USB stick. Must be set before anything reads the path.
 const portableDir = process.env['OPEN_CODER_USER_DATA']
 if (portableDir) app.setPath('userData', portableDir)
+
+// Tracks the current main window so the chat IPC handlers (registered once,
+// below) always emit to whichever window is presently live, including after
+// `activate` replaces a closed window with a new one.
+let mainWindow: BrowserWindow | undefined
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow(WINDOW_OPTIONS)
@@ -18,6 +23,10 @@ function createWindow(): BrowserWindow {
   else void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
 
   window.once('ready-to-show', () => window.show())
+  mainWindow = window
+  window.once('closed', () => {
+    if (mainWindow === window) mainWindow = undefined
+  })
   return window
 }
 
@@ -25,6 +34,9 @@ void app.whenReady().then(() => {
   registerHandlers()
   registerSecretHandlers()
   createWindow()
+  // Registered once: ipcMain.handle() throws if a channel is bound twice, and
+  // `activate` can create new windows over the lifetime of the app.
+  registerChatHandlers(() => mainWindow)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

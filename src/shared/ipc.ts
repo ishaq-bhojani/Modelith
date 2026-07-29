@@ -31,3 +31,7 @@ export const SendSchema = z.object({
 })
 
 export const AbortSchema = z.object({ streamId: z.string().min(1) })
+
+export const SessionIdSchema = z.object({ id: z.string().min(1) })
+export const SessionCreateSchema = z.object({ title: z.string() })
+export const ModelsListSchema = z.object({ providerId: z.string().min(1), baseUrl: z.string().optional() })
