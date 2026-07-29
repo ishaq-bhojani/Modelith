@@ -253,7 +253,12 @@ Errors carry a taxonomy, each mapped to exactly one inline recovery action:
 | `rate_limit` | Retry in *n*s (live countdown) |
 | `context_overflow` | Retry with fewer messages |
 | `network`, `provider_5xx` | Retry |
-| `aborted` | none (silent) |
+
+> **Implementation note.** An `aborted` kind was originally specified here with no
+> recovery action. It was removed during implementation: the renderer initiates the
+> abort and therefore already knows, so nothing ever emitted the kind. A stopped turn
+> is instead persisted with `incomplete: true` and rendered with a "Stopped before
+> completion." marker.
 
 Raw stack traces never appear in message bubbles. Partial output is preserved and marked incomplete.
 
