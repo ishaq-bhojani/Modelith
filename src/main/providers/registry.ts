@@ -1,6 +1,7 @@
 import { net } from 'electron'
 import { createOpenAiCompatProvider } from './openai-compat.js'
 import { createAnthropicProvider } from './anthropic.js'
+import { createOllamaProvider } from './ollama.js'
 import type { FetchLike, Provider } from './types.js'
 
 /** Chromium's network stack, so system proxy configuration is honoured. */
@@ -22,6 +23,7 @@ const fakeProvider: Provider = {
 const providers: Provider[] = [
   ...(process.env['OPEN_CODER_FAKE_PROVIDER'] === '1' ? [fakeProvider] : []),
   createAnthropicProvider(),
+  createOllamaProvider(),
   createOpenAiCompatProvider({ id: 'kimi', label: 'Kimi (Moonshot)', defaultBaseUrl: 'https://api.moonshot.cn/v1' }),
   createOpenAiCompatProvider({ id: 'openrouter', label: 'OpenRouter', defaultBaseUrl: 'https://openrouter.ai/api/v1' }),
   createOpenAiCompatProvider({ id: 'deepseek', label: 'DeepSeek', defaultBaseUrl: 'https://api.deepseek.com/v1' }),

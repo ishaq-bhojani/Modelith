@@ -92,6 +92,32 @@ describe('StreamEngine', () => {
     expect(emitted[0]?.event).toMatchObject({ type: 'error', error: { kind: 'auth' } })
   })
 
+  it('reaches a keyless (requiresKey: false) provider even when no key is stored', async () => {
+    const s = await store.create('t')
+    const keylessProvider: Provider = {
+      id: 'keyless', label: 'Keyless', defaultBaseUrl: 'http://localhost', requiresKey: false,
+      listModels: async () => [],
+      async *streamChat() {
+        yield { type: 'text', delta: 'reached' }
+        yield { type: 'done' }
+      },
+    }
+    const engine = new StreamEngine({
+      emit: (e) => { emitted.push(e) },
+      readKey: async () => null,
+      store,
+      resolveProvider: () => keylessProvider,
+    })
+    await engine.start({ sessionId: s.id, providerId: 'keyless', model: 'm', content: 'hi' })
+    await waitFor(() => emitted.some((e) => e.event.type === 'done'))
+    // The provider must actually have been invoked (proven by the 'text'
+    // event it alone can produce), not merely that no auth error appeared —
+    // an engine that emitted nothing at all would also satisfy a
+    // no-auth-error-only assertion.
+    expect(emitted.some((e) => e.event.type === 'text' && e.event.delta === 'reached')).toBe(true)
+    expect(emitted.some((e) => e.event.type === 'error')).toBe(false)
+  })
+
   it('stops emitting after abort and marks the reply incomplete, with no aborted error event', async () => {
     const s = await store.create('t')
     const engine = build(fakeProvider(
