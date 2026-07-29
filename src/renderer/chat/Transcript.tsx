@@ -10,6 +10,7 @@ export function Transcript(): React.JSX.Element {
   const activeSessionId = useAppStore((s) => s.activeSessionId)
   const error = useAppStore((s) => s.error)
   const openSettings = useAppStore((s) => s.openSettings)
+  const model = useAppStore((s) => s.model)
 
   // A stream keeps accumulating into `streamingText` even while the user is
   // viewing a different session (see store.ts). Only render the buffer here
@@ -20,16 +21,24 @@ export function Transcript(): React.JSX.Element {
 
   return (
     <div data-testid="transcript" className="transcript" ref={ref}>
-      {messages.map((m) => <MessageView key={m.id} message={m} />)}
-      {showStreaming ? (
-        <MessageView message={{ id: 'streaming', role: 'assistant', content: streamingText, createdAt: 0 }} />
-      ) : null}
-      {error ? (
-        <ErrorNotice
-          error={error}
-          onAction={(kind) => { if (kind === 'auth' || kind === 'no_model') openSettings() }}
-        />
-      ) : null}
+      <div className="transcript-column">
+        {messages.map((m) => <MessageView key={m.id} message={m} />)}
+
+        {showStreaming ? (
+          <MessageView
+            streaming
+            {...(model ? { modelLabel: model } : {})}
+            message={{ id: 'streaming', role: 'assistant', content: streamingText, createdAt: 0 }}
+          />
+        ) : null}
+
+        {error ? (
+          <ErrorNotice
+            error={error}
+            onAction={(kind) => { if (kind === 'auth' || kind === 'no_model') openSettings() }}
+          />
+        ) : null}
+      </div>
     </div>
   )
 }

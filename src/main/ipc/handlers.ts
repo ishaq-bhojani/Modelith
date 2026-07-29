@@ -10,6 +10,7 @@ import {
   AbortSchema,
   SessionIdSchema,
   SessionCreateSchema,
+  SessionRenameSchema,
   ModelsListSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
@@ -111,6 +112,13 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
   ipcMain.handle(
     CHANNELS.sessionDelete,
     withZodMapping((_e, raw: unknown) => store.remove(SessionIdSchema.parse(raw).id)),
+  )
+  ipcMain.handle(
+    CHANNELS.sessionRename,
+    withZodMapping((_e, raw: unknown) => {
+      const { id, title } = SessionRenameSchema.parse(raw)
+      return store.rename(id, title)
+    }),
   )
   ipcMain.handle(CHANNELS.modelsList, withZodMapping(async (_e, raw: unknown) => {
     const { providerId } = ModelsListSchema.parse(raw)

@@ -1,4 +1,41 @@
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
+import {
+  IconLock,
+  IconMoon,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconSliders,
+  IconSun,
+  IconTrash,
+} from '../app/icons.js'
+
+interface SessionMeta {
+  id: string
+  title: string
+  updatedAt: number
+}
+
+const DAY = 86_400_000
+
+/** Groups by calendar day so "Today" flips at midnight, not 24h after the fact. */
+function bucketOf(updatedAt: number, now: number): 'Today' | 'Yesterday' | 'Earlier' {
+  const startOfToday = new Date(now).setHours(0, 0, 0, 0)
+  if (updatedAt >= startOfToday) return 'Today'
+  if (updatedAt >= startOfToday - DAY) return 'Yesterday'
+  return 'Earlier'
+}
+
+function relativeTime(updatedAt: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - updatedAt) / 1000))
+  if (seconds < 60) return 'just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return new Date(updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 export function Sidebar(): React.JSX.Element {
   const sessions = useAppStore((s) => s.sessions)
@@ -6,21 +43,183 @@ export function Sidebar(): React.JSX.Element {
   const select = useAppStore((s) => s.selectSession)
   const create = useAppStore((s) => s.newSession)
   const openSettings = useAppStore((s) => s.openSettings)
+  const query = useAppStore((s) => s.query)
+  const setQuery = useAppStore((s) => s.setQuery)
+  const rename = useAppStore((s) => s.renameSession)
+  const remove = useAppStore((s) => s.deleteSession)
+  const theme = useAppStore((s) => s.theme)
+  const setTheme = useAppStore((s) => s.setTheme)
+
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftTitle, setDraftTitle] = useState('')
+
+  // ⌘F / Ctrl+F focuses the filter, matching the hint rendered in the field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [])
+
+  const needle = query.trim().toLowerCase()
+  const visible = needle
+    ? sessions.filter((s) => s.title.toLowerCase().includes(needle))
+    : sessions
+
+  const now = Date.now()
+  const groups: { label: string; items: SessionMeta[] }[] = []
+  for (const session of visible) {
+    const label = bucketOf(session.updatedAt, now)
+    const last = groups.at(-1)
+    if (last && last.label === label) last.items.push(session)
+    else groups.push({ label, items: [session] })
+  }
+
+  const commitRename = (id: string) => {
+    const title = draftTitle.trim()
+    setEditingId(null)
+    if (title) void rename(id, title)
+  }
 
   return (
     <aside data-testid="sidebar" className="sidebar">
-      <button data-testid="new-session" onClick={() => void create()}>New chat</button>
-      <button data-testid="open-settings" onClick={openSettings}>Settings</button>
-      <ul>
-        {sessions.map((s) => (
-          <li key={s.id}>
-            <button
-              aria-current={s.id === activeId}
-              onClick={() => void select(s.id)}
-            >{s.title}</button>
-          </li>
+      <div className="sidebar-head">
+        <span className="wordmark">Open Coder</span>
+        <button
+          className="icon-button"
+          data-testid="toggle-theme"
+          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        >
+          {theme === 'dark' ? <IconSun size={17} /> : <IconMoon size={17} />}
+        </button>
+      </div>
+
+      <div className="sidebar-search">
+        <div className="search-field">
+          <IconSearch size={15} />
+          <input
+            ref={searchRef}
+            data-testid="session-search"
+            value={query}
+            placeholder="Search chats"
+            aria-label="Search chats"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <kbd>⌘F</kbd>
+        </div>
+      </div>
+
+      <div className="sidebar-new">
+        <button className="button-primary" data-testid="new-session" onClick={() => void create()}>
+          <IconPlus size={15} />
+          New chat
+        </button>
+      </div>
+
+      <div className="session-list">
+        {visible.length === 0 ? (
+          <p className="sidebar-empty">
+            {sessions.length === 0
+              ? 'No chats yet. Start one to see it here.'
+              : `Nothing matches “${query.trim()}”.`}
+          </p>
+        ) : null}
+
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="session-group">{group.label}</div>
+            {group.items.map((session) => {
+              const isActive = session.id === activeId
+              const isEditing = session.id === editingId
+              return (
+                <div
+                  key={session.id}
+                  className="session-row"
+                  aria-current={isActive}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { if (!isEditing) void select(session.id) }}
+                  onKeyDown={(e) => {
+                    if (isEditing) return
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      void select(session.id)
+                    }
+                  }}
+                >
+                  <div className="session-row-top">
+                    {isEditing ? (
+                      <input
+                        className="session-title"
+                        data-testid="rename-input"
+                        autoFocus
+                        value={draftTitle}
+                        aria-label="Session name"
+                        onChange={(e) => setDraftTitle(e.target.value)}
+                        onBlur={() => commitRename(session.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); commitRename(session.id) }
+                          if (e.key === 'Escape') { e.preventDefault(); setEditingId(null) }
+                        }}
+                      />
+                    ) : (
+                      <span className="session-title">{session.title}</span>
+                    )}
+
+                    {isEditing ? null : (
+                      <span className="row-actions">
+                        <button
+                          className="row-action"
+                          title="Rename"
+                          aria-label={`Rename ${session.title}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDraftTitle(session.title)
+                            setEditingId(session.id)
+                          }}
+                        >
+                          <IconPencil size={13} />
+                        </button>
+                        <button
+                          className="row-action row-action-danger"
+                          title="Delete"
+                          aria-label={`Delete ${session.title}`}
+                          onClick={(e) => { e.stopPropagation(); void remove(session.id) }}
+                        >
+                          <IconTrash size={13} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  <span className="session-preview">{relativeTime(session.updatedAt, now)}</span>
+                </div>
+              )
+            })}
+          </div>
         ))}
-      </ul>
+      </div>
+
+      <div className="sidebar-foot">
+        <IconLock size={13} />
+        <span>Keys in the OS keychain</span>
+        <button
+          className="icon-button"
+          data-testid="open-settings"
+          title="Settings"
+          aria-label="Settings"
+          onClick={openSettings}
+        >
+          <IconSliders size={16} />
+        </button>
+      </div>
     </aside>
   )
 }

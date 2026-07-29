@@ -51,9 +51,16 @@ interface AppState {
   model: string
   sidebarWidth: number
   settingsOpen: boolean
+  /** Sidebar filter. Purely client-side over the already-loaded session index. */
+  query: string
+  theme: 'dark' | 'light'
 
   openSettings(): void
   closeSettings(): void
+  setQuery(value: string): void
+  setTheme(theme: 'dark' | 'light'): void
+  renameSession(id: string, title: string): Promise<void>
+  deleteSession(id: string): Promise<void>
   /**
    * Surfaces a caught bridge failure through the shared `error` field, the
    * same path every in-store IPC caller already uses (see `catch (err) {
@@ -87,12 +94,42 @@ export const useAppStore = create<AppState>((set, get) => ({
   providerId: '',
   providers: [],
   model: '',
-  sidebarWidth: 260,
+  sidebarWidth: 300,
   settingsOpen: false,
+  query: '',
+  theme: 'dark',
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
   reportError(err) { set({ error: toProviderError(err) }) },
+  setQuery(value) { set({ query: value }) },
+  setTheme(theme) { set({ theme }) },
+
+  async renameSession(id, title) {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    try {
+      await window.openCoder.sessions.rename(id, trimmed)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Removing the session currently on screen must also clear what it was
+  // showing, otherwise the transcript keeps rendering messages belonging to a
+  // conversation that no longer exists.
+  async deleteSession(id) {
+    try {
+      await window.openCoder.sessions.delete(id)
+      if (get().activeSessionId === id) {
+        set({ activeSessionId: null, messages: [], error: null })
+      }
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
 
   async loadSessions() {
     try {

@@ -17,6 +17,33 @@ const EXPECTED_LABEL: Record<ErrorKind, string | null> = {
   unknown: 'Retry',
 }
 
+interface ElementLike {
+  props?: { 'data-testid'?: string; children?: unknown }
+}
+
+/**
+ * Finds a node by test id anywhere in the returned element tree.
+ *
+ * Deliberately structure-agnostic: an earlier version of this test indexed
+ * into `children[2]`, which coupled it to ErrorNotice's exact JSX shape and
+ * broke the moment the markup was restyled — even though the mapping under
+ * test was unchanged. The behaviour being verified is "this kind renders this
+ * action label", not "the button is the third child".
+ */
+function findByTestId(node: unknown, testId: string): ElementLike | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findByTestId(child, testId)
+      if (hit) return hit
+    }
+    return null
+  }
+  if (typeof node !== 'object' || node === null) return null
+  const element = node as ElementLike
+  if (element.props?.['data-testid'] === testId) return element
+  return element.props ? findByTestId(element.props.children, testId) : null
+}
+
 describe('ErrorNotice action label mapping', () => {
   for (const [kind, expectedLabel] of Object.entries(EXPECTED_LABEL) as [ErrorKind, string | null][]) {
     it(`renders '${kind}' with action ${expectedLabel === null ? '(none)' : `"${expectedLabel}"`}`, () => {
@@ -32,12 +59,9 @@ describe('ErrorNotice action label mapping', () => {
       }
 
       expect(element).not.toBeNull()
-      // Children, per ErrorNotice.tsx's JSX: [<span>message</span>, retry-span-or-null, button-or-null].
-      const children = element?.props.children as unknown[]
-      const button = children[2] as { props: { 'data-testid': string; children: string } } | null
+      const button = findByTestId(element, 'error-action')
       expect(button).not.toBeNull()
-      expect(button?.props['data-testid']).toBe('error-action')
-      expect(button?.props.children).toBe(expectedLabel)
+      expect(button?.props?.children).toBe(expectedLabel)
     })
   }
 })

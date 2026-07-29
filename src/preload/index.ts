@@ -28,6 +28,7 @@ export interface OpenCoderBridge {
     load(id: string): Promise<ChatMessage[]>
     create(title: string): Promise<{ id: string }>
     delete(id: string): Promise<void>
+    rename(id: string, title: string): Promise<void>
   }
 }
 
@@ -56,6 +57,7 @@ const bridge: OpenCoderBridge = {
     load: (id) => ipcRenderer.invoke(CHANNELS.sessionLoad, { id }),
     create: (title) => ipcRenderer.invoke(CHANNELS.sessionCreate, { title }),
     delete: (id) => ipcRenderer.invoke(CHANNELS.sessionDelete, { id }),
+    rename: (id, title) => ipcRenderer.invoke(CHANNELS.sessionRename, { id, title }),
   },
 }
 

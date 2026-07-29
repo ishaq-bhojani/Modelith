@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
+import { IconArrowUp, IconStop } from '../app/icons.js'
+
+/** Same ~4 chars/token heuristic main uses for context budgeting. */
+function estimateTokens(text: string): number {
+  return text.length === 0 ? 0 : Math.max(1, Math.ceil(text.length / 4))
+}
 
 export function Composer(): React.JSX.Element {
   const [draft, setDraft] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
   const streamId = useAppStore((s) => s.streamId)
   const streamingSessionId = useAppStore((s) => s.streamingSessionId)
   const activeSessionId = useAppStore((s) => s.activeSessionId)
@@ -16,6 +24,14 @@ export function Composer(): React.JSX.Element {
   // would abort session A's in-flight turn.
   const streamingHere = streamId !== null && streamingSessionId === activeSessionId
 
+  // Grow with content up to the CSS max-height, then scroll.
+  useLayoutEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draft])
+
   const submit = () => {
     const text = draft.trim()
     if (!text || streamingHere) return
@@ -24,20 +40,55 @@ export function Composer(): React.JSX.Element {
   }
 
   return (
-    <div className="composer">
-      <textarea
-        data-testid="composer-input"
-        value={draft}
-        rows={3}
-        placeholder="Ask anything"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
-        }}
-      />
-      {streamingHere
-        ? <button data-testid="composer-stop" onClick={() => void stop()}>Stop</button>
-        : <button data-testid="composer-send" onClick={submit}>Send</button>}
+    <div className="composer-dock">
+      <div className="composer-column">
+        <div className="composer">
+          <textarea
+            ref={textareaRef}
+            data-testid="composer-input"
+            value={draft}
+            rows={1}
+            placeholder="Ask anything"
+            aria-label="Message"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+            }}
+          />
+          <div className="composer-row">
+            <span className="composer-spacer" />
+            <span className="token-count">
+              {draft ? `≈${estimateTokens(draft)} tokens` : ''}
+            </span>
+            {streamingHere ? (
+              <button
+                className="send-button stop-button"
+                data-testid="composer-stop"
+                title="Stop"
+                aria-label="Stop generating"
+                onClick={() => void stop()}
+              >
+                <IconStop size={15} />
+              </button>
+            ) : (
+              <button
+                className="send-button"
+                data-testid="composer-send"
+                title="Send"
+                aria-label="Send message"
+                disabled={draft.trim() === ''}
+                onClick={submit}
+              >
+                <IconArrowUp size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="composer-hints">
+          <span>⏎ send</span>
+          <span>⇧⏎ newline</span>
+        </div>
+      </div>
     </div>
   )
 }

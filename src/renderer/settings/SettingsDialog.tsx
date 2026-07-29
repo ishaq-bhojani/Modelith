@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import type { ModelInfo } from '@shared/types'
+import { IconCheck, IconLock } from '../app/icons.js'
 
 export function SettingsDialog(): React.JSX.Element | null {
   const open = useAppStore((s) => s.settingsOpen)
@@ -62,43 +63,73 @@ export function SettingsDialog(): React.JSX.Element | null {
   }
 
   return (
-    <div className="dialog-backdrop" role="dialog" aria-label="Settings">
+    <div className="dialog-backdrop" role="dialog" aria-label="Settings" aria-modal="true">
       <div className="dialog">
         <h2>Settings</h2>
 
-        <label htmlFor="provider">Provider</label>
-        <select
-          id="provider" data-testid="provider-select" value={providerId}
-          onChange={(e) => setProvider(e.target.value)}
-        >
-          {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
+        <div className="field">
+          <label htmlFor="provider">Provider</label>
+          <select
+            id="provider" data-testid="provider-select" value={providerId}
+            onChange={(e) => setProvider(e.target.value)}
+          >
+            {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </div>
 
-        <label htmlFor="apikey">API key</label>
-        <input
-          id="apikey" data-testid="api-key-input" type="password" value={draftKey}
-          placeholder={configured ? 'A key is stored. Enter a new one to replace it.' : 'Paste your key'}
-          onChange={(e) => setDraftKey(e.target.value)}
-        />
-        <span data-testid="key-status">{configured ? 'Configured' : 'Not configured'}</span>
-        <button data-testid="api-key-save" disabled={draftKey.length === 0} onClick={() => void save()}>
-          Save key
-        </button>
-        <button
-          data-testid="api-key-delete"
-          disabled={!configured}
-          onClick={() => void window.openCoder.keys.delete(providerId)
-            .then(() => setConfigured(false))
-            .catch(reportError)}
-        >Remove key</button>
+        <div className="field">
+          <label htmlFor="apikey">API key</label>
+          <input
+            id="apikey" data-testid="api-key-input" type="password" value={draftKey}
+            placeholder={configured ? 'A key is stored. Enter a new one to replace it.' : 'Paste your key'}
+            onChange={(e) => setDraftKey(e.target.value)}
+          />
+          <span className="key-status">
+            {configured ? <IconCheck size={13} /> : <IconLock size={13} />}
+            <span data-testid="key-status">{configured ? 'Configured' : 'Not configured'}</span>
+          </span>
+          <p className="field-hint">
+            Stored with the OS keychain. The interface can set, replace and clear it, but can
+            never read it back.
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="button-compact"
+              data-testid="api-key-save"
+              disabled={draftKey.length === 0}
+              onClick={() => void save()}
+            >
+              Save key
+            </button>
+            <button
+              className="button-secondary"
+              data-testid="api-key-delete"
+              disabled={!configured}
+              onClick={() => void window.openCoder.keys.delete(providerId)
+                .then(() => setConfigured(false))
+                .catch(reportError)}
+            >Remove key</button>
+          </div>
+        </div>
 
-        <label htmlFor="model">Model</label>
-        <select id="model" data-testid="model-select" value={model} onChange={(e) => setModel(e.target.value)}>
-          <option value="">Select a model</option>
-          {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </select>
+        <div className="field">
+          <label htmlFor="model">Model</label>
+          <select id="model" data-testid="model-select" value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="">Select a model</option>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          {models.length === 0 ? (
+            <p className="field-hint">
+              No models available yet. Providers that need a key list their models once one is
+              stored.
+            </p>
+          ) : null}
+        </div>
 
-        <button data-testid="settings-close" onClick={close}>Done</button>
+        <div className="dialog-actions">
+          <span className="dialog-spacer" />
+          <button className="button-compact" data-testid="settings-close" onClick={close}>Done</button>
+        </div>
       </div>
     </div>
   )

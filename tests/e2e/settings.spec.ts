@@ -14,6 +14,10 @@ test('stores a key and reports it as configured without revealing it', async () 
   await page.getByTestId('api-key-save').click()
   await expect(page.getByTestId('key-status')).toHaveText('Configured')
   await expect(page.getByTestId('api-key-input')).toHaveValue('')
+  // The dialog is a real modal — its backdrop covers the window and blocks
+  // pointer events. Both tests share one app instance, so leaving it open
+  // would make the next test unable to reach anything behind it.
+  await page.getByTestId('settings-close').click()
 })
 
 test('offers a recovery action when no model is selected', async () => {

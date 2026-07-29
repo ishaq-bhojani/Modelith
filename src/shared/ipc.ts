@@ -14,6 +14,7 @@ export const CHANNELS = {
   sessionLoad: 'sessions:load',
   sessionCreate: 'sessions:create',
   sessionDelete: 'sessions:delete',
+  sessionRename: 'sessions:rename',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -33,6 +34,7 @@ export const AbortSchema = z.object({ streamId: z.string().min(1) })
 
 export const SessionIdSchema = z.object({ id: z.string().min(1) })
 export const SessionCreateSchema = z.object({ title: z.string() })
+export const SessionRenameSchema = z.object({ id: z.string().min(1), title: z.string().min(1) })
 // Intentionally no renderer-supplied `baseUrl` field here (or on SendSchema):
 // the renderer cannot read an API key, but a renderer-controlled base URL
 // would let it redirect where main sends that key. Providers use their own
