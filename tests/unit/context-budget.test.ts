@@ -82,27 +82,55 @@ describe('applyContextBudget', () => {
       msg('a1', 'assistant', 'x'.repeat(4000)),
     ]
     const result = applyContextBudget(input, 20)
-    // Must trim away the oldest user message, not return a lone assistant.
-    const roles = result.messages.map((m) => m.role)
-    const firstUserIndex = roles.findIndex((r) => r === 'user')
-    const firstAssistantIndex = roles.findIndex((r) => r === 'assistant')
-    if (firstAssistantIndex !== -1 && firstUserIndex !== -1) {
-      expect(firstUserIndex).toBeLessThan(firstAssistantIndex)
-    }
-    expect(result.omittedCount).toBeGreaterThan(0)
+    // Must return user with assistant, not a lone assistant.
+    expect(result.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(result.omittedCount).toBe(1)
   })
 
   it('never begins with an assistant message when any user message survives', () => {
-    const input = [
-      msg('u1', 'user', 'x'.repeat(4000)),
-      msg('a1', 'assistant', 'x'.repeat(4000)),
-      msg('u2', 'user', 'z'),
+    const testCases = [
+      {
+        name: 'original repro 1: ending in assistant',
+        input: [
+          msg('u1', 'user', 'x'.repeat(400)),
+          msg('a1', 'assistant', 'x'.repeat(400)),
+          msg('u2', 'user', 'x'.repeat(400)),
+          msg('a2', 'assistant', 'y'),
+        ],
+        maxTokens: 60,
+      },
+      {
+        name: 'original repro 2: leading user run',
+        input: [
+          msg('u1', 'user', 'x'),
+          msg('u2', 'user', 'y'),
+          msg('a1', 'assistant', 'x'.repeat(4000)),
+        ],
+        maxTokens: 20,
+      },
+      {
+        name: 'leading assistant with user later',
+        input: [
+          msg('a1', 'assistant', 'x'.repeat(400)),
+          msg('a2', 'assistant', 'y'),
+          msg('u1', 'user', 'z'),
+        ],
+        maxTokens: 10,
+      },
     ]
-    const result = applyContextBudget(input, 20)
-    const firstUserIndex = result.messages.findIndex((m) => m.role === 'user')
-    const firstAssistantIndex = result.messages.findIndex((m) => m.role === 'assistant')
-    if (firstUserIndex !== -1 && firstAssistantIndex !== -1) {
-      expect(firstUserIndex).toBeLessThan(firstAssistantIndex)
+    for (const testCase of testCases) {
+      const result = applyContextBudget(testCase.input, testCase.maxTokens)
+      const inputHasUser = testCase.input.some((m) => m.role === 'user')
+      if (inputHasUser) {
+        expect(
+          result.messages.some((m) => m.role === 'user'),
+          `${testCase.name}: result must retain at least one user message`,
+        ).toBe(true)
+        expect(
+          result.messages[0]?.role !== 'assistant',
+          `${testCase.name}: result must not begin with assistant when user survives`,
+        ).toBe(true)
+      }
     }
   })
 })
