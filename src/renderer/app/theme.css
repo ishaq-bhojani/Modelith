@@ -54,7 +54,14 @@
   --text-body: rgba(255, 255, 255, 0.92);
   --text-mute: rgba(255, 255, 255, 0.72);
   --text-meta: rgba(255, 255, 255, 0.45);
-  --text-faint: rgba(255, 255, 255, 0.3);
+  /* Raised from 0.3 by the design's contrast pass. The design carries two
+     near-identical faint tiers (0.55 and 0.58); 3% apart is not a meaningful
+     distinction, so they collapse to one token here — which also matches
+     light, where the pass merged faint into the same value as --text-meta. */
+  --text-faint: rgba(255, 255, 255, 0.58);
+  /* Decorative marks (separator dots), deliberately NOT raised by the
+     contrast pass — they carry no text and stay quiet. */
+  --mark: rgba(255, 255, 255, 0.25);
 
   /* Inverted control — white on dark, black on light */
   --invert-bg: #fff;
@@ -83,7 +90,11 @@
   --text-body: #1f2226;
   --text-mute: #505a63;
   --text-meta: #8d969e;
-  --text-faint: #c9c9cd;
+  /* The contrast pass raised faint text from #c9c9cd to the same value as
+     --text-meta. #c9c9cd survives in the design only as a background (the
+     white-button hover, --invert-bg-hover below), never as text. */
+  --text-faint: #8d969e;
+  --mark: #c9c9cd;
 
   --invert-bg: #000;
   --invert-fg: #fff;
@@ -533,7 +544,7 @@ body.resizing {
   width: 3px;
   height: 3px;
   border-radius: var(--radius-full);
-  background: var(--text-faint);
+  background: var(--mark);
 }
 .msg-stat {
   font: 400 11px/1 var(--font-body);
