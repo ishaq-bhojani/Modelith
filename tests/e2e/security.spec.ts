@@ -58,3 +58,13 @@ test('the CSP actually blocks an injected inline script', async () => {
   })
   expect(executed).toBe(false)
 })
+
+test('the bridge exposes no way to read a stored key', async () => {
+  const page = await app.firstWindow()
+  const shape = await page.evaluate(() => ({
+    keyFns: Object.keys(window.openCoder.keys),
+    topLevel: Object.keys(window.openCoder),
+  }))
+  expect(shape.keyFns.sort()).toEqual(['delete', 'has', 'set'])
+  expect(shape.topLevel).not.toContain('keystore')
+})

@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers } from './ipc/handlers.js'
 
 // Portable-mode override. Keeps E2E runs out of the developer's real app data,
 // and lets users run from a USB stick. Must be set before anything reads the path.
@@ -23,6 +23,7 @@ function createWindow(): BrowserWindow {
 
 void app.whenReady().then(() => {
   registerHandlers()
+  registerSecretHandlers()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
