@@ -4,7 +4,8 @@ import { useAppStore } from '../../src/renderer/state/store.js'
 describe('applyEvent', () => {
   it('discards envelopes for a stream that is no longer current', () => {
     useAppStore.setState({
-      streamId: 'other', lastStreamId: 'other', activeSessionId: 's1', streamingText: '',
+      streamId: 'other', lastStreamId: 'other', activeSessionId: 's1',
+      streamingSessionId: 's1', streamingText: '',
     })
     useAppStore.getState().applyEvent({
       streamId: 'stale', sessionId: 's1', event: { type: 'text', delta: 'nope' },
@@ -13,30 +14,65 @@ describe('applyEvent', () => {
     expect(useAppStore.getState().streamId).toBe('other')
   })
 
-  it('discards envelopes for a session that is no longer the active one', () => {
-    // Same streamId/lastStreamId (the turn is still "current" by stream
-    // identity) but the user has switched to a different session in the
-    // sidebar. Session A's stream events must not bleed into session B.
+  it('A to B to A mid-stream: switching away and back does not truncate the buffer', () => {
+    // Start a stream owned by session A while A is the active (viewed)
+    // session. `text` events must keep accumulating into the SAME buffer
+    // regardless of which session the user is currently looking at — the
+    // buffer is keyed by `streamingSessionId` (who owns the stream), not by
+    // `activeSessionId` (what the user happens to be viewing).
     useAppStore.setState({
-      streamId: 'abc', lastStreamId: 'abc', activeSessionId: 'session-b',
+      streamId: 'stream-a', lastStreamId: 'stream-a',
+      streamingSessionId: 'session-a', activeSessionId: 'session-a',
       streamingText: '', messages: [],
     })
-    useAppStore.getState().applyEvent({
-      streamId: 'abc', sessionId: 'session-a', event: { type: 'text', delta: 'leaked' },
-    })
-    expect(useAppStore.getState().streamingText).toBe('')
 
     useAppStore.getState().applyEvent({
-      streamId: 'abc', sessionId: 'session-a',
-      event: { type: 'done' },
+      streamId: 'stream-a', sessionId: 'session-a', event: { type: 'text', delta: 'one-' },
     })
-    // The done event must not append session A's reply into session B's messages.
+
+    // User switches to session B mid-stream.
+    useAppStore.setState({ activeSessionId: 'session-b' })
+    useAppStore.getState().applyEvent({
+      streamId: 'stream-a', sessionId: 'session-a', event: { type: 'text', delta: 'two-' },
+    })
+
+    // User switches back to session A before the stream finishes.
+    useAppStore.setState({ activeSessionId: 'session-a' })
+    useAppStore.getState().applyEvent({
+      streamId: 'stream-a', sessionId: 'session-a', event: { type: 'text', delta: 'three' },
+    })
+
+    useAppStore.getState().applyEvent({
+      streamId: 'stream-a', sessionId: 'session-a', event: { type: 'done' },
+    })
+
+    // The appended assistant message must contain ALL three deltas, not just
+    // the one that arrived after the user returned to session A.
+    const messages = useAppStore.getState().messages
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.content).toBe('one-two-three')
+  })
+
+  it('a stream finishing while the user is viewing a different session does not append to that session', () => {
+    // Session A's stream is still running when the user switches to B.
+    useAppStore.setState({
+      streamId: 'stream-a', lastStreamId: 'stream-a',
+      streamingSessionId: 'session-a', activeSessionId: 'session-b',
+      streamingText: 'accumulated-in-a', messages: [],
+    })
+
+    useAppStore.getState().applyEvent({
+      streamId: 'stream-a', sessionId: 'session-a', event: { type: 'done' },
+    })
+
+    // B's messages must be untouched — A's reply was persisted by main and
+    // will be reloaded from disk when the user returns to A.
     expect(useAppStore.getState().messages).toEqual([])
   })
 
   it('accepts the second of two error envelopes for the same turn, replacing the first', () => {
     useAppStore.setState({
-      streamId: 'abc', lastStreamId: 'abc', activeSessionId: 's1',
+      streamId: 'abc', lastStreamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
       streamingText: 'partial', error: null, messages: [],
     })
 

@@ -22,6 +22,22 @@ interface AppState {
    * as belonging to the current turn instead of being silently discarded.
    */
   lastStreamId: string | null
+  /**
+   * Which session owns the in-flight (or most recently finished) stream.
+   * `streamingText` accumulates for THIS session regardless of which session
+   * the user is currently viewing (`activeSessionId`) — viewing and
+   * streaming are independent. A view should only render `streamingText`
+   * when `streamingSessionId === activeSessionId`.
+   *
+   * KNOWN LIMITATION (v0, accepted): this is a single buffer, not a
+   * per-session map. If the user starts a new turn in session B while
+   * session A's turn is still streaming, `send()` overwrites
+   * `streamingSessionId` to B and A's remaining events then fail the gate.
+   * A's reply disappears from any live view but is still persisted by main
+   * and reappears when the user reloads session A. A `Record<sessionId,
+   * StreamState>` would fix this but is deliberately out of scope for v0.
+   */
+  streamingSessionId: string | null
   streamingText: string
   error: ProviderError | null
   providerId: string
@@ -50,6 +66,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   streamId: null,
   lastStreamId: null,
+  streamingSessionId: null,
   streamingText: '',
   error: null,
   providerId: '',
@@ -70,15 +87,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Switching sessions clears streamingText/error so a half-rendered reply
-  // (or a stale error) from the session being left cannot bleed into the
-  // newly loaded conversation. The in-flight turn (if any) keeps running in
-  // main and persists normally; returning to that session later reloads the
-  // completed reply from disk via this same method.
+  // Switching sessions clears `error` (a stale error belongs to whichever
+  // session raised it, not to the one being loaded now) but must NOT touch
+  // `streamingText`/`streamingSessionId`/`streamId`/`lastStreamId` — those
+  // belong to whichever session owns the in-flight stream, independent of
+  // which session is being viewed. Clearing `streamingText` here previously
+  // caused a regression: switching away from a streaming session and back
+  // wiped the accumulated buffer, truncating the eventual assistant message
+  // to only the text that arrived after the return. The in-flight turn (if
+  // any) keeps running in main and persists normally regardless of what the
+  // user is looking at.
   async selectSession(id) {
     try {
       const messages = await window.openCoder.sessions.load(id)
-      set({ activeSessionId: id, messages, error: null, streamingText: '' })
+      set({ activeSessionId: id, messages, error: null })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -98,9 +120,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     let sessionId = get().activeSessionId
     if (!sessionId) { await get().newSession(); sessionId = get().activeSessionId }
     if (!sessionId) return
+    // A new turn genuinely starts a new buffer, so resetting streamingText
+    // and (re)pointing streamingSessionId at the target session here is
+    // correct even though selectSession must never do the equivalent.
     set((s) => ({
       error: null,
       streamingText: '',
+      streamingSessionId: sessionId,
       messages: [...s.messages, {
         id: `local-${Date.now()}`, role: 'user', content, createdAt: Date.now(),
       }],
@@ -135,12 +161,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarWidth(px) { set({ sidebarWidth: Math.min(480, Math.max(180, px)) }) },
 
   // Gate on BOTH identifiers: an envelope only applies to the turn it belongs
-  // to (`lastStreamId` — see field doc above) AND the session currently
-  // displayed (`activeSessionId`). Without the session check, switching to a
-  // different session mid-stream would let the old turn's `text`/`done`
-  // events keep appending into the newly loaded conversation's messages —
-  // reachable simply by clicking another session in the sidebar while a
-  // reply is streaming.
+  // to (`lastStreamId` — see field doc above) AND the session that OWNS the
+  // stream (`streamingSessionId` — NOT `activeSessionId`). Accumulation must
+  // continue for the owning session no matter what the user is currently
+  // looking at: gating on `activeSessionId` here was the Fix Round 2
+  // regression — it wiped and re-accumulated the buffer every time the user
+  // navigated away and back, truncating the eventual message to only the
+  // text that arrived after the return.
   //
   // Routing on `lastStreamId` (not `streamId`) means a second terminal event
   // for the same turn is still accepted: `streamId` is cleared by the first
@@ -150,18 +177,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   // matches and replaces the displayed error with the more actionable one.
   applyEvent({ streamId, sessionId, event }) {
     if (streamId !== get().lastStreamId) return
-    if (sessionId !== get().activeSessionId) return
+    if (sessionId !== get().streamingSessionId) return
     if (event.type === 'text') { set((s) => ({ streamingText: s.streamingText + event.delta })); return }
-    if (event.type === 'error') { set({ error: event.error, streamId: null }); return }
-    if (event.type === 'done') {
+    if (event.type === 'error') {
+      // Only surface the error if the user is looking at the session it
+      // belongs to — an error for a session the user has navigated away
+      // from should not hijack whatever is currently displayed. `streamId`
+      // is always cleared so the composer leaves its streaming state
+      // regardless of which session is active.
       set((s) => ({
+        error: sessionId === s.activeSessionId ? event.error : s.error,
         streamId: null,
-        streamingText: '',
-        messages: [...s.messages, {
-          id: `local-a-${Date.now()}`, role: 'assistant',
-          content: s.streamingText, createdAt: Date.now(),
-        }],
       }))
+      return
+    }
+    if (event.type === 'done') {
+      set((s) => {
+        // Only append the assistant message when the user is currently
+        // looking at the session the stream belongs to. If they've
+        // navigated elsewhere, main has already persisted the reply, so
+        // returning to that session later reloads it from disk instead —
+        // this is what prevents the reply from leaking into whatever
+        // session the user is currently viewing.
+        const shouldAppend = sessionId === s.activeSessionId
+        return {
+          streamId: null,
+          streamingText: '',
+          messages: shouldAppend
+            ? [...s.messages, {
+              id: `local-a-${Date.now()}`, role: 'assistant',
+              content: s.streamingText, createdAt: Date.now(),
+            }]
+            : s.messages,
+        }
+      })
     }
   },
 }))
