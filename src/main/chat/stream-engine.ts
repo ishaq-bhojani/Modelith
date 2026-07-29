@@ -56,9 +56,25 @@ export class StreamEngine {
 
     const controller = new AbortController()
     this.active.set(streamId, controller)
-    void this.run(streamId, input, controller).finally(() => {
-      this.activeSessions.delete(sessionId)
-    })
+    void this.run(streamId, input, controller)
+      .catch(() => {
+        // run() is written to catch and report every failure it knows about
+        // (a failed append, a misbehaving provider). This is a last-resort
+        // net: if something still escapes, the turn must still terminate
+        // visibly for the renderer — which otherwise sees a stream that
+        // never reaches a terminal event — rather than becoming an
+        // unhandled promise rejection.
+        this.send(streamId, sessionId, {
+          type: 'error', error: { kind: 'unknown', message: 'The turn ended unexpectedly.' },
+        })
+      })
+      .finally(() => {
+        // Runs on every path out of run() (success, guarded failure, or the
+        // last-resort catch above), so a store failure can never leave the
+        // session wedged as permanently "busy".
+        this.activeSessions.delete(sessionId)
+        this.active.delete(streamId)
+      })
     return { streamId }
   }
 
@@ -73,7 +89,18 @@ export class StreamEngine {
     const userMessage: ChatMessage = {
       id: randomUUID(), role: 'user', content: input.content, createdAt: Date.now(),
     }
-    await store.append(sessionId, userMessage)
+    try {
+      await store.append(sessionId, userMessage)
+    } catch {
+      // The turn cannot meaningfully proceed if the user's own message never
+      // made it to disk — there is nowhere for a provider reply to attach.
+      // Report it and stop before ever calling the provider.
+      this.send(streamId, sessionId, {
+        type: 'error',
+        error: { kind: 'unknown', message: 'Your message could not be saved; the turn was not started.' },
+      })
+      return
+    }
 
     const provider = resolveProvider(input.providerId)
     const apiKey = await readKey(input.providerId)
@@ -82,7 +109,6 @@ export class StreamEngine {
         type: 'error',
         error: { kind: 'auth', message: 'No API key is configured for this provider.' },
       })
-      this.active.delete(streamId)
       return
     }
 
@@ -126,14 +152,23 @@ export class StreamEngine {
     if (controller.signal.aborted) incomplete = true
 
     if (assembled.length > 0 || incomplete) {
-      await store.append(sessionId, {
-        id: randomUUID(),
-        role: 'assistant',
-        content: assembled,
-        createdAt: Date.now(),
-        ...(incomplete ? { incomplete: true } : {}),
-      })
+      try {
+        await store.append(sessionId, {
+          id: randomUUID(),
+          role: 'assistant',
+          content: assembled,
+          createdAt: Date.now(),
+          ...(incomplete ? { incomplete: true } : {}),
+        })
+      } catch {
+        // The user just watched this text stream in; if it can't be
+        // persisted they need to know it didn't survive, not just have the
+        // stream go quiet.
+        this.send(streamId, sessionId, {
+          type: 'error',
+          error: { kind: 'unknown', message: 'The reply could not be saved.' },
+        })
+      }
     }
-    this.active.delete(streamId)
   }
 }

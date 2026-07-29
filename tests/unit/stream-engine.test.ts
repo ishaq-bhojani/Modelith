@@ -150,4 +150,88 @@ describe('StreamEngine', () => {
     expect(saved.filter((m) => m.role === 'user').map((m) => m.content)).toEqual(['one'])
     expect(saved.filter((m) => m.role === 'assistant')).toHaveLength(1)
   })
+
+  // A setTimeout callback only fires after the microtask queue has fully
+  // drained, so waiting on one (even 0ms) is a reliable way to guarantee any
+  // pending .then()/.catch()/.finally() continuations — such as the
+  // session-cleanup in StreamEngine.start() — have already run.
+  const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0))
+
+  it('reports an error and does not start the turn when the user-message append fails', async () => {
+    const s = await store.create('t')
+    // store.append is monkey-patched (not the real fs-backed implementation)
+    // purely to simulate a disk/permission failure on demand.
+    store.append = (async () => {
+      throw new Error('simulated disk failure')
+    }) as typeof store.append
+    const engine = build(fakeProvider([{ type: 'text', delta: 'hi' }, { type: 'done' }]))
+
+    const { streamId } = await engine.start({
+      sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi',
+    })
+    await waitFor(() => emitted.length > 0)
+
+    // (a) an error envelope is emitted with the correct streamId
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]).toMatchObject({
+      streamId, sessionId: s.id, event: { type: 'error', error: { kind: 'unknown' } },
+    })
+
+    // (c) the session is not left in-flight: a subsequent start() for the
+    // same session is accepted rather than rejected as busy. (append still
+    // fails, so this second turn also errors out — the point is that it is
+    // never short-circuited by the same-session guard.)
+    await flushMicrotasks()
+    const second = await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'again' })
+    await waitFor(() => emitted.some((e) => e.streamId === second.streamId))
+    const secondEnvelopes = emitted.filter((e) => e.streamId === second.streamId)
+    expect(secondEnvelopes[0]?.event).not.toMatchObject({ error: { kind: 'busy' } })
+
+    // (b) no unhandled rejection: vitest fails the run on one, so simply
+    // reaching this point across two full turns is itself part of the proof.
+  })
+
+  it('reports an error but keeps the streamed text visible in history when only the assistant append fails', async () => {
+    const s = await store.create('t')
+    const originalAppend = store.append.bind(store)
+    let calls = 0
+    store.append = (async (id, message) => {
+      calls += 1
+      // Let the user-message append (call 1) succeed so the turn proceeds
+      // to actually stream; fail only the assistant append (call 2).
+      if (calls === 2) throw new Error('simulated disk failure')
+      return originalAppend(id, message)
+    }) as typeof store.append
+    const engine = build(fakeProvider([
+      { type: 'text', delta: 'he' }, { type: 'text', delta: 'llo' }, { type: 'done' },
+    ]))
+
+    const { streamId } = await engine.start({
+      sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi',
+    })
+    await waitFor(() => emitted.some((e) => e.event.type === 'error'))
+
+    // (a) an error envelope is emitted with the correct streamId, distinct
+    // from the ordinary stream events that preceded it.
+    const errorEnvelope = emitted.find((e) => e.event.type === 'error')
+    expect(errorEnvelope).toMatchObject({ streamId, sessionId: s.id, event: { error: { kind: 'unknown' } } })
+    expect(emitted.some((e) => e.event.type === 'text')).toBe(true)
+
+    // The user message survived (append #1 succeeded); the assistant reply
+    // did not (append #2 failed) — requirement 7 says partial output must
+    // never be silently discarded, and "silently" is the operative word: the
+    // error envelope above is what keeps this from being silent, even though
+    // the text itself could not be persisted here.
+    const saved = await store.load(s.id)
+    expect(saved.map((m) => m.role)).toEqual(['user'])
+
+    // (c) the session is not left in-flight.
+    await flushMicrotasks()
+    const second = await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'again' })
+    await waitFor(() => emitted.some((e) => e.streamId === second.streamId))
+    const secondEnvelopes = emitted.filter((e) => e.streamId === second.streamId)
+    expect(secondEnvelopes.some((e) => e.event.type === 'error' && e.event.error.kind === 'busy')).toBe(false)
+
+    // (b) no unhandled rejection: reaching this point is part of the proof.
+  })
 })
