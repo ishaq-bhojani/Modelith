@@ -8,7 +8,16 @@ export interface OpenAiCompatSpec {
   defaultBaseUrl: string
 }
 
-export function statusToError(status: number, retryAfter?: string | null): ProviderError {
+/** Case-insensitive signal that a 400 was specifically about context length, not a bad model id or malformed request. */
+const CONTEXT_OVERFLOW_PATTERN =
+  /context (length|window)|maximum context|too many tokens|prompt is too long|reduce the length/i
+
+export function statusToError(
+  status: number,
+  options?: { retryAfter?: string | null; body?: string },
+): ProviderError {
+  const retryAfter = options?.retryAfter
+  const body = options?.body
   if (status === 401 || status === 403) {
     return { kind: 'auth', message: 'The provider rejected the API key.' }
   }
@@ -24,7 +33,10 @@ export function statusToError(status: number, retryAfter?: string | null): Provi
     return { kind: 'provider_5xx', message: `The provider returned ${status}.` }
   }
   if (status === 400) {
-    return { kind: 'context_overflow', message: 'The request was rejected as malformed or too long.' }
+    if (body && CONTEXT_OVERFLOW_PATTERN.test(body)) {
+      return { kind: 'context_overflow', message: 'The request was rejected as malformed or too long.' }
+    }
+    return { kind: 'unknown', message: 'The provider rejected the request as malformed.' }
   }
   return { kind: 'unknown', message: `Unexpected status ${status}.` }
 }
@@ -44,7 +56,12 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
         headers: { authorization: `Bearer ${config.apiKey}` },
       })
       if (!response.ok) return []
-      const body = (await response.json()) as { data?: { id?: string }[] }
+      let body: { data?: { id?: string }[] }
+      try {
+        body = (await response.json()) as { data?: { id?: string }[] }
+      } catch {
+        return []
+      }
       return (body.data ?? [])
         .filter((m): m is { id: string } => typeof m.id === 'string')
         .map((m): ModelInfo => ({ id: m.id, label: m.id, contextWindow: 128_000 }))
@@ -74,7 +91,14 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
       }
 
       if (!response.ok) {
-        yield { type: 'error', error: statusToError(response.status, response.headers.get('retry-after')) }
+        const bodyText = await response.text().catch(() => '')
+        yield {
+          type: 'error',
+          error: statusToError(response.status, {
+            retryAfter: response.headers.get('retry-after'),
+            body: bodyText,
+          }),
+        }
         return
       }
       if (!response.body) {
@@ -89,8 +113,18 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
       try {
         for (;;) {
           if (signal.aborted) break
-          const { done, value } = await reader.read()
-          if (done) break
+          let result: Awaited<ReturnType<typeof reader.read>>
+          try {
+            result = await reader.read()
+          } catch {
+            // The underlying stream rejected the pending read — most commonly
+            // because `signal` (shared with the fetch call) fired mid-read.
+            if (signal.aborted) break
+            yield { type: 'error', error: { kind: 'network', message: 'The response stream ended unexpectedly.' } }
+            return
+          }
+          if (result.done) break
+          const { value } = result
 
           const parsed = parseSse(decoder.decode(value, { stream: true }), residual)
           residual = parsed.residual
