@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <title>Open Coder</title>
+    <!--
+      The packaged app loads this file over file://, where
+      webRequest.onHeadersReceived never fires — so the header-based policy in
+      src/main/security/csp.ts covers ONLY the dev server. This meta tag is the
+      enforcement path for the shipped build. Keep the two policies in sync.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
   </head>
   <body>
     <div id="root"></div>

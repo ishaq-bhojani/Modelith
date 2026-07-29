@@ -33,14 +33,28 @@ test('renderer has no Node globals', async () => {
   expect(leaked.process).toBe('undefined')
 })
 
-test('a response carries a Content-Security-Policy', async () => {
+test('the packaged renderer carries a restrictive CSP', async () => {
   const page = await app.firstWindow()
-  const csp = await page.evaluate(() =>
-    document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content') ?? null,
+  const csp = await page.evaluate(
+    () =>
+      document
+        .querySelector('meta[http-equiv="Content-Security-Policy"]')
+        ?.getAttribute('content') ?? null,
   )
-  // CSP is delivered by header, not meta; assert the page loaded and has no inline-script violations.
-  expect(csp).toBeNull()
-  const errors: string[] = []
-  page.on('pageerror', (e) => errors.push(e.message))
-  expect(errors).toEqual([])
+  expect(csp).toContain("script-src 'self'")
+  expect(csp).toContain("connect-src 'self'")
+  expect(csp).toContain("object-src 'none'")
+})
+
+test('the CSP actually blocks an injected inline script', async () => {
+  const page = await app.firstWindow()
+  // Proves the policy is enforced, not merely present in the document.
+  const executed = await page.evaluate(() => {
+    const marker = '__csp_probe__'
+    const script = document.createElement('script')
+    script.textContent = `window.${marker} = true`
+    document.body.appendChild(script)
+    return Boolean((window as unknown as Record<string, unknown>)[marker])
+  })
+  expect(executed).toBe(false)
 })

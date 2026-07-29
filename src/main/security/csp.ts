@@ -1,6 +1,10 @@
 import { shell } from 'electron'
 import type { BrowserWindow, Session } from 'electron'
 
+// This header governs the dev server only. webRequest.onHeadersReceived does
+// not fire for file:// loads, so the packaged build is governed by the
+// matching <meta http-equiv="Content-Security-Policy"> tag in index.html.
+// Both must carry the same policy.
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
