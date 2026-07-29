@@ -124,7 +124,7 @@ Add one line to `src/main/providers/registry.ts`'s `providers` array.
 npm test
 ```
 
-**14 contract tests** must pass for your provider (identity shape; text deltas ending in exactly one terminal `done`; nothing emitted after `done`; 401/429/503 mapped correctly; a transport failure mapped to `network`; an already-aborted signal short-circuits cleanly; a signal that fires mid-stream still ends in exactly one terminal `done`; the API key never appears in any error message, including one the provider itself tries to echo back; `listModels` returns real models on a well-formed body and an empty list — never a throw — on a malformed or non-OK response).
+**14 contract tests** must pass for your provider (identity shape; text deltas ending in exactly one terminal `done`; nothing emitted after `done`; 401/429/503 mapped correctly; a transport failure mapped to `network`; an already-aborted signal short-circuits cleanly; a signal that fires mid-stream still ends in exactly one terminal `done`; the API key never appears in any error message, including one the provider itself tries to echo back; `listModels` returns real models on a well-formed body and an empty list — never a throw — on a malformed or non-OK response). If this count ever looks wrong, `tests/contract/provider-contract.ts` is the source of truth — count its `it(...)` blocks rather than trusting this number, since the suite is expected to grow.
 
 ### The rules the suite actually enforces
 
