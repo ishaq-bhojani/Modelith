@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client'
+import './app/theme.css'
+import { App } from './app/App.js'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')
-createRoot(root).render(<h1>Open Coder</h1>)
+createRoot(root).render(<App />)

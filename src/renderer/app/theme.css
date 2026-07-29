@@ -1,0 +1,18 @@
+:root {
+  --bg: #101014;
+  --bg-raised: #17171d;
+  --border: #26262f;
+  --text: #e6e6ec;
+  --text-dim: #9a9aa8;
+  --accent: #6b8afd;
+  --danger: #ff6b6b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.app { display: grid; grid-template-columns: var(--sidebar-width) 4px 1fr; height: 100vh; }
+.splitter { cursor: col-resize; background: var(--border); }
+.splitter:hover { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; }
+.chat { display: flex; flex-direction: column; min-width: 0; }
