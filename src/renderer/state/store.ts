@@ -142,6 +142,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     let sessionId = get().activeSessionId
     if (!sessionId) { await get().newSession(); sessionId = get().activeSessionId }
     if (!sessionId) return
+    // Sending with no model selected (e.g. right after switching provider in
+    // Settings, before a model list is available) would otherwise reach
+    // main's zod schema, which rejects the empty string as a raw validation
+    // error mapped to an unhelpful 'unknown'/Retry. Since an empty model is
+    // most commonly caused by the provider having no usable key yet (the
+    // models endpoint returns none until one is stored), guarding here with
+    // an 'auth'-shaped error reuses the same actionable "Open settings"
+    // recovery path instead of surfacing a raw provider/schema error.
+    if (!get().model) {
+      set({ error: { kind: 'auth', message: 'Select a provider and model in Settings before sending.' } })
+      return
+    }
     // A new turn genuinely starts a new buffer, so resetting streamingText
     // and (re)pointing streamingSessionId at the target session here is
     // correct even though selectSession must never do the equivalent.

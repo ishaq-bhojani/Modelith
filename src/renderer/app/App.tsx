@@ -4,6 +4,7 @@ import { Splitter } from './Splitter.js'
 import { Sidebar } from '../sessions/Sidebar.js'
 import { Transcript } from '../chat/Transcript.js'
 import { Composer } from '../chat/Composer.js'
+import { SettingsDialog } from '../settings/SettingsDialog.js'
 
 export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -24,6 +25,7 @@ export function App(): React.JSX.Element {
         <Transcript />
         <Composer />
       </main>
+      <SettingsDialog />
     </div>
   )
 }

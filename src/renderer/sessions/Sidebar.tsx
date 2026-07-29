@@ -5,10 +5,12 @@ export function Sidebar(): React.JSX.Element {
   const activeId = useAppStore((s) => s.activeSessionId)
   const select = useAppStore((s) => s.selectSession)
   const create = useAppStore((s) => s.newSession)
+  const openSettings = useAppStore((s) => s.openSettings)
 
   return (
     <aside data-testid="sidebar" className="sidebar">
       <button data-testid="new-session" onClick={() => void create()}>New chat</button>
+      <button data-testid="open-settings" onClick={openSettings}>Settings</button>
       <ul>
         {sessions.map((s) => (
           <li key={s.id}>
