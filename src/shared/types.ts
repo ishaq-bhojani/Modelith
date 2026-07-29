@@ -22,6 +22,7 @@ export type ErrorKind =
   | 'provider_5xx'
   | 'aborted'
   | 'busy'
+  | 'no_model'
   | 'unknown'
 
 export interface ProviderError {

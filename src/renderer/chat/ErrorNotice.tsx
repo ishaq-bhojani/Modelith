@@ -8,6 +8,7 @@ const ACTION_LABEL: Record<ProviderError['kind'], string | null> = {
   provider_5xx: 'Retry',
   aborted: null,
   busy: 'Retry',
+  no_model: 'Open settings',
   unknown: 'Retry',
 }
 

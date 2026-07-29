@@ -16,10 +16,16 @@ test('stores a key and reports it as configured without revealing it', async () 
   await expect(page.getByTestId('api-key-input')).toHaveValue('')
 })
 
-test('offers a recovery action when the selected provider has no key', async () => {
+test('offers a recovery action when no model is selected', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('open-settings').click()
   // deepseek is deliberately a provider the previous test did not configure.
+  // It has no key, so its model list is empty and switching to it leaves
+  // `model` reset to '' with no model to auto-select — the actual condition
+  // this test exercises is the client-side 'no_model' guard in store.ts's
+  // send(), not the provider's 'auth' rejection (which is covered instead by
+  // the unit test in tests/unit/error-notice.test.ts, since reaching a real
+  // 'auth' response would require a live provider).
   await page.getByTestId('provider-select').selectOption('deepseek')
   await expect(page.getByTestId('key-status')).toHaveText('Not configured')
   await page.getByTestId('settings-close').click()

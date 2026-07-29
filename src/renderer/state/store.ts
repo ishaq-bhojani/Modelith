@@ -145,13 +145,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Sending with no model selected (e.g. right after switching provider in
     // Settings, before a model list is available) would otherwise reach
     // main's zod schema, which rejects the empty string as a raw validation
-    // error mapped to an unhelpful 'unknown'/Retry. Since an empty model is
-    // most commonly caused by the provider having no usable key yet (the
-    // models endpoint returns none until one is stored), guarding here with
-    // an 'auth'-shaped error reuses the same actionable "Open settings"
-    // recovery path instead of surfacing a raw provider/schema error.
+    // error mapped to an unhelpful 'unknown'/Retry. This is a distinct
+    // condition from 'auth' (the provider rejected the credentials) — an
+    // empty model can happen for reasons that have nothing to do with a
+    // missing key (a keyless local runtime whose server isn't running yet,
+    // or a transient failure fetching the model list), so it gets its own
+    // 'no_model' kind rather than borrowing 'auth'. Both kinds happen to
+    // share the "Open settings" recovery action (see ErrorNotice.tsx /
+    // Transcript.tsx), which is fine — two kinds can share an affordance
+    // without one lying about the cause.
     if (!get().model) {
-      set({ error: { kind: 'auth', message: 'Select a provider and model in Settings before sending.' } })
+      set({ error: { kind: 'no_model', message: 'No model is selected. Choose one in settings.' } })
       return
     }
     // A new turn genuinely starts a new buffer, so resetting streamingText

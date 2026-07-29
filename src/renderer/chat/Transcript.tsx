@@ -27,7 +27,7 @@ export function Transcript(): React.JSX.Element {
       {error ? (
         <ErrorNotice
           error={error}
-          onAction={(kind) => { if (kind === 'auth') openSettings() }}
+          onAction={(kind) => { if (kind === 'auth' || kind === 'no_model') openSettings() }}
         />
       ) : null}
     </div>
