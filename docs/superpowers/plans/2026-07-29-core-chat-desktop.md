@@ -1168,10 +1168,12 @@ export function runProviderContract(
   fx: ContractFixtures,
 ): void {
   describe(`${name} provider contract`, () => {
+    // Distinctive enough that an accidental echo is unambiguous.
+    const SECRET = 'sk-CONTRACT-CANARY-9f3a'
     const base = (fetch: FetchLike) => ({
       model: 'test-model',
       messages: [{ id: '1', role: 'user' as const, content: 'hi', createdAt: 0 }],
-      config: { apiKey: 'k', fetch },
+      config: { apiKey: SECRET, fetch },
     })
 
     it('has a stable identity', () => {
@@ -1239,11 +1241,13 @@ export function runProviderContract(
     })
 
     it('never leaks the api key into an error message', async () => {
-      const events = await collect(
-        make().streamChat(base(stubFetch(401, fx.authErrorBody)), new AbortController().signal),
-      )
-      for (const e of events) {
-        if (e.type === 'error') expect(e.error.message).not.toContain('k')
+      for (const status of [401, 429, 503]) {
+        const events = await collect(
+          make().streamChat(base(stubFetch(status, fx.authErrorBody)), new AbortController().signal),
+        )
+        for (const e of events) {
+          if (e.type === 'error') expect(e.error.message).not.toContain(SECRET)
+        }
       }
     })
   })
@@ -2182,7 +2186,10 @@ interface AppState {
   model: string
   baseUrl: string | undefined
   sidebarWidth: number
+  settingsOpen: boolean
 
+  openSettings(): void
+  closeSettings(): void
   loadSessions(): Promise<void>
   selectSession(id: string): Promise<void>
   newSession(): Promise<void>
@@ -2205,6 +2212,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   model: '',
   baseUrl: undefined,
   sidebarWidth: 260,
+  settingsOpen: false,
+
+  openSettings() { set({ settingsOpen: true }) },
+  closeSettings() { set({ settingsOpen: false }) },
 
   async loadSessions() {
     set({ sessions: await window.openCoder.sessions.list() })
@@ -2317,8 +2328,6 @@ import { useEffect } from 'react'
 import { useAppStore } from '../state/store.js'
 import { Splitter } from './Splitter.js'
 import { Sidebar } from '../sessions/Sidebar.js'
-import { Transcript } from '../chat/Transcript.js'
-import { Composer } from '../chat/Composer.js'
 
 export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -2334,8 +2343,11 @@ export function App(): React.JSX.Element {
       <Sidebar />
       <Splitter onResize={setSidebarWidth} />
       <main className="chat">
-        <Transcript />
-        <Composer />
+        {/* Placeholders. Task 10 replaces this block with <Transcript /> and <Composer />. */}
+        <div data-testid="transcript" className="transcript" />
+        <div className="composer">
+          <textarea data-testid="composer-input" rows={3} placeholder="Ask anything" readOnly />
+        </div>
       </main>
     </div>
   )
@@ -2625,7 +2637,7 @@ export function Transcript(): React.JSX.Element {
 }
 ```
 
-Add `settingsOpen: boolean`, `openSettings()`, and `closeSettings()` to the store from Task 9.
+Then replace the placeholder block in `src/renderer/app/App.tsx` with `<Transcript />` and `<Composer />`, importing both. `settingsOpen`, `openSettings`, and `closeSettings` already exist in the store from Task 9.
 
 `src/renderer/chat/Composer.tsx`:
 
