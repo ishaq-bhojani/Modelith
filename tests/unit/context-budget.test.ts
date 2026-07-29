@@ -62,4 +62,47 @@ describe('applyContextBudget', () => {
     expect(result.messages).toHaveLength(1)
     expect(result.omittedCount).toBe(0)
   })
+
+  it('trims a history ending in an assistant message without orphaning it', () => {
+    const input = [
+      msg('u1', 'user', 'x'.repeat(400)),
+      msg('a1', 'assistant', 'x'.repeat(400)),
+      msg('u2', 'user', 'x'.repeat(400)),
+      msg('a2', 'assistant', 'y'),
+    ]
+    const result = applyContextBudget(input, 60)
+    expect(result.messages.map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(result.omittedCount).toBe(2)
+  })
+
+  it('trims a leading run of user messages correctly', () => {
+    const input = [
+      msg('u1', 'user', 'x'),
+      msg('u2', 'user', 'y'),
+      msg('a1', 'assistant', 'x'.repeat(4000)),
+    ]
+    const result = applyContextBudget(input, 20)
+    // Must trim away the oldest user message, not return a lone assistant.
+    const roles = result.messages.map((m) => m.role)
+    const firstUserIndex = roles.findIndex((r) => r === 'user')
+    const firstAssistantIndex = roles.findIndex((r) => r === 'assistant')
+    if (firstAssistantIndex !== -1 && firstUserIndex !== -1) {
+      expect(firstUserIndex).toBeLessThan(firstAssistantIndex)
+    }
+    expect(result.omittedCount).toBeGreaterThan(0)
+  })
+
+  it('never begins with an assistant message when any user message survives', () => {
+    const input = [
+      msg('u1', 'user', 'x'.repeat(4000)),
+      msg('a1', 'assistant', 'x'.repeat(4000)),
+      msg('u2', 'user', 'z'),
+    ]
+    const result = applyContextBudget(input, 20)
+    const firstUserIndex = result.messages.findIndex((m) => m.role === 'user')
+    const firstAssistantIndex = result.messages.findIndex((m) => m.role === 'assistant')
+    if (firstUserIndex !== -1 && firstAssistantIndex !== -1) {
+      expect(firstUserIndex).toBeLessThan(firstAssistantIndex)
+    }
+  })
 })
