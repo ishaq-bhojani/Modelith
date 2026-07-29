@@ -54,6 +54,16 @@ renderer's error mapping.
 
 ## Tests and tooling
 
+**Nothing tests development mode end to end.**
+Every E2E test launches the *built* app over `file://`. Development serves the renderer
+over `http://` from Vite, which is a materially different path — different CSP
+enforcement, an inline React Refresh preamble, and an HMR websocket. A CSP bug that
+blanked the entire dev window shipped through 15 passing E2E tests because of this gap
+(see `tests/unit/csp.test.ts` for the regression guard that now covers the policy split).
+A dev-mode smoke test that boots the Vite server and asserts the sidebar renders would
+close it properly.
+
+
 **`tests/e2e/layout.spec.ts`'s splitter drag is still occasionally flaky.**
 Hardened once with visibility waits, `hover()`, and a polling assertion, but it failed
 again during the final review with a partially delivered drag. Pointer-event delivery in
