@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Keystore, type SecretCrypto } from '../../src/main/secrets/keystore.js'
@@ -57,5 +57,27 @@ describe('Keystore', () => {
   it('throws when encryption is unavailable', async () => {
     const broken = new Keystore({ ...fakeCrypto, isAvailable: () => false }, file)
     await expect(broken.set('kimi', 'x')).rejects.toThrow(/encryption/i)
+  })
+
+  it('persists both writes when concurrent sets race', async () => {
+    await Promise.all([store.set('a', 'secret-a'), store.set('b', 'secret-b')])
+    expect(await store.has('a')).toBe(true)
+    expect(await store.has('b')).toBe(true)
+  })
+
+  it('throws rather than reporting "not configured" for a corrupt key file', async () => {
+    await writeFile(file, '{ not valid json', 'utf8')
+    await expect(store.has('kimi')).rejects.toThrow(new RegExp(file.replace(/\\/g, '\\\\')))
+  })
+
+  it('returns empty (not an error) when the key file does not exist yet', async () => {
+    expect(await store.has('kimi')).toBe(false)
+  })
+
+  it('does not overwrite a corrupt file on a subsequent set', async () => {
+    const corrupt = '{ not valid json'
+    await writeFile(file, corrupt, 'utf8')
+    await expect(store.set('kimi', 'x')).rejects.toThrow()
+    expect(await readFile(file, 'utf8')).toBe(corrupt)
   })
 })
