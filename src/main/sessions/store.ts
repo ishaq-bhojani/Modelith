@@ -67,9 +67,14 @@ export class SessionStore {
   async create(title: string): Promise<SessionMeta> {
     return this.serialize(async () => {
       const meta: SessionMeta = { id: randomUUID(), title, updatedAt: Date.now() }
+      // Write the index entry before the (empty) message file: if the index
+      // write fails (e.g. a corrupt index), we must not leave an orphaned
+      // .jsonl file that no index entry references and no caller learned the
+      // id for. The reverse failure — an index entry with no file yet — is
+      // benign, since load() already treats a missing file as an empty session.
+      await this.writeIndex([meta, ...(await this.readIndex())])
       await mkdir(this.dir, { recursive: true })
       await writeFile(this.path(meta.id), '')
-      await this.writeIndex([meta, ...(await this.readIndex())])
       return meta
     })
   }

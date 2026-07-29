@@ -81,16 +81,30 @@ describe('SessionStore', () => {
     await expect(store.load('a/../../b')).rejects.toThrow(/invalid session id/i)
   })
 
-  it('does not lose an index update when two appends race on different sessions', async () => {
+  it('does not lose an index update when appends race across sessions', async () => {
     const a = await store.create('A')
     const b = await store.create('B')
+    const c = await store.create('C')
+    // Give the initial updatedAt values room to be distinguished from a
+    // subsequent refresh: without this gap, Date.now() could return the same
+    // millisecond for creation and the race below, making the test pass
+    // spuriously even against unserialized index writes.
+    await new Promise((r) => setTimeout(r, 5))
     await Promise.all([
       store.append(a.id, msg('1', 'one')),
       store.append(b.id, msg('1', 'one')),
+      store.append(c.id, msg('1', 'one')),
     ])
-    const ids = (await store.list()).map((s) => s.id)
-    expect(ids).toContain(a.id)
-    expect(ids).toContain(b.id)
+    const index = await store.list()
+    const byId = new Map(index.map((s) => [s.id, s]))
+    // Under an unserialized read-modify-write, three concurrent appends across
+    // three sessions all read the same initial index snapshot; each write then
+    // clobbers the previous one, so only the last writer's updatedAt survives
+    // and at least two of the three sessions keep their original creation
+    // timestamp. Serialization requires all three to have refreshed.
+    expect(byId.get(a.id)?.updatedAt).toBeGreaterThan(a.updatedAt)
+    expect(byId.get(b.id)?.updatedAt).toBeGreaterThan(b.updatedAt)
+    expect(byId.get(c.id)?.updatedAt).toBeGreaterThan(c.updatedAt)
   })
 
   it('does not lose a create when two sessions are created concurrently', async () => {
@@ -120,6 +134,15 @@ describe('SessionStore', () => {
     await writeFile(join(dir, 'index.json'), corrupt, 'utf8')
     await expect(store.create('A')).rejects.toThrow()
     expect(await readFile(join(dir, 'index.json'), 'utf8')).toBe(corrupt)
+  })
+
+  it('does not leave an orphaned .jsonl file when create fails on a corrupt index', async () => {
+    const corrupt = '{ not valid json'
+    await writeFile(join(dir, 'index.json'), corrupt, 'utf8')
+    await expect(store.create('A')).rejects.toThrow()
+    const { readdir } = await import('node:fs/promises')
+    const files = await readdir(dir)
+    expect(files.filter((f) => f.endsWith('.jsonl'))).toEqual([])
   })
 
   it('returns empty (not an error) when the index does not exist yet', async () => {
