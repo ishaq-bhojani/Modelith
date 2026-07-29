@@ -46,6 +46,11 @@ The **renderer** draws the UI only. It runs with `contextIsolation: true`, `node
 
 The **preload bridge** (`src/preload/index.ts`) is the only channel between them, and it is intentionally narrow: it exposes `keys.set`, `keys.delete`, and `keys.has` — there is no `keys.get`. The renderer can ask *whether* a key is configured; it can never read one back. This is verified by executable tests (`tests/e2e/security.spec.ts`, `tests/e2e/preload-bridge.spec.ts`), not just documented as a convention.
 
+## Known limitations
+
+- **Custom provider base URLs are not configurable in v0.** The renderer cannot supply a base URL for a provider request — this is deliberate: a renderer-controlled endpoint could redirect where main sends an API key, which the security model above forbids. When this is added, it will be main-side configuration (e.g. a settings file or an IPC call scoped to values the main process validates), never a value passed through on a per-request basis from the renderer.
+- **A turn that fails while the user is viewing a different conversation is not surfaced anywhere.** Errors are only shown when the active session matches the one the failing turn belongs to (see `applyEvent` in `src/renderer/state/store.ts`); if the user has navigated away, the failure is silent in the UI (though the partial/incomplete reply, if any, is still persisted and visible on return to that session).
+
 ## License
 
 Apache License 2.0 — see [LICENSE](./LICENSE). Copyright 2026 Open Coder Contributors.

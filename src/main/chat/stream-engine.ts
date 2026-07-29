@@ -8,7 +8,6 @@ export interface StartInput {
   sessionId: string
   providerId: string
   model: string
-  baseUrl?: string
   content: string
 }
 
@@ -125,7 +124,6 @@ export class StreamEngine {
         messages: budgeted.messages,
         config: {
           apiKey: apiKey ?? '',
-          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
           fetch: this.deps.fetch ?? globalThis.fetch,
         },
       }
@@ -133,7 +131,13 @@ export class StreamEngine {
         if (controller.signal.aborted) { incomplete = true; break }
         if (event.type === 'text') assembled += event.delta
         this.send(streamId, sessionId, event)
-        if (event.type === 'done' || event.type === 'error') break
+        // A stream that ends via a provider error (a rate limit or 5xx that
+        // arrives mid-stream, after some text has already been yielded) has
+        // truncated output exactly as much as an abort does — it must be
+        // persisted and marked `incomplete` too, not silently indistinguishable
+        // from a reply that finished normally.
+        if (event.type === 'error') { incomplete = true; break }
+        if (event.type === 'done') break
       }
     } catch {
       // provider.streamChat contractually never throws (it yields an `error`

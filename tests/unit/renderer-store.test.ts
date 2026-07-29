@@ -1,7 +1,65 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '../../src/renderer/state/store.js'
 
+describe('stop()', () => {
+  it('clears streamingText and locally appends an incomplete assistant message', async () => {
+    const abort = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = { openCoder: { chat: { abort } } }
+    useAppStore.setState({
+      streamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
+      streamingText: 'partial reply', messages: [],
+    })
+
+    await useAppStore.getState().stop()
+
+    const state = useAppStore.getState()
+    expect(abort).toHaveBeenCalledWith('abc')
+    expect(state.streamId).toBeNull()
+    expect(state.streamingText).toBe('')
+    expect(state.messages).toHaveLength(1)
+    expect(state.messages[0]).toMatchObject({
+      role: 'assistant', content: 'partial reply', incomplete: true,
+    })
+  })
+
+  it('does not append when there is nothing streamed yet', async () => {
+    const abort = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = { openCoder: { chat: { abort } } }
+    useAppStore.setState({
+      streamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
+      streamingText: '', messages: [],
+    })
+
+    await useAppStore.getState().stop()
+
+    expect(useAppStore.getState().messages).toHaveLength(0)
+  })
+})
+
 describe('applyEvent', () => {
+  it("clears streamingText on the 'error' branch so a stale streaming bubble cannot linger", () => {
+    useAppStore.setState({
+      streamId: 'abc', lastStreamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
+      streamingText: 'partial', error: null,
+    })
+    useAppStore.getState().applyEvent({
+      streamId: 'abc', sessionId: 's1',
+      event: { type: 'error', error: { kind: 'network', message: 'boom' } },
+    })
+    expect(useAppStore.getState().streamingText).toBe('')
+  })
+
+  it('ignores a stray text delta that arrives after streamId has already been cleared (e.g. by stop())', () => {
+    useAppStore.setState({
+      streamId: null, lastStreamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
+      streamingText: '',
+    })
+    useAppStore.getState().applyEvent({
+      streamId: 'abc', sessionId: 's1', event: { type: 'text', delta: 'ghost' },
+    })
+    expect(useAppStore.getState().streamingText).toBe('')
+  })
+
   it('discards envelopes for a stream that is no longer current', () => {
     useAppStore.setState({
       streamId: 'other', lastStreamId: 'other', activeSessionId: 's1',

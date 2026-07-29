@@ -31,9 +31,11 @@ function groupExchanges(messages: ChatMessage[]): ChatMessage[][] {
  * user/assistant pairs. The system message is always retained, and the
  * final message is always retained even if it alone exceeds the budget.
  *
- * Trimming is reported via `omittedCount` so the UI can show it explicitly.
- * Silent truncation is not acceptable: it removes information the user
- * believes is still present.
+ * Trimming is reported via `omittedCount` so a caller *could* surface it
+ * explicitly rather than truncate silently. As of this writing nothing in
+ * the renderer actually renders `omittedCount` yet (stream-engine.ts's caller
+ * deliberately leaves it unconsumed) — this is a known, deferred gap, not a
+ * claim that the UI already shows it.
  */
 export function applyContextBudget(messages: ChatMessage[], maxTokens: number): BudgetResult {
   const system = messages.filter((m) => m.role === 'system')

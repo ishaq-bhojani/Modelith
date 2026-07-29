@@ -4,6 +4,12 @@ import type { ChatMessage, ProviderError, StreamEvent } from '@shared/types'
 interface SessionMeta { id: string; title: string; updatedAt: number }
 interface ProviderMeta { id: string; label: string }
 
+// Shared with Splitter.tsx, which needs the same bounds to report accurate
+// aria-valuemin/aria-valuemax for its keyboard-resize affordance — a single
+// source of truth keeps the two from silently drifting apart.
+export const SIDEBAR_MIN_WIDTH = 180
+export const SIDEBAR_MAX_WIDTH = 480
+
 function toProviderError(err: unknown): ProviderError {
   return { kind: 'unknown', message: err instanceof Error ? err.message : String(err) }
 }
@@ -43,12 +49,20 @@ interface AppState {
   providerId: string
   providers: ProviderMeta[]
   model: string
-  baseUrl: string | undefined
   sidebarWidth: number
   settingsOpen: boolean
 
   openSettings(): void
   closeSettings(): void
+  /**
+   * Surfaces a caught bridge failure through the shared `error` field, the
+   * same path every in-store IPC caller already uses (see `catch (err) {
+   * set({ error: toProviderError(err) }) }` throughout this file). Exported
+   * so callers outside a store action — SettingsDialog.tsx makes bridge
+   * calls directly rather than through a store method — can report a
+   * failure the same way instead of swallowing it.
+   */
+  reportError(err: unknown): void
   loadSessions(): Promise<void>
   loadProviders(): Promise<void>
   selectSession(id: string): Promise<void>
@@ -73,12 +87,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   providerId: '',
   providers: [],
   model: '',
-  baseUrl: undefined,
   sidebarWidth: 260,
   settingsOpen: false,
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
+  reportError(err) { set({ error: toProviderError(err) }) },
 
   async loadSessions() {
     try {
@@ -174,7 +188,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         sessionId,
         providerId: get().providerId,
         model: get().model,
-        ...(get().baseUrl ? { baseUrl: get().baseUrl } : {}),
         content,
       })
       set({ streamId, lastStreamId: streamId })
@@ -190,13 +203,43 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       set({ error: toProviderError(err) })
     } finally {
-      set({ streamId: null })
+      set((s) => {
+        // The Composer only ever renders the Stop button (and therefore only
+        // ever calls stop()) when `streamingSessionId === activeSessionId`
+        // (see Composer.tsx), so this is always the session on screen — but
+        // re-check with fresh state rather than a value captured before the
+        // `await`, since the user could (in principle) have navigated during
+        // the abort round-trip.
+        //
+        // Appending locally (rather than waiting for a reload) is what makes
+        // the "Stopped before completion." label appear immediately instead
+        // of only after the user leaves and returns to this session. This
+        // cannot double-append: selectSession() always *replaces* `messages`
+        // wholesale from disk (`set({ messages, ... })`), it never appends to
+        // the in-memory array, so when the user later reloads this session
+        // the locally-appended message here is simply overwritten by the one
+        // persisted copy stream-engine.ts wrote to disk (see the `incomplete`
+        // fix there) — never added alongside it.
+        const shouldAppend = s.streamingText !== '' && s.streamingSessionId === s.activeSessionId
+        return {
+          streamId: null,
+          streamingText: '',
+          messages: shouldAppend
+            ? [...s.messages, {
+              id: `local-stopped-${Date.now()}`, role: 'assistant',
+              content: s.streamingText, createdAt: Date.now(), incomplete: true,
+            }]
+            : s.messages,
+        }
+      })
     }
   },
 
   setProvider(id) { set({ providerId: id, model: '' }) },
   setModel(id) { set({ model: id }) },
-  setSidebarWidth(px) { set({ sidebarWidth: Math.min(480, Math.max(180, px)) }) },
+  setSidebarWidth(px) {
+    set({ sidebarWidth: Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, px)) })
+  },
 
   // Gate on BOTH identifiers: an envelope only applies to the turn it belongs
   // to (`lastStreamId` — see field doc above) AND the session that OWNS the
@@ -216,16 +259,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyEvent({ streamId, sessionId, event }) {
     if (streamId !== get().lastStreamId) return
     if (sessionId !== get().streamingSessionId) return
-    if (event.type === 'text') { set((s) => ({ streamingText: s.streamingText + event.delta })); return }
+    if (event.type === 'text') {
+      // If `streamId` is already null, the renderer has already considered
+      // this turn over — most commonly because the user just clicked Stop,
+      // and this chunk was in flight the instant the abort signal fired,
+      // arriving a moment after stop() already cleared and locally persisted
+      // `streamingText` as an incomplete message. Accumulating it here would
+      // silently resurrect a streaming bubble with no label, and duplicate
+      // text once the session is reloaded from disk (stream-engine.ts only
+      // persisted what it had already sent before the abort was observed).
+      if (get().streamId === null) return
+      set((s) => ({ streamingText: s.streamingText + event.delta }))
+      return
+    }
     if (event.type === 'error') {
       // Only surface the error if the user is looking at the session it
       // belongs to — an error for a session the user has navigated away
       // from should not hijack whatever is currently displayed. `streamId`
       // is always cleared so the composer leaves its streaming state
-      // regardless of which session is active.
+      // regardless of which session is active. `streamingText` is cleared
+      // unconditionally: whatever partial text had accumulated is either
+      // about to be reloaded from disk (stream-engine.ts persists it marked
+      // `incomplete`) or was never worth showing, and leaving it in the
+      // buffer would otherwise render a raw, unlabeled streaming bubble
+      // alongside the error notice.
       set((s) => ({
         error: sessionId === s.activeSessionId ? event.error : s.error,
         streamId: null,
+        streamingText: '',
       }))
       return
     }

@@ -20,7 +20,7 @@ export function App(): React.JSX.Element {
   return (
     <div className="app" style={{ ['--sidebar-width' as string]: `${sidebarWidth}px` }}>
       <Sidebar />
-      <Splitter onResize={setSidebarWidth} />
+      <Splitter width={sidebarWidth} onResize={setSidebarWidth} />
       <main className="chat">
         <Transcript />
         <Composer />

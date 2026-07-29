@@ -35,7 +35,7 @@ export function statusToError(
   }
   if (status === 400) {
     if (body && CONTEXT_OVERFLOW_PATTERN.test(body)) {
-      return { kind: 'context_overflow', message: 'The request was rejected as malformed or too long.' }
+      return { kind: 'context_overflow', message: 'The conversation is too long for this model.' }
     }
     return { kind: 'unknown', message: 'The provider rejected the request as malformed.' }
   }
@@ -109,7 +109,7 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
             messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
           }),
         })
-      } catch (cause) {
+      } catch {
         if (signal.aborted) { yield { type: 'done' } satisfies StreamEvent; return }
         yield { type: 'error', error: { kind: 'network', message: 'Could not reach the provider.' } }
         return

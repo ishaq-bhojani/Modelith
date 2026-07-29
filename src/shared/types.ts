@@ -14,13 +14,16 @@ export interface ModelInfo {
   contextWindow: number
 }
 
+// No 'aborted' kind: an abort is renderer-initiated (the user clicked Stop),
+// so the renderer already knows without needing an error event, and the
+// engine deliberately never emits one for it (see stream-engine.ts). A kind
+// nothing ever produces is dead weight, not a real case to route on.
 export type ErrorKind =
   | 'auth'
   | 'rate_limit'
   | 'context_overflow'
   | 'network'
   | 'provider_5xx'
-  | 'aborted'
   | 'busy'
   | 'no_model'
   | 'unknown'

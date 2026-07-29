@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { ZodError } from 'zod'
 import {
   CHANNELS,
   KeyRefSchema,
@@ -37,6 +38,32 @@ export function getSessionStore(): SessionStore {
   return sessionStoreInstance
 }
 
+/**
+ * Wraps an `ipcMain.handle` callback so a schema validation failure (a
+ * malformed or tampered payload — `SchemaX.parse(raw)` throwing a
+ * `ZodError`) surfaces to the renderer as a clean, readable message instead
+ * of a raw ZodError dump. Electron propagates whatever an `ipcMain.handle`
+ * callback throws to the renderer's `ipcRenderer.invoke()` rejection,
+ * preserving only its `message` — the error taxonomy (`ProviderError`)
+ * forbids a raw validation error ever reaching a chat bubble, so this is the
+ * one seam where that message can be cleaned up before the renderer's
+ * `toProviderError()` wraps it.
+ */
+export function withZodMapping<Args extends unknown[], R>(
+  handler: (...args: Args) => R | Promise<R>,
+): (...args: Args) => Promise<R> {
+  return async (...args: Args) => {
+    try {
+      return await handler(...args)
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error('The request could not be processed: it was malformed.')
+      }
+      throw err
+    }
+  }
+}
+
 export function registerHandlers(): void {
   ipcMain.handle(CHANNELS.appInfo, (): AppInfo => ({
     version: app.getVersion(),
@@ -45,16 +72,16 @@ export function registerHandlers(): void {
 }
 
 export function registerSecretHandlers(): void {
-  ipcMain.handle(CHANNELS.keySet, async (_e, raw: unknown) => {
+  ipcMain.handle(CHANNELS.keySet, withZodMapping(async (_e, raw: unknown) => {
     const { providerId, apiKey } = KeySetSchema.parse(raw)
     await getKeystore().set(providerId, apiKey)
-  })
-  ipcMain.handle(CHANNELS.keyDelete, async (_e, raw: unknown) => {
+  }))
+  ipcMain.handle(CHANNELS.keyDelete, withZodMapping(async (_e, raw: unknown) => {
     await getKeystore().delete(KeyRefSchema.parse(raw).providerId)
-  })
-  ipcMain.handle(CHANNELS.keyHas, async (_e, raw: unknown) => {
+  }))
+  ipcMain.handle(CHANNELS.keyHas, withZodMapping(async (_e, raw: unknown) => {
     return getKeystore().has(KeyRefSchema.parse(raw).providerId)
-  })
+  }))
 }
 
 export function registerChatHandlers(getWindow: () => BrowserWindow | undefined): void {
@@ -70,17 +97,23 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     fetch: mainFetch,
   })
 
-  ipcMain.handle(CHANNELS.chatSend, (_e, raw: unknown) => engine.start(SendSchema.parse(raw)))
-  ipcMain.handle(CHANNELS.chatAbort, (_e, raw: unknown) => {
+  ipcMain.handle(CHANNELS.chatSend, withZodMapping((_e, raw: unknown) => engine.start(SendSchema.parse(raw))))
+  ipcMain.handle(CHANNELS.chatAbort, withZodMapping((_e, raw: unknown) => {
     engine.abort(AbortSchema.parse(raw).streamId)
-  })
+  }))
   ipcMain.handle(CHANNELS.providersList, () => listProviders())
   ipcMain.handle(CHANNELS.sessionsList, () => store.list())
-  ipcMain.handle(CHANNELS.sessionLoad, (_e, raw: unknown) => store.load(SessionIdSchema.parse(raw).id))
-  ipcMain.handle(CHANNELS.sessionCreate, (_e, raw: unknown) => store.create(SessionCreateSchema.parse(raw).title))
-  ipcMain.handle(CHANNELS.sessionDelete, (_e, raw: unknown) => store.remove(SessionIdSchema.parse(raw).id))
-  ipcMain.handle(CHANNELS.modelsList, async (_e, raw: unknown) => {
-    const { providerId, baseUrl } = ModelsListSchema.parse(raw)
+  ipcMain.handle(CHANNELS.sessionLoad, withZodMapping((_e, raw: unknown) => store.load(SessionIdSchema.parse(raw).id)))
+  ipcMain.handle(
+    CHANNELS.sessionCreate,
+    withZodMapping((_e, raw: unknown) => store.create(SessionCreateSchema.parse(raw).title)),
+  )
+  ipcMain.handle(
+    CHANNELS.sessionDelete,
+    withZodMapping((_e, raw: unknown) => store.remove(SessionIdSchema.parse(raw).id)),
+  )
+  ipcMain.handle(CHANNELS.modelsList, withZodMapping(async (_e, raw: unknown) => {
+    const { providerId } = ModelsListSchema.parse(raw)
     const provider = getProvider(providerId)
     const apiKey = await getKeystore().read(providerId)
     // Mirrors the stream-engine's guard (Task 8): providers that declare
@@ -88,6 +121,6 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     // with no stored credential. Only bail out early for providers that
     // actually need one.
     if (provider.requiresKey && !apiKey) return []
-    return provider.listModels({ apiKey: apiKey ?? '', ...(baseUrl ? { baseUrl } : {}), fetch: mainFetch })
-  })
+    return provider.listModels({ apiKey: apiKey ?? '', fetch: mainFetch })
+  }))
 }

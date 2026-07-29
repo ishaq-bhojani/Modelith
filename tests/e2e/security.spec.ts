@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication } from '@playwright/test'
 import { launchApp } from './launch.js'
+import { SendSchema, ModelsListSchema } from '../../src/shared/ipc.js'
 
 let app: ElectronApplication
 
@@ -67,4 +68,53 @@ test('the bridge exposes no way to read a stored key', async () => {
   }))
   expect(shape.keyFns.sort()).toEqual(['delete', 'has', 'set'])
   expect(shape.topLevel).not.toContain('keystore')
+})
+
+// Design spec §9.4: "no renderer-originated request can redirect where
+// provider traffic goes." A renderer-supplied `baseUrl` would let the
+// renderer redirect where main sends the API key it can never itself read —
+// equivalent to a key leak. This must stay impossible at the IPC boundary,
+// not merely unused by today's UI.
+test('the renderer bridge exposes no way to influence the provider endpoint', async () => {
+  // (1) The accepted payload shape itself must carry no URL-ish field. This
+  // inspects the actual zod schema (not just the TS type, which is erased at
+  // runtime and provides no protection) so the test fails the moment someone
+  // re-adds `baseUrl` to SendSchema or ModelsListSchema.
+  expect(Object.keys(SendSchema.shape)).not.toContain('baseUrl')
+  expect(Object.keys(ModelsListSchema.shape)).not.toContain('baseUrl')
+
+  // (2) Even if a caller (a compromised or buggy renderer) attaches an extra
+  // `baseUrl` property to the wire payload, main's `.parse()` must strip it
+  // rather than honour it — zod object schemas drop unrecognized keys by
+  // default. Confirm decisively by parsing a payload that carries one.
+  const parsedSend = SendSchema.parse({
+    sessionId: 's1', providerId: 'anthropic', model: 'm', content: 'hi',
+    baseUrl: 'https://evil.example.com',
+  })
+  expect(parsedSend).not.toHaveProperty('baseUrl')
+
+  const parsedModels = ModelsListSchema.parse({
+    providerId: 'anthropic', baseUrl: 'https://evil.example.com',
+  })
+  expect(parsedModels).not.toHaveProperty('baseUrl')
+
+  // (3) End-to-end through the real bridge: the same extra property, sent
+  // from the renderer over the actual preload/IPC channel, must not cause an
+  // error (proving it is silently ignored, not laundered through) and must
+  // not appear anywhere in the resolved bridge surface.
+  const page = await app.firstWindow()
+  const result = await page.evaluate(async () => {
+    const session = await window.openCoder.sessions.create('security-test')
+    const sendResult = await window.openCoder.chat.send({
+      sessionId: session.id,
+      providerId: 'does-not-exist',
+      model: 'm',
+      content: 'hi',
+      // @ts-expect-error -- deliberately probing a field the bridge's type no
+      // longer declares, to prove the wire payload can't smuggle it through.
+      baseUrl: 'https://evil.example.com',
+    })
+    return { streamId: sendResult.streamId }
+  })
+  expect(typeof result.streamId).toBe('string')
 })

@@ -138,6 +138,22 @@ describe('StreamEngine', () => {
     expect(emitted.some((e) => e.event.type === 'error')).toBe(false)
   })
 
+  it('marks the persisted reply incomplete when the stream ends via a provider error, not only on abort', async () => {
+    const s = await store.create('t')
+    const engine = build(fakeProvider([
+      { type: 'text', delta: 'partial ' },
+      { type: 'text', delta: 'reply' },
+      { type: 'error', error: { kind: 'rate_limit', message: 'Rate limit reached.' } },
+    ]))
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi' })
+    await waitFor(() => emitted.some((e) => e.event.type === 'error'))
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+    const saved = await store.load(s.id)
+    const assistant = saved.find((m) => m.role === 'assistant')
+    expect(assistant?.content).toBe('partial reply')
+    expect(assistant?.incomplete).toBe(true)
+  })
+
   it('gives concurrent streams distinct ids', async () => {
     const a = await store.create('a')
     const b = await store.create('b')

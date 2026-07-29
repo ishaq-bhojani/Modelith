@@ -12,7 +12,6 @@ const EXPECTED_LABEL: Record<ErrorKind, string | null> = {
   context_overflow: 'Retry with fewer messages',
   network: 'Retry',
   provider_5xx: 'Retry',
-  aborted: null,
   busy: 'Retry',
   no_model: 'Open settings',
   unknown: 'Retry',

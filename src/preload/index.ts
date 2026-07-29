@@ -14,11 +14,11 @@ export interface OpenCoderBridge {
   }
   providers: {
     list(): Promise<{ id: string; label: string }[]>
-    models(providerId: string, baseUrl?: string): Promise<ModelInfo[]>
+    models(providerId: string): Promise<ModelInfo[]>
   }
   chat: {
     send(input: {
-      sessionId: string; providerId: string; model: string; baseUrl?: string; content: string
+      sessionId: string; providerId: string; model: string; content: string
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
@@ -40,7 +40,7 @@ const bridge: OpenCoderBridge = {
   },
   providers: {
     list: () => ipcRenderer.invoke(CHANNELS.providersList),
-    models: (providerId, baseUrl) => ipcRenderer.invoke(CHANNELS.modelsList, { providerId, baseUrl }),
+    models: (providerId) => ipcRenderer.invoke(CHANNELS.modelsList, { providerId }),
   },
   chat: {
     send: (input) => ipcRenderer.invoke(CHANNELS.chatSend, input),

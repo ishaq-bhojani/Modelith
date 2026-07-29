@@ -41,3 +41,29 @@ test('the splitter moves the sidebar boundary', async () => {
     .poll(async () => (await sidebar.boundingBox())?.width ?? 0)
     .toBeGreaterThan(before.width + 40)
 })
+
+test('the splitter is keyboard-operable, matching its role="separator" contract', async () => {
+  const page = await app.firstWindow()
+  const sidebar = page.getByTestId('sidebar')
+  const handle = page.getByTestId('splitter')
+
+  await expect(handle).toHaveAttribute('tabindex', '0')
+
+  await handle.focus()
+  const before = await sidebar.boundingBox()
+  if (!before) throw new Error('missing sidebar layout box')
+  const valueBefore = Number(await handle.getAttribute('aria-valuenow'))
+
+  await page.keyboard.press('ArrowRight')
+  await expect
+    .poll(async () => (await sidebar.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(before.width)
+  await expect
+    .poll(async () => Number(await handle.getAttribute('aria-valuenow')))
+    .toBeGreaterThan(valueBefore)
+
+  await page.keyboard.press('Home')
+  await expect
+    .poll(async () => Number(await handle.getAttribute('aria-valuenow')))
+    .toBe(Number(await handle.getAttribute('aria-valuemin')))
+})

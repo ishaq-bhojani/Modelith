@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionStore } from '../../src/main/sessions/store.js'
@@ -147,5 +147,16 @@ describe('SessionStore', () => {
 
   it('returns empty (not an error) when the index does not exist yet', async () => {
     expect(await store.list()).toEqual([])
+  })
+
+  it('throws (rather than silently returning an empty session) on a non-ENOENT read failure', async () => {
+    const s = await store.create('t')
+    const filePath = join(dir, `${s.id}.jsonl`)
+    // Replace the message file with a directory of the same name: reading it
+    // as a file now fails with EISDIR, a genuine non-ENOENT error, without
+    // needing OS-specific permission tricks.
+    await rm(filePath, { force: true })
+    await mkdir(filePath)
+    await expect(store.load(s.id)).rejects.toThrow(new RegExp(s.id))
   })
 })

@@ -45,6 +45,14 @@ export async function* consumeStream(
         yield { type: 'error', error: { kind: 'network', message: 'The response stream ended unexpectedly.' } }
         return
       }
+      // Assumption: when the reader reports `done`, any residual bytes still
+      // sitting in `onChunk`'s closure (a final record with no trailing
+      // newline/terminator) are discarded rather than flushed. Every shipped
+      // provider newline-terminates its final record, so this has never lost
+      // real data — but a future provider that does not would silently drop
+      // its last record here. Deliberately not "fixed" without a concrete
+      // provider that needs it, since flushing an unterminated residual as if
+      // it were a complete record could just as easily fabricate one.
       if (result.done) break
 
       const chunkResult = onChunk(decoder.decode(result.value, { stream: true }))

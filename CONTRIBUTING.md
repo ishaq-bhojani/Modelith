@@ -48,6 +48,8 @@ type StreamEvent =
 - the abort race (a signal that fires mid-`read()`),
 - emitting exactly one terminal `done`, always last.
 
+**Known assumption:** `consumeStream` discards any residual left in your closure when the reader reports the stream done — it does not flush a final unterminated record. Every provider shipped today newline-terminates its last record, so this has never lost data, but if your wire format can end without a trailing terminator, your `onChunk` needs to account for that itself (or the last record will be silently dropped).
+
 Your job is only to decode *your* wire format. Write a function `(chunk: string) => ChunkResult` where:
 
 ```ts
@@ -141,7 +143,7 @@ If you remember nothing else:
 - `npm ci` — installs dependencies. A root `.npmrc` sets `legacy-peer-deps=true` because `electron-vite@5` currently declares a peer range (`vite@^5 || ^6 || ^7`) that excludes the pinned `vite@8`; this is a known upstream lag, not a project requirement, and the `.npmrc` line can be deleted once `electron-vite` widens its peer range.
 - `npm run dev` — launches the app in development.
 - `npm run typecheck` — `tsc --noEmit` against both the app and Node build configs.
-- `npm test` — Vitest unit and contract tests (128 tests as of this writing).
+- `npm test` — Vitest unit and contract tests (144 tests as of this writing).
 - `npm run test:e2e` — builds the app, then runs the Playwright/Electron E2E suite.
 
 ## Commit convention

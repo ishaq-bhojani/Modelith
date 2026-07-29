@@ -26,7 +26,6 @@ export const SendSchema = z.object({
   sessionId: z.string().min(1),
   providerId: z.string().min(1),
   model: z.string().min(1),
-  baseUrl: z.string().optional(),
   content: z.string(),
 })
 
@@ -34,4 +33,10 @@ export const AbortSchema = z.object({ streamId: z.string().min(1) })
 
 export const SessionIdSchema = z.object({ id: z.string().min(1) })
 export const SessionCreateSchema = z.object({ title: z.string() })
-export const ModelsListSchema = z.object({ providerId: z.string().min(1), baseUrl: z.string().optional() })
+// Intentionally no renderer-supplied `baseUrl` field here (or on SendSchema):
+// the renderer cannot read an API key, but a renderer-controlled base URL
+// would let it redirect where main sends that key. Providers use their own
+// `defaultBaseUrl` (see src/main/providers/types.ts's ProviderConfig, which
+// keeps a main-side-only `baseUrl` for the contract suite and future
+// main-side configuration).
+export const ModelsListSchema = z.object({ providerId: z.string().min(1) })

@@ -99,8 +99,15 @@ export class SessionStore {
     let raw: string
     try {
       raw = await readFile(filePath, 'utf8')
-    } catch {
-      return []
+    } catch (err) {
+      // A genuinely missing file (e.g. a session whose .jsonl was never
+      // written, or one already removed) is legitimately empty. Anything
+      // else — EACCES, EIO, EBUSY, a permissions change mid-session — must
+      // not present as an empty conversation: the caller would silently
+      // start appending on top of history the user still believes exists.
+      // Mirrors readIndex()'s ENOENT-vs-everything-else split above.
+      if (isEnoent(err)) return []
+      throw new Error(`Session file at ${filePath} could not be read: ${String(err)}`)
     }
     const out: ChatMessage[] = []
     for (const line of raw.split('\n')) {

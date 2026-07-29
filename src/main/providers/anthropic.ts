@@ -18,7 +18,6 @@ function makeAnthropicChunkHandler(): (chunk: string) => ChunkResult {
       let payload: {
         type?: string
         delta?: { type?: string; text?: string; thinking?: string }
-        error?: { message?: string }
       }
       try {
         payload = JSON.parse(record.data) as typeof payload
