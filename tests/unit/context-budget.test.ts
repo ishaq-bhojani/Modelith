@@ -117,6 +117,14 @@ describe('applyContextBudget', () => {
         ],
         maxTokens: 10,
       },
+      {
+        name: 'assistant-only history',
+        input: [
+          msg('a1', 'assistant', 'x'.repeat(4000)),
+          msg('a2', 'assistant', 'y'),
+        ],
+        maxTokens: 10,
+      },
     ]
     for (const testCase of testCases) {
       const result = applyContextBudget(testCase.input, testCase.maxTokens)

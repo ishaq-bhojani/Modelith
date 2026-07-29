@@ -6,3 +6,6 @@ playwright-report/
 
 # SDD scratch workspace (ledger, briefs, review packages)
 .superpowers/
+
+# Never commit scratchpad scratch files, including mangled absolute paths
+*scratchpad*
