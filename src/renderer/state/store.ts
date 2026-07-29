@@ -4,11 +4,24 @@ import type { ChatMessage, ProviderError, StreamEvent } from '@shared/types'
 interface SessionMeta { id: string; title: string; updatedAt: number }
 interface ProviderMeta { id: string; label: string }
 
+function toProviderError(err: unknown): ProviderError {
+  return { kind: 'unknown', message: err instanceof Error ? err.message : String(err) }
+}
+
 interface AppState {
   sessions: SessionMeta[]
   activeSessionId: string | null
   messages: ChatMessage[]
+  /** Non-null exactly while a stream is in flight; cleared by `error`/`done`. */
   streamId: string | null
+  /**
+   * The streamId of the most recently started turn. Unlike `streamId`, this is
+   * NOT cleared when the turn ends — it is what `applyEvent` routes on, so a
+   * second terminal event for the same turn (e.g. a persistence error arriving
+   * after the provider error already cleared `streamId`) is still recognized
+   * as belonging to the current turn instead of being silently discarded.
+   */
+  lastStreamId: string | null
   streamingText: string
   error: ProviderError | null
   providerId: string
@@ -36,6 +49,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeSessionId: null,
   messages: [],
   streamId: null,
+  lastStreamId: null,
   streamingText: '',
   error: null,
   providerId: '',
@@ -49,17 +63,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeSettings() { set({ settingsOpen: false }) },
 
   async loadSessions() {
-    set({ sessions: await window.openCoder.sessions.list() })
+    try {
+      set({ sessions: await window.openCoder.sessions.list() })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
   },
 
+  // Switching sessions clears streamingText/error so a half-rendered reply
+  // (or a stale error) from the session being left cannot bleed into the
+  // newly loaded conversation. The in-flight turn (if any) keeps running in
+  // main and persists normally; returning to that session later reloads the
+  // completed reply from disk via this same method.
   async selectSession(id) {
-    set({ activeSessionId: id, messages: await window.openCoder.sessions.load(id), error: null })
+    try {
+      const messages = await window.openCoder.sessions.load(id)
+      set({ activeSessionId: id, messages, error: null, streamingText: '' })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
   },
 
   async newSession() {
-    const { id } = await window.openCoder.sessions.create('New chat')
-    await get().loadSessions()
-    await get().selectSession(id)
+    try {
+      const { id } = await window.openCoder.sessions.create('New chat')
+      await get().loadSessions()
+      await get().selectSession(id)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
   },
 
   async send(content) {
@@ -73,34 +105,52 @@ export const useAppStore = create<AppState>((set, get) => ({
         id: `local-${Date.now()}`, role: 'user', content, createdAt: Date.now(),
       }],
     }))
-    const { streamId } = await window.openCoder.chat.send({
-      sessionId,
-      providerId: get().providerId,
-      model: get().model,
-      ...(get().baseUrl ? { baseUrl: get().baseUrl } : {}),
-      content,
-    })
-    set({ streamId })
+    try {
+      const { streamId } = await window.openCoder.chat.send({
+        sessionId,
+        providerId: get().providerId,
+        model: get().model,
+        ...(get().baseUrl ? { baseUrl: get().baseUrl } : {}),
+        content,
+      })
+      set({ streamId, lastStreamId: streamId })
+    } catch (err) {
+      set({ error: toProviderError(err), streamId: null })
+    }
   },
 
   async stop() {
     const id = get().streamId
-    if (id) await window.openCoder.chat.abort(id)
-    set({ streamId: null })
+    try {
+      if (id) await window.openCoder.chat.abort(id)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    } finally {
+      set({ streamId: null })
+    }
   },
 
   setProvider(id) { set({ providerId: id, model: '' }) },
   setModel(id) { set({ model: id }) },
   setSidebarWidth(px) { set({ sidebarWidth: Math.min(480, Math.max(180, px)) }) },
 
-  // Chunks from a superseded or aborted stream are discarded by streamId. Once
-  // an error (or done) event clears streamId to null, every later envelope for
-  // that same now-stale stream fails the `streamId !== get().streamId` check
-  // and is dropped — so a second error for one turn (e.g. provider failure
-  // followed by a persistence failure) can never throw or clobber state after
-  // the first has already terminated the stream.
-  applyEvent({ streamId, event }) {
-    if (streamId !== get().streamId) return
+  // Gate on BOTH identifiers: an envelope only applies to the turn it belongs
+  // to (`lastStreamId` — see field doc above) AND the session currently
+  // displayed (`activeSessionId`). Without the session check, switching to a
+  // different session mid-stream would let the old turn's `text`/`done`
+  // events keep appending into the newly loaded conversation's messages —
+  // reachable simply by clicking another session in the sidebar while a
+  // reply is streaming.
+  //
+  // Routing on `lastStreamId` (not `streamId`) means a second terminal event
+  // for the same turn is still accepted: `streamId` is cleared by the first
+  // `error`/`done` (it only tracks "are we currently streaming"), but
+  // `lastStreamId` keeps identifying the turn, so e.g. a persistence error
+  // arriving after the provider error already terminated the stream still
+  // matches and replaces the displayed error with the more actionable one.
+  applyEvent({ streamId, sessionId, event }) {
+    if (streamId !== get().lastStreamId) return
+    if (sessionId !== get().activeSessionId) return
     if (event.type === 'text') { set((s) => ({ streamingText: s.streamingText + event.delta })); return }
     if (event.type === 'error') { set({ error: event.error, streamId: null }); return }
     if (event.type === 'done') {
