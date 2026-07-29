@@ -1627,6 +1627,22 @@ export interface BudgetResult {
 }
 
 /**
+ * Groups messages into exchanges. Each exchange begins at a user message and
+ * absorbs the assistant replies that follow it, so dropping a whole group can
+ * never orphan an assistant reply. Any leading non-user messages form their own
+ * group, retained only when it is the last one left.
+ */
+function groupExchanges(messages: ChatMessage[]): ChatMessage[][] {
+  const groups: ChatMessage[][] = []
+  for (const message of messages) {
+    const startsExchange = message.role === 'user' || groups.length === 0
+    if (startsExchange) groups.push([message])
+    else groups[groups.length - 1]?.push(message)
+  }
+  return groups
+}
+
+/**
  * Trims history to fit `maxTokens` by dropping the oldest complete
  * user/assistant pairs. The system message is always retained, and the
  * final message is always retained even if it alone exceeds the budget.
@@ -1643,17 +1659,29 @@ export function applyContextBudget(messages: ChatMessage[], maxTokens: number): 
     list.reduce((sum, m) => sum + estimateTokens(m.content), 0)
 
   const systemCost = cost(system)
-  let start = 0
+  const groups = groupExchanges(rest)
 
-  while (start < rest.length - 1 && systemCost + cost(rest.slice(start)) > maxTokens) {
-    // Drop a whole exchange: a user message plus any assistant reply that follows it.
-    start += 1
-    while (start < rest.length - 1 && rest[start]?.role === 'assistant') start += 1
+  let firstGroup = 0
+  while (
+    firstGroup < groups.length - 1 &&
+    systemCost + cost(groups.slice(firstGroup).flat()) > maxTokens
+  ) {
+    firstGroup += 1
   }
 
-  return { messages: [...system, ...rest.slice(start)], omittedCount: start }
+  const kept = groups.slice(firstGroup).flat()
+  return { messages: [...system, ...kept], omittedCount: rest.length - kept.length }
 }
 ```
+
+> **Do not use index arithmetic over the flat message array here.** The obvious
+> version — advance a `start` index, then skip any assistant messages that follow —
+> shares its bound with the outer loop's "always keep the last message" guard, so
+> when the pointer lands on the final index it cannot skip a trailing assistant.
+> `[user, assistant, user, assistant]` under a tight budget then returns a lone
+> assistant reply. Grouping first makes the invariant true by construction rather
+> than by careful bookkeeping, and `omittedCount` must be derived from message
+> counts because groups hold varying numbers of messages.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
