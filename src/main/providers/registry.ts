@@ -33,11 +33,25 @@ export const mainFetch: FetchLike = (url, init) => net.fetch(url, init)
 const fakeProvider: Provider = {
   id: 'fake', label: 'Fake (test)', defaultBaseUrl: 'http://localhost', requiresKey: false,
   listModels: async () => [{ id: 'fake-1', label: 'fake-1', contextWindow: 8000 }],
-  async *streamChat(_req, signal) {
-    for (const word of ['Hello', ' from', ' the', ' fake', ' provider']) {
+  async *streamChat(req, signal) {
+    // When a prompt asks for "canvas", emit a small HTML artifact so the canvas
+    // pane can be exercised in E2E. No existing test uses that word, so the
+    // default greeting path is unaffected.
+    const lastUser = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+    // Deliberate keyword triggers so E2E can exercise each canvas render path.
+    // No existing test uses these words, so the default greeting is unaffected.
+    let chunks: string[]
+    if (/multicanvas/i.test(lastUser)) chunks = ['```html\n', '<h1>Page</h1>\n', '```\n\n', '```mermaid\n', 'graph TD;\nA-->B;\n', '```\n']
+    else if (/twoversions/i.test(lastUser)) chunks = ['```html\n', '<h1 id="t">v1</h1>\n', '```\n\n', 'Bigger:\n\n', '```html\n', '<h1 id="t">v2</h1>\n', '```\n']
+    else if (/badmermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'not a valid diagram <<<\n', '```\n']
+    else if (/mermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'graph TD;\n', 'A-->B;\n', '```\n']
+    else if (/canvas/i.test(lastUser)) chunks = ['Here is a page.\n\n', '```html\n', '<h1 id="t">Hello canvas</h1>\n', '```\n']
+    else chunks = ['Hello', ' from', ' the', ' fake', ' provider']
+
+    for (const c of chunks) {
       if (signal.aborted) return
-      await new Promise((r) => setTimeout(r, 20))
-      yield { type: 'text' as const, delta: word }
+      await new Promise((r) => setTimeout(r, 18))
+      yield { type: 'text' as const, delta: c }
     }
     yield { type: 'done' as const }
   },

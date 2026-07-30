@@ -1,10 +1,27 @@
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { ChatMessage } from '@shared/types'
 import { useAppStore } from '../state/store.js'
-import { IconCheck, IconCopy, IconGitBranch, IconPencil } from '../app/icons.js'
+import { CANVAS_LANGS, scanBlocks } from '../canvas/fence-scanner.js'
+import { decodeSelection } from '../canvas/selection.js'
+import { IconCheck, IconCopy, IconGitBranch, IconPanel, IconPencil } from '../app/icons.js'
 import { formatCost } from './cost.js'
+
+/**
+ * The canvas-eligible languages a message contains, deduped and normalised
+ * (mmd → mermaid), in first-seen order. Drives the "Open in canvas" cards.
+ * Only complete blocks count, so a card never appears for a half-streamed one.
+ */
+function canvasLangsIn(source: string): string[] {
+  const seen: string[] = []
+  for (const b of scanBlocks(source)) {
+    if (!b.complete || !CANVAS_LANGS.has(b.lang)) continue
+    const lang = b.lang === 'mmd' ? 'mermaid' : b.lang
+    if (!seen.includes(lang)) seen.push(lang)
+  }
+  return seen
+}
 
 /**
  * Model output is attacker-influenceable (prompt injection via pasted
@@ -57,6 +74,12 @@ export const MessageView = memo(function MessageView({
   const branchFrom = useAppStore((s) => s.branchFrom)
   const editUserMessage = useAppStore((s) => s.editUserMessage)
   const editAssistantMessage = useAppStore((s) => s.editAssistantMessage)
+  const focusCanvas = useAppStore((s) => s.focusCanvas)
+
+  const artifactLangs = useMemo(
+    () => (message.role === 'assistant' ? canvasLangsIn(message.content) : []),
+    [message.role, message.content],
+  )
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -98,9 +121,18 @@ export const MessageView = memo(function MessageView({
   }
 
   if (message.role === 'user') {
+    // A point-and-refine message carries a <selected-element> block in its
+    // persisted content; collapse it into a chip so the transcript shows what
+    // was sent without the raw markup (spec §7).
+    const { selection, body } = decodeSelection(message.content)
     return (
       <div className="msg-user-group">
-        <div className="msg-user">{message.content}</div>
+        {selection ? (
+          <div className="msg-selection-chip" data-testid="msg-selection-chip" title={selection}>
+            <code>{selection.replace(/\s+/g, ' ').trim().slice(0, 80)}</code>
+          </div>
+        ) : null}
+        <div className="msg-user">{body}</div>
         {canAct ? (
           <div className="msg-actions msg-actions-user">
             <button className="ghost-button" data-testid="edit-message" onClick={startEdit}>
@@ -134,6 +166,24 @@ export const MessageView = memo(function MessageView({
 
       <div className="prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
       {streaming ? <span className="caret" aria-hidden="true" /> : null}
+
+      {/* Additive: the code stays in the transcript above; these just jump the
+          canvas to it. Shown once streaming ends so the block is complete. */}
+      {!streaming && artifactLangs.length > 0 ? (
+        <div className="artifact-cards">
+          {artifactLangs.map((lang) => (
+            <button
+              key={lang}
+              className="artifact-card"
+              data-testid="artifact-card"
+              onClick={() => focusCanvas(lang)}
+            >
+              <IconPanel size={13} />
+              <span>Open {lang} in canvas</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {message.incomplete ? <p className="msg-incomplete">Stopped before completion.</p> : null}
 

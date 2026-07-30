@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
+import { encodeSelection } from '../canvas/selection.js'
 
 function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -82,6 +83,14 @@ interface AppState {
    *  subscription), so none of the main streaming fields are touched. */
   sideThreadOpen: boolean
   sideThreadSeed: string
+  /** The element markup selected in the canvas for point-and-refine (Canvas 8). */
+  canvasSelection: string | null
+  /**
+   * A request from the transcript to focus a given artifact language in the
+   * canvas ("Open in canvas"). A monotonically increasing token so repeated
+   * clicks on the same language re-focus even when the value is unchanged.
+   */
+  canvasFocus: { lang: string; token: number } | null
   /** Composer draft, held here so attachments and the secret guard can act on it. */
   draft: string
   /** Set when send is paused because the draft looks like it contains secrets. */
@@ -93,6 +102,9 @@ interface AppState {
   openSideThread(seed: string): void
   closeSideThread(): void
   setDraft(value: string): void
+  setCanvasSelection(outerHTML: string | null): void
+  /** Focus the canvas on an artifact language (from a transcript card). */
+  focusCanvas(lang: string): void
   /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
   requestSend(): void
   confirmSecretSend(): void
@@ -159,6 +171,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspectorOpen: false,
   sideThreadOpen: false,
   sideThreadSeed: '',
+  canvasSelection: null,
+  canvasFocus: null,
   draft: '',
   pendingSecret: null,
 
@@ -168,24 +182,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
   setDraft(value) { set({ draft: value }) },
+  setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
+  focusCanvas(lang) {
+    const token = (get().canvasFocus?.token ?? 0) + 1
+    set({ canvasFocus: { lang, token } })
+  },
 
   // Outbound secret guard (roadmap 28): scan before anything leaves the
   // machine. A match pauses the send and opens a confirm gate rather than
   // blocking outright — a guard against the common paste-a-key accident, not a
   // hard stop, since the user may legitimately be discussing a key.
   requestSend() {
-    const content = get().draft.trim()
-    if (!content || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    const prompt = get().draft.trim()
+    if (!prompt || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    // A canvas selection is folded into the persisted content (spec §7), so the
+    // secret scan runs over exactly what will be sent.
+    const selection = get().canvasSelection
+    const content = selection ? encodeSelection(selection, prompt) : prompt
     const categories = [...new Set(scanSecrets(content).map((m) => m.category))]
     if (categories.length > 0) { set({ pendingSecret: categories }); return }
-    set({ draft: '' })
+    set({ draft: '', canvasSelection: null })
     void get().send(content)
   },
 
   confirmSecretSend() {
-    const content = get().draft.trim()
-    set({ pendingSecret: null, draft: '' })
-    if (content) void get().send(content)
+    const prompt = get().draft.trim()
+    const selection = get().canvasSelection
+    const content = selection ? encodeSelection(selection, prompt) : prompt
+    set({ pendingSecret: null, draft: '', canvasSelection: null })
+    if (prompt) void get().send(content)
   },
 
   cancelSecretSend() { set({ pendingSecret: null }) },

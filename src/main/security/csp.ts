@@ -20,10 +20,18 @@ import type { BrowserWindow, Session } from 'electron'
  *
  * Both relaxations are development-only and never reach a shipped build.
  */
+/**
+ * CSP hash of the artifact-canvas harness bootstrap. The harness runs in an
+ * `srcdoc` iframe, which inherits THIS policy; allow-listing exactly that one
+ * inline script by hash lets it run without opening `'unsafe-inline'` to the
+ * whole renderer. Kept in sync with the script by a unit test (see harness.ts).
+ */
+const HARNESS_SCRIPT_HASH = "'sha256-tqZDCWU/6winVZ/e07XEDI44DtUYwsri9yTPsWBrFIs='"
+
 export function buildCsp(isDev: boolean): string {
   return [
     "default-src 'self'",
-    isDev ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'",
+    isDev ? "script-src 'self' 'unsafe-inline'" : `script-src 'self' ${HARNESS_SCRIPT_HASH}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",

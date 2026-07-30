@@ -8,6 +8,7 @@ import { Composer } from '../chat/Composer.js'
 import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
 import { ContextInspector } from '../chat/ContextInspector.js'
+import { CanvasPane } from '../canvas/CanvasPane.js'
 import { SideThread } from '../chat/SideThread.js'
 import { SecretWarning } from '../chat/SecretWarning.js'
 import { CommandPalette } from './CommandPalette.js'
@@ -95,6 +96,7 @@ export function App(): React.JSX.Element {
           <Composer />
         </main>
 
+        <CanvasPane />
         <ContextInspector />
         <SideThread />
       </div>
