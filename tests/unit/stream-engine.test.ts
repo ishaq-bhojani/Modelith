@@ -79,6 +79,37 @@ describe('StreamEngine', () => {
     expect(saved.map((m) => [m.role, m.content])).toEqual([['user', 'hi'], ['assistant', 'hello']])
   })
 
+  it('records provenance (model, provider, usage) on the persisted assistant reply', async () => {
+    const s = await store.create('t')
+    const engine = build(fakeProvider([
+      { type: 'text', delta: 'hi' },
+      { type: 'done', usage: { promptTokens: 12, completionTokens: 3 } },
+    ]))
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'sonnet', content: 'q' })
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+    const reply = (await store.load(s.id))[1]
+    expect(reply?.model).toBe('sonnet')
+    expect(reply?.provider).toBe('fake')
+    expect(reply?.usage).toEqual({ promptTokens: 12, completionTokens: 3 })
+  })
+
+  it('prepends a system prompt so it reaches the provider', async () => {
+    const s = await store.create('t')
+    let seenRoles: string[] = []
+    const provider: Provider = {
+      id: 'fake', label: 'Fake', defaultBaseUrl: 'http://localhost', requiresKey: false,
+      listModels: async () => [],
+      async *streamChat(req) {
+        seenRoles = req.messages.map((m) => m.role)
+        yield { type: 'done' }
+      },
+    }
+    const engine = build(provider)
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi', systemPrompt: 'You are terse.' })
+    await waitFor(() => seenRoles.length > 0)
+    expect(seenRoles[0]).toBe('system')
+  })
+
   it('emits an auth error when no key is configured', async () => {
     const s = await store.create('t')
     const engine = new StreamEngine({

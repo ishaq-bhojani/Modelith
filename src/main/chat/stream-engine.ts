@@ -2,13 +2,17 @@ import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
-import type { ChatMessage, StreamEnvelope, StreamEvent } from '../../shared/types.js'
+import type { ChatMessage, StreamEnvelope, StreamEvent, Usage } from '../../shared/types.js'
 
 export interface StartInput {
   sessionId: string
   providerId: string
   model: string
   content: string
+  /** Optional system prompt (from a Mode), prepended before budgeting. */
+  systemPrompt?: string
+  /** Optional sampling temperature passed through to the provider. */
+  temperature?: number
 }
 
 export interface StreamEngineDeps {
@@ -112,16 +116,27 @@ export class StreamEngine {
     }
 
     const history = await store.load(sessionId)
-    const budgeted = applyContextBudget(history, this.deps.maxContextTokens ?? 96_000)
+    // A Mode's system prompt is prepended before budgeting. The context budget
+    // always retains system messages, and providers already handle the system
+    // role, so this needs no special downstream handling.
+    const withSystem: ChatMessage[] = input.systemPrompt
+      ? [
+          { id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() },
+          ...history,
+        ]
+      : history
+    const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
     // budgeted.omittedCount is intentionally unconsumed here — see context-budget.ts.
 
     let assembled = ''
     let incomplete = false
+    let usage: Usage | undefined
 
     try {
       const request = {
         model: input.model,
         messages: budgeted.messages,
+        ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
         config: {
           apiKey: apiKey ?? '',
           fetch: this.deps.fetch ?? globalThis.fetch,
@@ -130,6 +145,7 @@ export class StreamEngine {
       for await (const event of provider.streamChat(request, controller.signal)) {
         if (controller.signal.aborted) { incomplete = true; break }
         if (event.type === 'text') assembled += event.delta
+        if (event.type === 'done') usage = event.usage
         this.send(streamId, sessionId, event)
         // A stream that ends via a provider error (a rate limit or 5xx that
         // arrives mid-stream, after some text has already been yielded) has
@@ -162,6 +178,12 @@ export class StreamEngine {
           role: 'assistant',
           content: assembled,
           createdAt: Date.now(),
+          // Provenance: which model/provider produced this reply, and its token
+          // usage. Rendered as a badge and used to derive cost. All optional, so
+          // messages persisted before this stays valid.
+          model: input.model,
+          provider: input.providerId,
+          ...(usage ? { usage } : {}),
           ...(incomplete ? { incomplete: true } : {}),
         })
       } catch {

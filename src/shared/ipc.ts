@@ -42,6 +42,10 @@ export const SendSchema = z.object({
   providerId: z.string().min(1),
   model: z.string().min(1),
   content: z.string(),
+  // Optional system prompt (from a Mode); prepended by the engine before
+  // budgeting. Optional temperature flows through to the provider request.
+  systemPrompt: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
 })
 
 export const AbortSchema = z.object({ streamId: z.string().min(1) })

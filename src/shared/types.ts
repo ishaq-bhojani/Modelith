@@ -6,6 +6,14 @@ export interface ChatMessage {
   content: string
   createdAt: number
   incomplete?: boolean
+  /** Provenance: the model that produced an assistant reply. Absent on user
+   *  messages and on any message persisted before provenance was recorded, so
+   *  it must always be treated as optional at the render layer. */
+  model?: string
+  /** Provenance: the provider that produced an assistant reply. */
+  provider?: string
+  /** Token counts from the provider's `done` event, used to derive cost. */
+  usage?: Usage
 }
 
 export interface ModelInfo {

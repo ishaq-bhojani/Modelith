@@ -19,6 +19,7 @@ export interface OpenCoderBridge {
   chat: {
     send(input: {
       sessionId: string; providerId: string; model: string; content: string
+      systemPrompt?: string; temperature?: number
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void

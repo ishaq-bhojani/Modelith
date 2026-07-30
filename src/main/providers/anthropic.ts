@@ -91,6 +91,7 @@ export function createAnthropicProvider(): Provider {
             model: request.model,
             max_tokens: 8192,
             stream: true,
+            ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
             ...(system ? { system } : {}),
             messages: turns,
           }),

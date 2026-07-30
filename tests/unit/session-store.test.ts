@@ -159,4 +159,61 @@ describe('SessionStore', () => {
     await mkdir(filePath)
     await expect(store.load(s.id)).rejects.toThrow(new RegExp(s.id))
   })
+
+  it('replaceMessages rewrites the whole file', async () => {
+    const s = await store.create('t')
+    await store.append(s.id, msg('1', 'one'))
+    await store.append(s.id, msg('2', 'two'))
+    await store.replaceMessages(s.id, [msg('1', 'one'), msg('2', 'edited')])
+    expect((await store.load(s.id)).map((m) => m.content)).toEqual(['one', 'edited'])
+    const raw = await readFile(join(dir, `${s.id}.jsonl`), 'utf8')
+    expect(raw.trimEnd().split('\n')).toHaveLength(2)
+  })
+
+  it('replaceMessages can truncate a session', async () => {
+    const s = await store.create('t')
+    await store.append(s.id, msg('1', 'one'))
+    await store.append(s.id, msg('2', 'two'))
+    await store.append(s.id, msg('3', 'three'))
+    await store.replaceMessages(s.id, [msg('1', 'one')])
+    expect((await store.load(s.id)).map((m) => m.content)).toEqual(['one'])
+  })
+
+  it('replaceMessages with an empty array leaves a loadable empty session', async () => {
+    const s = await store.create('t')
+    await store.append(s.id, msg('1', 'one'))
+    await store.replaceMessages(s.id, [])
+    expect(await store.load(s.id)).toEqual([])
+  })
+
+  it('branch copies messages up to and including the cutoff into a new session', async () => {
+    const s = await store.create('source')
+    await store.append(s.id, msg('a', 'first'))
+    await store.append(s.id, msg('b', 'second'))
+    await store.append(s.id, msg('c', 'third'))
+    const forked = await store.branch(s.id, 'b', 'forked')
+    expect(forked.id).not.toBe(s.id)
+    expect((await store.load(forked.id)).map((m) => m.content)).toEqual(['first', 'second'])
+    // The source is untouched.
+    expect((await store.load(s.id)).map((m) => m.content)).toEqual(['first', 'second', 'third'])
+  })
+
+  it('branch with an unknown cutoff copies the whole source', async () => {
+    const s = await store.create('source')
+    await store.append(s.id, msg('a', 'first'))
+    await store.append(s.id, msg('b', 'second'))
+    const forked = await store.branch(s.id, 'does-not-exist', 'forked')
+    expect((await store.load(forked.id)).map((m) => m.content)).toEqual(['first', 'second'])
+  })
+
+  it('setPinned / setArchived / setTags persist to the index', async () => {
+    const s = await store.create('t')
+    await store.setPinned(s.id, true)
+    await store.setArchived(s.id, true)
+    await store.setTags(s.id, ['work', 'urgent'])
+    const meta = (await store.list()).find((m) => m.id === s.id)
+    expect(meta?.pinned).toBe(true)
+    expect(meta?.archived).toBe(true)
+    expect(meta?.tags).toEqual(['work', 'urgent'])
+  })
 })
