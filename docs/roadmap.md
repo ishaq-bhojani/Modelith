@@ -13,6 +13,15 @@ Open Coder is the only agent desktop that is **provider-agnostic by construction
 Everything below either widens that gap or is table stakes we cannot ship without. When
 you are deciding what to work on, prefer the former.
 
+## Shipped
+
+The **lovable batch** (branch `feat/lovable-batch`) landed items 2, 3 (partial), 4
+(partial), 5, 6, 20, 21, 22, 23, 24, 27, 28, 29, 32, plus a frameless
+platform-title-bar chrome pass. Deferred within those: per-day/per-provider cost
+aggregates, and image/vision attachments (a content-model change of their own).
+Still open: Model Race (1), the artifact canvas (8–13 of section B, its own spec),
+the agent/filesystem cluster (14–19), MCP (17), and the desktop item 31.
+
 ## How to read the tiers
 
 | Tier | Meaning |
