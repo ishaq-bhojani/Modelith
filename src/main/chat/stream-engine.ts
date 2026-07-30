@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
+import { TOOL_SPECS, executeTool, type ApprovalDecision, type PendingEdit } from './tools.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
-import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, Usage } from '../../shared/types.js'
+import type { Workspace } from '../workspace/service.js'
+import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
 
 export interface Fallback {
   providerId: string
@@ -16,6 +18,9 @@ export interface StartInput {
   content: string
   /** Image attachments sent with this turn (spec §B). */
   attachments?: Attachment[]
+  /** When true (and a workspace is open), the model may call edit tools behind
+   *  the approval gate (agentic-edits spec §3). Off = plain chat, no tools. */
+  agent?: boolean
   /** Optional system prompt (from a Mode), prepended before budgeting. */
   systemPrompt?: string
   /** Optional sampling temperature passed through to the provider. */
@@ -34,7 +39,12 @@ export interface StreamEngineDeps {
   resolveProvider(providerId: string): Provider
   fetch?: FetchLike
   maxContextTokens?: number
+  /** Present when agentic edits are available; absent = tools disabled. */
+  workspace?: Workspace
 }
+
+/** Hard cap on tool round-trips per user turn (agentic-edits spec §3). */
+const MAX_TOOL_ITERATIONS = 12
 
 export class StreamEngine {
   private readonly active = new Map<string, AbortController>()
@@ -44,12 +54,20 @@ export class StreamEngine {
   // session at a time — otherwise two concurrent turns could interleave writes
   // to the same file. Turns against different sessions are unaffected.
   private readonly activeSessions = new Set<string>()
+  // Writes awaiting a user decision at the diff gate, keyed by tool-call id.
+  private readonly pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
 
   constructor(private readonly deps: StreamEngineDeps) {}
 
   abort(streamId: string): void {
     this.active.get(streamId)?.abort()
     this.active.delete(streamId)
+  }
+
+  /** Deliver a diff-gate decision from the renderer (agentic-edits spec §4). */
+  resolveApproval(callId: string, decision: ApprovalDecision): void {
+    const resolve = this.pendingApprovals.get(callId)
+    if (resolve) { this.pendingApprovals.delete(callId); resolve(decision) }
   }
 
   async start(input: StartInput): Promise<{ streamId: string }> {
@@ -131,133 +149,208 @@ export class StreamEngine {
       return
     }
 
-    const history = await store.load(sessionId)
-    // A Mode's system prompt is prepended before budgeting. The context budget
-    // always retains system messages, and providers already handle the system
-    // role, so this needs no special downstream handling.
-    const withSystem: ChatMessage[] = input.systemPrompt
-      ? [
-          { id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() },
-          ...history,
-        ]
-      : history
-    const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
-    // budgeted.omittedCount is intentionally unconsumed here — see context-budget.ts.
+    // Agentic edits are available only when explicitly requested AND a
+    // workspace is wired; otherwise this stays a plain chat with no tools.
+    const agent = input.agent === true && this.deps.workspace !== undefined
+    const tools = agent ? TOOL_SPECS : undefined
+    const turnId = streamId // one id for the whole user turn (checkpoints/revert)
 
-    // The primary followed by any configured fallbacks. Failover only happens
-    // *within this one turn* — the session stays marked busy throughout, so the
-    // one-turn-per-session invariant is never violated (a fallback is a retry,
-    // not a second concurrent turn).
+    // The primary followed by any configured fallbacks. Failover only happens on
+    // the FIRST streamed turn (before any tool round-trip commits us to a
+    // provider) and *within this one user turn* — the session stays busy
+    // throughout, so the one-turn-per-session invariant is never violated.
     const attempts: Fallback[] = [
       { providerId: input.providerId, model: input.model },
       ...(input.fallbacks ?? []),
     ]
 
+    // The agentic tool loop: stream a turn; if the model requested no tools,
+    // finish; otherwise run the tools (gating writes) and stream again with the
+    // results appended, bounded by MAX_TOOL_ITERATIONS.
+    for (let iteration = 0; ; iteration++) {
+      if (controller.signal.aborted) break
+
+      const history = await store.load(sessionId)
+      const withSystem: ChatMessage[] = input.systemPrompt
+        ? [{ id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() }, ...history]
+        : history
+      const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
+
+      const turn = await this.streamTurn(streamId, sessionId, budgeted.messages, attempts, controller, {
+        allowFailover: iteration === 0,
+        primaryKey,
+        ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
+        ...(tools ? { tools } : {}),
+      })
+
+      const aborted = controller.signal.aborted
+      const incomplete = turn.incomplete || aborted
+      // Persist the assistant message (text + any tool calls it requested).
+      if (turn.assembled.length > 0 || turn.toolCalls.length > 0 || incomplete) {
+        try {
+          await store.append(sessionId, {
+            id: randomUUID(),
+            role: 'assistant',
+            content: turn.assembled,
+            createdAt: Date.now(),
+            model: turn.finalModel,
+            provider: turn.finalProviderId,
+            turnId,
+            ...(turn.toolCalls.length > 0 ? { toolCalls: turn.toolCalls } : {}),
+            ...(turn.usage ? { usage: turn.usage } : {}),
+            ...(incomplete ? { incomplete: true } : {}),
+          })
+        } catch {
+          this.send(streamId, sessionId, { type: 'error', error: { kind: 'unknown', message: 'The reply could not be saved.' } })
+          return
+        }
+      }
+
+      if (turn.error) { this.send(streamId, sessionId, { type: 'error', error: turn.error }); return }
+      if (aborted) return
+
+      // No tool calls → the turn is complete.
+      if (turn.toolCalls.length === 0) {
+        this.send(streamId, sessionId, {
+          type: 'done', model: turn.finalModel, provider: turn.finalProviderId, ...(turn.usage ? { usage: turn.usage } : {}),
+        })
+        return
+      }
+
+      if (iteration >= MAX_TOOL_ITERATIONS) {
+        this.send(streamId, sessionId, { type: 'notice', text: 'Tool-call limit reached; stopping.' })
+        this.send(streamId, sessionId, { type: 'done', model: turn.finalModel, provider: turn.finalProviderId })
+        return
+      }
+
+      // Execute each requested tool; reads run immediately, writes gate.
+      for (const call of turn.toolCalls) {
+        if (controller.signal.aborted) return
+        const outcome = await executeTool(call.name, call.arguments, call.id, {
+          workspace: this.deps.workspace!,
+          turnId,
+          requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller),
+        })
+        this.send(streamId, sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: !outcome.isError, summary: outcome.result.slice(0, 200) })
+        try {
+          await store.append(sessionId, {
+            id: randomUUID(), role: 'tool', content: outcome.result, toolCallId: call.id, createdAt: Date.now(),
+          })
+        } catch {
+          this.send(streamId, sessionId, { type: 'error', error: { kind: 'unknown', message: 'A tool result could not be saved.' } })
+          return
+        }
+      }
+      // Loop: the next streamTurn includes the tool results as context.
+    }
+  }
+
+  /**
+   * Emit a pending write to the renderer and await the user's decision. If the
+   * turn aborts while waiting, resolves as a reject so the loop unwinds cleanly.
+   */
+  private requestApproval(
+    streamId: string,
+    sessionId: string,
+    edit: PendingEdit,
+    controller: AbortController,
+  ): Promise<ApprovalDecision> {
+    return new Promise<ApprovalDecision>((resolve) => {
+      if (controller.signal.aborted) { resolve({ action: 'reject' }); return }
+      const settle = (decision: ApprovalDecision) => {
+        controller.signal.removeEventListener('abort', onAbort)
+        resolve(decision)
+      }
+      const onAbort = () => { this.pendingApprovals.delete(edit.callId); settle({ action: 'reject' }) }
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+      this.pendingApprovals.set(edit.callId, settle)
+      this.send(streamId, sessionId, {
+        type: 'tool_pending', callId: edit.callId, tool: edit.tool, relPath: edit.relPath, previous: edit.previous, proposed: edit.proposed,
+      })
+    })
+  }
+
+  /**
+   * Stream a single provider turn: sends text/reasoning/notice to the renderer,
+   * emits tool-call activity, and returns the assembled text plus any tool calls
+   * the model requested. Failover (across configured fallbacks) applies only
+   * when `allowFailover` is set and nothing has streamed yet.
+   */
+  private async streamTurn(
+    streamId: string,
+    sessionId: string,
+    messages: ChatMessage[],
+    attempts: Fallback[],
+    controller: AbortController,
+    opts: { allowFailover: boolean; primaryKey: string | null; temperature?: number; tools?: typeof TOOL_SPECS },
+  ): Promise<{
+    assembled: string
+    toolCalls: ToolCall[]
+    usage?: Usage
+    incomplete: boolean
+    error?: ProviderError
+    finalProviderId: string
+    finalModel: string
+  }> {
+    const { resolveProvider, readKey } = this.deps
     let assembled = ''
     let incomplete = false
     let usage: Usage | undefined
-    let finalProviderId = input.providerId
-    let finalModel = input.model
+    let finalProviderId = attempts[0]!.providerId
+    let finalModel = attempts[0]!.model
+    let toolCalls: ToolCall[] = []
 
-    for (let i = 0; i < attempts.length; i++) {
+    const maxAttempts = opts.allowFailover ? attempts.length : 1
+    for (let i = 0; i < maxAttempts; i++) {
       const attempt = attempts[i]
       if (!attempt || controller.signal.aborted) break
 
       const provider = resolveProvider(attempt.providerId)
-      const apiKey = i === 0 ? primaryKey : await readKey(attempt.providerId)
-      // A fallback with no usable key is simply skipped, not reported — it is an
-      // alternative, not the user's stated choice.
+      const apiKey = i === 0 ? opts.primaryKey : await readKey(attempt.providerId)
       if (provider.requiresKey && !apiKey) continue
 
       finalProviderId = attempt.providerId
       finalModel = attempt.model
       let attemptError: ProviderError | undefined
+      const calls: ToolCall[] = []
 
       try {
         const request = {
           model: attempt.model,
-          messages: budgeted.messages,
-          ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
+          messages,
           config: { apiKey: apiKey ?? '', fetch: this.deps.fetch ?? globalThis.fetch },
+          ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+          ...(opts.tools ? { tools: opts.tools } : {}),
         }
         for await (const event of provider.streamChat(request, controller.signal)) {
           if (controller.signal.aborted) { incomplete = true; break }
           if (event.type === 'text') { assembled += event.delta; this.send(streamId, sessionId, event) }
           else if (event.type === 'reasoning') { this.send(streamId, sessionId, event) }
+          else if (event.type === 'tool_call') { calls.push({ id: event.id, name: event.name, arguments: event.arguments }); this.send(streamId, sessionId, event) }
           else if (event.type === 'done') { usage = event.usage; break }
           else if (event.type === 'error') { attemptError = event.error; break }
         }
       } catch {
-        // Contractually a provider never throws (it yields an error event), but
-        // a misbehaving one must not discard partial output. Treated as a
-        // non-retryable failure (unknown), so it never triggers failover.
         if (!controller.signal.aborted) attemptError = { kind: 'unknown', message: 'The turn ended unexpectedly.' }
         incomplete = true
       }
 
       if (controller.signal.aborted) { incomplete = true; break }
 
-      // Fail over only when: the failure is transient, nothing has been shown to
-      // the user yet (no duplicated output), and a fallback remains. Otherwise
-      // this attempt is terminal.
       const canFailOver =
-        attemptError !== undefined &&
-        RETRYABLE.has(attemptError.kind) &&
-        assembled === '' &&
-        i < attempts.length - 1
+        attemptError !== undefined && RETRYABLE.has(attemptError.kind) &&
+        assembled === '' && calls.length === 0 && i < maxAttempts - 1
       if (canFailOver) {
         const next = attempts[i + 1]
-        this.send(streamId, sessionId, {
-          type: 'notice',
-          text: `${attempt.providerId} failed (${attemptError!.kind}) — retrying on ${next?.providerId}.`,
-        })
+        this.send(streamId, sessionId, { type: 'notice', text: `${attempt.providerId} failed (${attemptError!.kind}) — retrying on ${next?.providerId}.` })
         continue
       }
 
-      if (attemptError) {
-        // A stream that ends via a provider error has output as truncated as an
-        // abort does — persist it marked incomplete, indistinguishable from a
-        // reply that finished normally would be wrong.
-        incomplete = true
-        this.send(streamId, sessionId, { type: 'error', error: attemptError })
-      } else {
-        this.send(streamId, sessionId, {
-          type: 'done',
-          model: finalModel,
-          provider: finalProviderId,
-          ...(usage ? { usage } : {}),
-        })
-      }
+      if (attemptError) { incomplete = true; return { assembled, toolCalls: [], incomplete, error: attemptError, finalProviderId, finalModel, ...(usage ? { usage } : {}) } }
+      toolCalls = calls
       break
     }
 
-    if (controller.signal.aborted) incomplete = true
-
-    if (assembled.length > 0 || incomplete) {
-      try {
-        await store.append(sessionId, {
-          id: randomUUID(),
-          role: 'assistant',
-          content: assembled,
-          createdAt: Date.now(),
-          // Provenance: which model/provider actually produced this reply (the
-          // fallback, if failover occurred), and its token usage. Rendered as a
-          // badge and used to derive cost. All optional, so messages persisted
-          // before this stays valid.
-          model: finalModel,
-          provider: finalProviderId,
-          ...(usage ? { usage } : {}),
-          ...(incomplete ? { incomplete: true } : {}),
-        })
-      } catch {
-        // The user just watched this text stream in; if it can't be
-        // persisted they need to know it didn't survive, not just have the
-        // stream go quiet.
-        this.send(streamId, sessionId, {
-          type: 'error',
-          error: { kind: 'unknown', message: 'The reply could not be saved.' },
-        })
-      }
-    }
+    return { assembled, toolCalls, incomplete, finalProviderId, finalModel, ...(usage ? { usage } : {}) }
   }
 }

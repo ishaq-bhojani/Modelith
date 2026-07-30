@@ -20,12 +20,15 @@ export interface OpenCoderBridge {
     send(input: {
       sessionId: string; providerId: string; model: string; content: string
       attachments?: Attachment[]
+      agent?: boolean
       systemPrompt?: string; temperature?: number
       fallbacks?: { providerId: string; model: string }[]
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
     preview(sessionId: string): Promise<ContextPreview>
+    /** Deliver a diff-gate decision (agentic-edits spec §4). */
+    toolDecision(callId: string, action: 'accept' | 'reject' | 'edited', content?: string): Promise<void>
   }
   sessions: {
     list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[] }[]>
@@ -63,6 +66,8 @@ export interface OpenCoderBridge {
     current(): Promise<string | null>
     tree(): Promise<WorkspaceTreeEntry[]>
     read(relPath: string): Promise<{ relPath: string; text: string }>
+    /** Revert every edit made in a turn (agentic-edits spec §5). */
+    revert(turnId: string): Promise<number>
   }
 }
 
@@ -86,6 +91,7 @@ const bridge: OpenCoderBridge = {
       return () => { ipcRenderer.off(CHANNELS.chatEvent, listener) }
     },
     preview: (sessionId) => ipcRenderer.invoke(CHANNELS.chatPreview, { id: sessionId }),
+    toolDecision: (callId, action, content) => ipcRenderer.invoke(CHANNELS.chatToolDecision, { callId, action, content }),
   },
   sessions: {
     list: () => ipcRenderer.invoke(CHANNELS.sessionsList),
@@ -134,6 +140,7 @@ const bridge: OpenCoderBridge = {
     current: () => ipcRenderer.invoke(CHANNELS.workspaceCurrent),
     tree: () => ipcRenderer.invoke(CHANNELS.workspaceTree),
     read: (relPath) => ipcRenderer.invoke(CHANNELS.workspaceRead, { relPath }),
+    revert: (turnId) => ipcRenderer.invoke(CHANNELS.workspaceRevert, { turnId }),
   },
 }
 

@@ -83,3 +83,51 @@ describe('message mapping — image attachments per provider wire shape', () => 
     ])
   })
 })
+
+describe('message mapping — tool calls and results', () => {
+  const convo: ChatMessage[] = [
+    { id: '1', role: 'user', content: 'edit the file', createdAt: 0 },
+    {
+      id: '2', role: 'assistant', content: '', createdAt: 1,
+      toolCalls: [{ id: 'call_1', name: 'write_file', arguments: '{"path":"a.txt","content":"x"}' }],
+    },
+    { id: '3', role: 'tool', content: 'Applied change to a.txt.', toolCallId: 'call_1', createdAt: 2 },
+  ]
+
+  it('openai serialises tool_calls on the assistant and role:tool results', () => {
+    const out = toOpenAiMessages(convo)
+    expect(out[1]).toEqual({
+      role: 'assistant', content: null,
+      tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.txt","content":"x"}' } }],
+    })
+    expect(out[2]).toEqual({ role: 'tool', tool_call_id: 'call_1', content: 'Applied change to a.txt.' })
+  })
+
+  it('anthropic serialises tool_use blocks and tool_result as a user turn', () => {
+    const out = toAnthropicMessages(convo)
+    expect(out[1]).toEqual({
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'call_1', name: 'write_file', input: { path: 'a.txt', content: 'x' } }],
+    })
+    expect(out[2]).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'Applied change to a.txt.' }],
+    })
+  })
+
+  it('anthropic merges consecutive tool results into one user turn', () => {
+    const two: ChatMessage[] = [
+      { id: '3', role: 'tool', content: 'r1', toolCallId: 'c1', createdAt: 0 },
+      { id: '4', role: 'tool', content: 'r2', toolCallId: 'c2', createdAt: 1 },
+    ]
+    const out = toAnthropicMessages(two)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 'c1', content: 'r1' },
+        { type: 'tool_result', tool_use_id: 'c2', content: 'r2' },
+      ],
+    })
+  })
+})

@@ -1,4 +1,20 @@
-export type Role = 'system' | 'user' | 'assistant'
+export type Role = 'system' | 'user' | 'assistant' | 'tool'
+
+/** A tool invocation the model requested (agentic-edits spec §3). */
+export interface ToolCall {
+  id: string
+  name: string
+  /** Raw JSON arguments as the model emitted them; parsed by the executor. */
+  arguments: string
+}
+
+/** A tool definition advertised to a tool-calling provider. */
+export interface ToolSpec {
+  name: string
+  description: string
+  /** JSON Schema for the tool's arguments object. */
+  parameters: Record<string, unknown>
+}
 
 /**
  * A non-text part of a message (spec §B.1). Additive: `content` stays the
@@ -22,6 +38,13 @@ export interface ChatMessage {
   createdAt: number
   /** Non-text parts (images) sent with this message; absent on most messages. */
   attachments?: Attachment[]
+  /** Tool calls an assistant message requested (agentic-edits spec §3). */
+  toolCalls?: ToolCall[]
+  /** For a role:'tool' result message, the call id it answers. */
+  toolCallId?: string
+  /** The user-turn id an assistant message belongs to, for one-click revert of
+   *  all edits made in that turn (agentic-edits spec §5). */
+  turnId?: string
   incomplete?: boolean
   /** Provenance: the model that produced an assistant reply. Absent on user
    *  messages and on any message persisted before provenance was recorded, so
@@ -68,6 +91,8 @@ export interface ProviderSummary {
   /** Whether the provider can read image attachments (spec §B.2). Conservative
    *  default false; the composer warns quietly when attaching to a false one. */
   vision: boolean
+  /** Whether the provider supports tool calling (agentic-edits spec §3). */
+  tools: boolean
 }
 
 /** A named preset: system prompt + model + temperature, applied to a turn. */
@@ -130,10 +155,17 @@ export type StreamEvent =
   // accurate badge and cost immediately, without waiting for a reload. A
   // provider's own `done` may omit them; the engine fills them in.
   | { type: 'done'; usage?: Usage; model?: string; provider?: string }
+  // A completed tool call the model requested this turn (agentic-edits spec §3).
+  | { type: 'tool_call'; id: string; name: string; arguments: string }
   | { type: 'error'; error: ProviderError }
   // Engine-originated status (never emitted by a provider), e.g. a failover
   // notice. Shown transiently above the streaming reply, not persisted.
   | { type: 'notice'; text: string }
+  // Engine-originated: a write awaiting the user's approval at the diff gate
+  // (agentic-edits spec §4). The renderer diffs `previous`→`proposed`.
+  | { type: 'tool_pending'; callId: string; tool: string; relPath: string; previous: string | null; proposed: string }
+  // Engine-originated: a tool call finished (activity line in the transcript).
+  | { type: 'tool_result'; callId: string; name: string; ok: boolean; summary: string }
 
 /** One chat-stream event, tagged with the stream and session it belongs to. */
 export interface StreamEnvelope {

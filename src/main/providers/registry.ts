@@ -35,6 +35,13 @@ function dataPolicyFor(id: string): DataPolicy {
  */
 const VISION = new Set(['anthropic', 'openrouter', 'ollama', 'fake'])
 
+/**
+ * Providers with tool-calling support (agentic-edits spec §3, decision C:
+ * Anthropic + OpenAI-compatible first). Ollama tool support is model-dependent
+ * and folded in later; local LM Studio likewise depends on the loaded model.
+ */
+const TOOLS = new Set(['anthropic', 'openrouter', 'deepseek', 'groq', 'kimi', 'fake'])
+
 /** Chromium's network stack, so system proxy configuration is honoured. */
 export const mainFetch: FetchLike = (url, init) => net.fetch(url, init)
 
@@ -45,8 +52,35 @@ const fakeProvider: Provider = {
     // When a prompt asks for "canvas", emit a small HTML artifact so the canvas
     // pane can be exercised in E2E. No existing test uses that word, so the
     // default greeting path is unaffected.
+    const lastMsg = req.messages[req.messages.length - 1]
     const lastUserMsg = [...req.messages].reverse().find((m) => m.role === 'user')
     const lastUser = lastUserMsg?.content ?? ''
+
+    // Agentic-edits E2E: when tools are offered and the prompt asks to edit,
+    // emit a tool call; once its result comes back (last message is role:'tool'),
+    // finish with a short confirmation.
+    if (req.tools && req.tools.length > 0) {
+      if (lastMsg?.role === 'tool') {
+        for (const c of ['Done', ' — ', 'applied.']) {
+          if (signal.aborted) return
+          await new Promise((r) => setTimeout(r, 12))
+          yield { type: 'text' as const, delta: c }
+        }
+        yield { type: 'done' as const }
+        return
+      }
+      const callId = `call-${req.messages.length}`
+      if (/agent write|create file/i.test(lastUser)) {
+        yield { type: 'tool_call' as const, id: callId, name: 'write_file', arguments: JSON.stringify({ path: 'notes.txt', content: 'hello from the agent\n' }) }
+        yield { type: 'done' as const }
+        return
+      }
+      if (/agent escape/i.test(lastUser)) {
+        yield { type: 'tool_call' as const, id: callId, name: 'write_file', arguments: JSON.stringify({ path: '../escape.txt', content: 'nope' }) }
+        yield { type: 'done' as const }
+        return
+      }
+    }
     // Echo received image attachments so E2E can prove they reached the provider.
     const imgs = (lastUserMsg?.attachments ?? []).filter((a) => a.type === 'image')
     if (imgs.length > 0) {
@@ -103,5 +137,6 @@ export function listProviders(): ProviderSummary[] {
     defaultBaseUrl: p.defaultBaseUrl,
     dataPolicy: dataPolicyFor(p.id),
     vision: VISION.has(p.id),
+    tools: TOOLS.has(p.id),
   }))
 }
