@@ -1,6 +1,8 @@
 # Spec: Agentic edits — tool loop, diff-approval gate, checkpoints (sub-project #3)
 
-**Status:** DRAFT — awaiting sign-off before any file-writing code is written.
+**Status:** APPROVED. Decisions: A = universal pre-image snapshots in userData;
+B = write_file + apply_edit + create (delete deferred); C = Anthropic +
+OpenAI-compat tool-calling first (Ollama folded in if smooth).
 **Roadmap:** the coding capability that makes this a coding tool, not a chat app.
 **Depends on:** workspace read (#2, merged) for the confined-root foundation.
 **Enables:** MCP (#4) and terminal (#5) reuse the same tool-calling loop.
