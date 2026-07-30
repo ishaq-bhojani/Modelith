@@ -22,6 +22,23 @@ export interface ModelInfo {
   contextWindow: number
 }
 
+/** Plainly-stated data handling for a provider, shown as a badge. */
+export interface DataPolicy {
+  /** Whether the provider may train on inputs sent to it. */
+  trainsOnInput: boolean
+  /** True for local runtimes that make no outbound call at all. */
+  local: boolean
+  /** Link to the provider's policy, when there is one to cite. */
+  url?: string
+}
+
+export interface ProviderSummary {
+  id: string
+  label: string
+  defaultBaseUrl: string
+  dataPolicy: DataPolicy
+}
+
 // No 'aborted' kind: an abort is renderer-initiated (the user clicked Stop),
 // so the renderer already knows without needing an error event, and the
 // engine deliberately never emits one for it (see stream-engine.ts). A kind
@@ -50,8 +67,15 @@ export interface Usage {
 export type StreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'reasoning'; delta: string }
-  | { type: 'done'; usage?: Usage }
+  // `model`/`provider` are the ones that ACTUALLY produced the reply (the
+  // fallback, after failover). The engine adds them so the renderer can show an
+  // accurate badge and cost immediately, without waiting for a reload. A
+  // provider's own `done` may omit them; the engine fills them in.
+  | { type: 'done'; usage?: Usage; model?: string; provider?: string }
   | { type: 'error'; error: ProviderError }
+  // Engine-originated status (never emitted by a provider), e.g. a failover
+  // notice. Shown transiently above the streaming reply, not persisted.
+  | { type: 'notice'; text: string }
 
 /** One chat-stream event, tagged with the stream and session it belongs to. */
 export interface StreamEnvelope {

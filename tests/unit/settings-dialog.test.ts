@@ -11,7 +11,7 @@ import { SettingsDialog } from '../../src/renderer/settings/SettingsDialog.js'
 // mocked here rather than assumed to exist under jsdom.
 function installBridge(overrides: Partial<typeof window.openCoder> = {}): void {
   ;(window as unknown as { openCoder: unknown }).openCoder = {
-    providers: { list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic' }]) },
+    providers: { list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', dataPolicy: { trainsOnInput: false, local: false } }]) },
     keys: {
       has: vi.fn().mockResolvedValue(false),
       set: vi.fn().mockResolvedValue(undefined),
@@ -45,7 +45,7 @@ describe('SettingsDialog error surfacing', () => {
   it('reports a failed key save through the store error field instead of failing silently', async () => {
     installBridge({
       providers: {
-        list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic' }]),
+        list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', dataPolicy: { trainsOnInput: false, local: false } }]),
         models: vi.fn().mockResolvedValue([]),
       } as unknown as typeof window.openCoder.providers,
       keys: {

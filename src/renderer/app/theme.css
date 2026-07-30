@@ -630,6 +630,135 @@ body.resizing {
   background: var(--accent);
 }
 
+.session-cost {
+  flex: none;
+  font: 500 12px/1 var(--font-mono);
+  color: var(--text-meta);
+  padding: 0 4px;
+}
+
+/* Model picker (header dropdown) */
+.model-picker {
+  position: relative;
+}
+.model-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+.model-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: 4px;
+}
+.model-dropdown-provider {
+  font: 600 12px/1 var(--font-body);
+  color: var(--text);
+}
+.model-dropdown-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.model-dropdown-empty {
+  padding: 12px 10px;
+  font: 400 12.5px/1.4 var(--font-body);
+  color: var(--text-meta);
+}
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-body);
+  font: 500 13px/1 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.model-option:hover {
+  background: var(--hover-soft);
+}
+.model-option-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+}
+.model-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-dropdown-foot {
+  margin-top: 4px;
+  padding: 9px 10px;
+  border: none;
+  border-top: 1px solid var(--divider);
+  background: transparent;
+  color: var(--text-mute);
+  font: 500 12px/1 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0 0 9px 9px;
+}
+.model-dropdown-foot:hover {
+  background: var(--hover-soft);
+  color: var(--text);
+}
+
+/* Data-policy badges */
+.policy-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  font: 600 10px/1 var(--font-body);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.policy-local {
+  background: rgba(0, 168, 126, 0.16);
+  color: var(--success-text);
+}
+.policy-ok {
+  background: var(--hover);
+  color: var(--text-mute);
+}
+.policy-warn {
+  background: rgba(236, 126, 0, 0.16);
+  color: var(--warning);
+}
+
+/* Failover / engine status shown transiently above the streaming reply */
+.stream-notice {
+  align-self: flex-start;
+  max-width: var(--measure);
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  font: 400 12.5px/1.4 var(--font-body);
+  color: var(--text-mute);
+}
+
 /* ============================================================================
    Transcript
    ========================================================================= */
@@ -1119,6 +1248,23 @@ body.resizing {
 .field-hint {
   font: 400 12px/1.45 var(--font-body);
   color: var(--text-meta);
+}
+.field-policy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-policy a {
+  font: 400 12px/1 var(--font-body);
+  color: var(--accent);
+}
+.fallback-row {
+  display: flex;
+  gap: 8px;
+}
+.fallback-row select {
+  flex: 1;
+  min-width: 0;
 }
 .key-status {
   display: inline-flex;

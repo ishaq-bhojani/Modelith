@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { costOf, PRICING } from '../../src/main/cost/pricing.js'
+import { costOf, PRICING } from '../../src/shared/pricing.js'
 
 describe('costOf', () => {
   it('computes cost from input and output tokens', () => {

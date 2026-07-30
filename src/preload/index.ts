@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ModelInfo, StreamEnvelope } from '../shared/types.js'
+import type { ChatMessage, ModelInfo, ProviderSummary, StreamEnvelope } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -13,13 +13,14 @@ export interface OpenCoderBridge {
     has(providerId: string): Promise<boolean>
   }
   providers: {
-    list(): Promise<{ id: string; label: string }[]>
+    list(): Promise<ProviderSummary[]>
     models(providerId: string): Promise<ModelInfo[]>
   }
   chat: {
     send(input: {
       sessionId: string; providerId: string; model: string; content: string
       systemPrompt?: string; temperature?: number
+      fallbacks?: { providerId: string; model: string }[]
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
@@ -43,6 +44,10 @@ export interface OpenCoderBridge {
   }
   /** Subscribe to a keyboard-accelerator action forwarded from the app menu. */
   onMenu(action: 'new-chat' | 'settings' | 'command-palette' | 'search', handler: () => void): () => void
+  settings: {
+    get(): Promise<Record<string, unknown>>
+    set(patch: Record<string, unknown>): Promise<void>
+  }
 }
 
 const bridge: OpenCoderBridge = {
@@ -96,6 +101,10 @@ const bridge: OpenCoderBridge = {
     const listener = () => handler()
     ipcRenderer.on(channel, listener)
     return () => { ipcRenderer.off(channel, listener) }
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(CHANNELS.settingsGet),
+    set: (patch) => ipcRenderer.invoke(CHANNELS.settingsSet, patch),
   },
 }
 

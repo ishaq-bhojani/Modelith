@@ -7,7 +7,9 @@ import { Transcript } from '../chat/Transcript.js'
 import { Composer } from '../chat/Composer.js'
 import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
-import { IconChevronDown, IconMoon, IconSun } from './icons.js'
+import { ModelPicker } from './ModelPicker.js'
+import { sessionCost, formatTotal } from '../chat/cost.js'
+import { IconMoon, IconSun } from './icons.js'
 
 export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -15,21 +17,21 @@ export function App(): React.JSX.Element {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadProviders = useAppStore((s) => s.loadProviders)
   const loadPlatform = useAppStore((s) => s.loadPlatform)
+  const loadSettings = useAppStore((s) => s.loadSettings)
   const applyEvent = useAppStore((s) => s.applyEvent)
   const theme = useAppStore((s) => s.theme)
   const setTheme = useAppStore((s) => s.setTheme)
 
   const sessions = useAppStore((s) => s.sessions)
   const activeSessionId = useAppStore((s) => s.activeSessionId)
-  const model = useAppStore((s) => s.model)
-  const providerId = useAppStore((s) => s.providerId)
-  const providers = useAppStore((s) => s.providers)
+  const messages = useAppStore((s) => s.messages)
   const openSettings = useAppStore((s) => s.openSettings)
   const newSession = useAppStore((s) => s.newSession)
 
   useEffect(() => { void loadSessions() }, [loadSessions])
   useEffect(() => { void loadProviders() }, [loadProviders])
   useEffect(() => { void loadPlatform() }, [loadPlatform])
+  useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => window.openCoder.chat.onEvent(applyEvent), [applyEvent])
 
   useEffect(() => {
@@ -46,8 +48,7 @@ export function App(): React.JSX.Element {
   }, [newSession, openSettings])
 
   const activeTitle = sessions.find((s) => s.id === activeSessionId)?.title ?? 'Open Coder'
-  const providerLabel = providers.find((p) => p.id === providerId)?.label ?? providerId
-  const modelLabel = model ? `${providerLabel} · ${model}` : 'Choose a model'
+  const costTotal = formatTotal(sessionCost(messages))
 
   return (
     <div className="shell">
@@ -59,6 +60,11 @@ export function App(): React.JSX.Element {
         <main className="chat">
           <header className="chat-head">
             <span className="chat-title">{activeTitle}</span>
+            {costTotal ? (
+              <span className="session-cost" title="Estimated cost of this session" data-testid="session-cost">
+                {costTotal}
+              </span>
+            ) : null}
             <button
               className="icon-button"
               data-testid="toggle-theme"
@@ -68,16 +74,7 @@ export function App(): React.JSX.Element {
             >
               {theme === 'dark' ? <IconSun size={16} /> : <IconMoon size={16} />}
             </button>
-            <button
-              className="pill-button"
-              data-testid="model-pill"
-              title="Change provider or model"
-              onClick={openSettings}
-            >
-              <span className="pill-dot" />
-              <span className="pill-label">{modelLabel}</span>
-              <IconChevronDown size={12} />
-            </button>
+            <ModelPicker />
           </header>
 
           {activeSessionId === null ? <FirstRun /> : <Transcript />}

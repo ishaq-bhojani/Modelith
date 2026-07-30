@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { ChatMessage } from '@shared/types'
 import { IconCheck, IconCopy } from '../app/icons.js'
+import { formatCost } from './cost.js'
 
 /**
  * Model output is attacker-influenceable (prompt injection via pasted
@@ -57,11 +58,23 @@ export const MessageView = memo(function MessageView({
     return <div className="msg-user">{message.content}</div>
   }
 
+  // Provenance for a persisted reply (model that wrote it, and its cost). The
+  // streaming reply shows the currently-selected model via `modelLabel`
+  // instead, since its provenance is not persisted until `done`.
+  const provenance = message.model ?? modelLabel
+  const cost = formatCost(message.usage, message.provider, message.model)
+
   return (
     <article className="msg-assistant">
-      {modelLabel ? (
+      {provenance ? (
         <div className="msg-meta">
-          <span className="msg-model">{modelLabel}</span>
+          <span className="msg-model">{provenance}</span>
+          {cost ? (
+            <>
+              <span className="msg-dot" />
+              <span className="msg-stat" title="Estimated cost of this turn">{cost}</span>
+            </>
+          ) : null}
         </div>
       ) : null}
 

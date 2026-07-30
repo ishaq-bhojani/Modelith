@@ -12,11 +12,13 @@ import {
   SessionCreateSchema,
   SessionRenameSchema,
   ModelsListSchema,
+  SettingsPatchSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import { Keystore } from '../secrets/keystore.js'
 import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
+import { AppSettingsStore } from '../settings/store.js'
 import { StreamEngine } from '../chat/stream-engine.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
 
@@ -37,6 +39,12 @@ export function getKeystore(): Keystore {
 export function getSessionStore(): SessionStore {
   sessionStoreInstance ??= new SessionStore(join(app.getPath('userData'), 'sessions'))
   return sessionStoreInstance
+}
+
+let settingsStoreInstance: AppSettingsStore | undefined
+export function getSettingsStore(): AppSettingsStore {
+  settingsStoreInstance ??= new AppSettingsStore(AppSettingsStore.defaultPath(app.getPath('userData')))
+  return settingsStoreInstance
 }
 
 /**
@@ -120,6 +128,10 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
       return store.rename(id, title)
     }),
   )
+  ipcMain.handle(CHANNELS.settingsGet, () => getSettingsStore().get())
+  ipcMain.handle(CHANNELS.settingsSet, withZodMapping((_e, raw: unknown) => {
+    return getSettingsStore().set(SettingsPatchSchema.parse(raw))
+  }))
   ipcMain.handle(CHANNELS.modelsList, withZodMapping(async (_e, raw: unknown) => {
     const { providerId } = ModelsListSchema.parse(raw)
     const provider = getProvider(providerId)

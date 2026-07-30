@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import type { ModelInfo } from '@shared/types'
+import type { ModelInfo, ProviderSummary } from '@shared/types'
 import { IconCheck, IconLock } from '../app/icons.js'
+import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
 
 export function SettingsDialog(): React.JSX.Element | null {
   const open = useAppStore((s) => s.settingsOpen)
@@ -11,11 +12,26 @@ export function SettingsDialog(): React.JSX.Element | null {
   const setProvider = useAppStore((s) => s.setProvider)
   const model = useAppStore((s) => s.model)
   const setModel = useAppStore((s) => s.setModel)
+  const fallbacks = useAppStore((s) => s.fallbacks)
+  const setFallbacks = useAppStore((s) => s.setFallbacks)
 
-  const [providers, setProviders] = useState<{ id: string; label: string }[]>([])
+  const [providers, setProviders] = useState<ProviderSummary[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
   const [draftKey, setDraftKey] = useState('')
   const [configured, setConfigured] = useState(false)
+  const [fallbackModels, setFallbackModels] = useState<ModelInfo[]>([])
+
+  const selectedProvider = providers.find((p) => p.id === providerId)
+  const fallback = fallbacks[0]
+
+  // When a fallback provider is chosen, fetch its models so a concrete model can
+  // be paired with it (the engine needs both).
+  useEffect(() => {
+    if (!open || !fallback) { setFallbackModels([]); return }
+    void window.openCoder.providers.models(fallback.providerId)
+      .then(setFallbackModels)
+      .catch(() => setFallbackModels([]))
+  }, [open, fallback?.providerId, fallback])
 
   useEffect(() => {
     if (open) void window.openCoder.providers.list().then(setProviders).catch(reportError)
@@ -75,6 +91,14 @@ export function SettingsDialog(): React.JSX.Element | null {
           >
             {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
+          {selectedProvider?.dataPolicy ? (
+            <span className="field-policy">
+              <DataPolicyBadge policy={selectedProvider.dataPolicy} />
+              {selectedProvider.dataPolicy.url ? (
+                <a href={selectedProvider.dataPolicy.url} target="_blank" rel="noreferrer">Policy</a>
+              ) : null}
+            </span>
+          ) : null}
         </div>
 
         <div className="field">
@@ -124,6 +148,43 @@ export function SettingsDialog(): React.JSX.Element | null {
               stored.
             </p>
           ) : null}
+        </div>
+
+        <div className="field">
+          <label htmlFor="fallback-provider">Failover (optional)</label>
+          <div className="fallback-row">
+            <select
+              id="fallback-provider"
+              data-testid="fallback-provider"
+              value={fallback?.providerId ?? ''}
+              onChange={(e) => {
+                const pid = e.target.value
+                if (!pid) { void setFallbacks([]); return }
+                // Provisional until a model is chosen; the engine skips a
+                // fallback whose model is empty, so this is harmless meanwhile.
+                void setFallbacks([{ providerId: pid, model: '' }])
+              }}
+            >
+              <option value="">No fallback</option>
+              {providers
+                .filter((p) => p.id !== providerId)
+                .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            {fallback ? (
+              <select
+                data-testid="fallback-model"
+                value={fallback.model}
+                onChange={(e) => void setFallbacks([{ providerId: fallback.providerId, model: e.target.value }])}
+              >
+                <option value="">Select a model</option>
+                {fallbackModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            ) : null}
+          </div>
+          <p className="field-hint">
+            If the primary provider hits a rate limit or is unavailable before any text
+            arrives, the turn retries here automatically.
+          </p>
         </div>
 
         <div className="dialog-actions">

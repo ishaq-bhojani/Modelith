@@ -29,6 +29,8 @@ export const CHANNELS = {
   menuSettings: 'menu:settings',
   menuCommandPalette: 'menu:command-palette',
   menuSearch: 'menu:search',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -36,6 +38,11 @@ export type AppInfo = z.infer<typeof AppInfoSchema>
 
 export const KeyRefSchema = z.object({ providerId: z.string().min(1) })
 export const KeySetSchema = KeyRefSchema.extend({ apiKey: z.string().min(1) })
+
+export const FallbackSchema = z.object({
+  providerId: z.string().min(1),
+  model: z.string().min(1),
+})
 
 export const SendSchema = z.object({
   sessionId: z.string().min(1),
@@ -46,7 +53,12 @@ export const SendSchema = z.object({
   // budgeting. Optional temperature flows through to the provider request.
   systemPrompt: z.string().optional(),
   temperature: z.number().min(0).max(2).optional(),
+  // Ordered failover targets, tried in turn if the primary fails with a
+  // retryable error before any text has streamed.
+  fallbacks: z.array(FallbackSchema).optional(),
 })
+
+export const SettingsPatchSchema = z.record(z.string(), z.unknown())
 
 export const AbortSchema = z.object({ streamId: z.string().min(1) })
 

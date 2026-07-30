@@ -1,8 +1,15 @@
 import { create } from 'zustand'
-import type { ChatMessage, ProviderError, StreamEvent } from '@shared/types'
+import type { ChatMessage, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
 
-interface SessionMeta { id: string; title: string; updatedAt: number }
-interface ProviderMeta { id: string; label: string }
+interface SessionMeta {
+  id: string
+  title: string
+  updatedAt: number
+  pinned?: boolean
+  archived?: boolean
+  tags?: string[]
+}
+export interface Fallback { providerId: string; model: string }
 
 // Shared with Splitter.tsx, which needs the same bounds to report accurate
 // aria-valuemin/aria-valuemax for its keyboard-resize affordance — a single
@@ -46,9 +53,13 @@ interface AppState {
   streamingSessionId: string | null
   streamingText: string
   error: ProviderError | null
+  /** Transient engine status (e.g. a failover notice) shown above the reply. */
+  streamNotice: string | null
   providerId: string
-  providers: ProviderMeta[]
+  providers: ProviderSummary[]
   model: string
+  /** Ordered failover targets, persisted in settings, sent with each turn. */
+  fallbacks: Fallback[]
   sidebarWidth: number
   settingsOpen: boolean
   /** Sidebar filter. Purely client-side over the already-loaded session index. */
@@ -75,6 +86,8 @@ interface AppState {
   reportError(err: unknown): void
   loadSessions(): Promise<void>
   loadProviders(): Promise<void>
+  loadSettings(): Promise<void>
+  setFallbacks(fallbacks: Fallback[]): Promise<void>
   selectSession(id: string): Promise<void>
   newSession(): Promise<void>
   send(content: string): Promise<void>
@@ -94,9 +107,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingSessionId: null,
   streamingText: '',
   error: null,
+  streamNotice: null,
   providerId: '',
   providers: [],
   model: '',
+  fallbacks: [],
   sidebarWidth: 300,
   settingsOpen: false,
   query: '',
@@ -113,6 +128,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const info = await window.openCoder.appInfo()
       set({ platform: info.platform })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async loadSettings() {
+    try {
+      const settings = await window.openCoder.settings.get()
+      const fallbacks = settings['fallbacks']
+      if (Array.isArray(fallbacks)) set({ fallbacks: fallbacks as Fallback[] })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async setFallbacks(fallbacks) {
+    set({ fallbacks })
+    try {
+      await window.openCoder.settings.set({ fallbacks })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -227,6 +261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // correct even though selectSession must never do the equivalent.
     set((s) => ({
       error: null,
+      streamNotice: null,
       streamingText: '',
       streamingSessionId: sessionId,
       messages: [...s.messages, {
@@ -234,11 +269,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       }],
     }))
     try {
+      // Only fall back to targets other than the current selection, so a
+      // fallback list that happens to include the primary does not retry it.
+      const fallbacks = get().fallbacks.filter(
+        (f) => !(f.providerId === get().providerId && f.model === get().model),
+      )
       const { streamId } = await window.openCoder.chat.send({
         sessionId,
         providerId: get().providerId,
         model: get().model,
         content,
+        ...(fallbacks.length > 0 ? { fallbacks } : {}),
       })
       set({ streamId, lastStreamId: streamId })
     } catch (err) {
@@ -309,6 +350,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyEvent({ streamId, sessionId, event }) {
     if (streamId !== get().lastStreamId) return
     if (sessionId !== get().streamingSessionId) return
+    if (event.type === 'notice') {
+      // Engine status (a failover retry). Shown transiently for the owning
+      // session only; not persisted, cleared when the next turn starts.
+      if (sessionId === get().activeSessionId) set({ streamNotice: event.text })
+      return
+    }
+    if (event.type === 'reasoning') {
+      // Reasoning/thinking deltas are not rendered in v0; ignore rather than
+      // letting them fall through to the text accumulator.
+      return
+    }
     if (event.type === 'text') {
       // If `streamId` is already null, the renderer has already considered
       // this turn over — most commonly because the user just clicked Stop,
@@ -337,6 +389,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: sessionId === s.activeSessionId ? event.error : s.error,
         streamId: null,
         streamingText: '',
+        streamNotice: null,
       }))
       return
     }
@@ -349,13 +402,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         // this is what prevents the reply from leaking into whatever
         // session the user is currently viewing.
         const shouldAppend = sessionId === s.activeSessionId
+        // Carry the provenance from the done event so the model badge and cost
+        // appear immediately, accurate even when failover changed the model —
+        // rather than only after the session is reloaded from disk.
+        const provenance = event.type === 'done'
+          ? {
+              ...(event.model ? { model: event.model } : {}),
+              ...(event.provider ? { provider: event.provider } : {}),
+              ...(event.usage ? { usage: event.usage } : {}),
+            }
+          : {}
         return {
           streamId: null,
           streamingText: '',
+          streamNotice: null,
           messages: shouldAppend
             ? [...s.messages, {
               id: `local-a-${Date.now()}`, role: 'assistant',
-              content: s.streamingText, createdAt: Date.now(),
+              content: s.streamingText, createdAt: Date.now(), ...provenance,
             }]
             : s.messages,
         }

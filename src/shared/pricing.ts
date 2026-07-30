@@ -1,4 +1,4 @@
-import type { Usage } from '../../shared/types.js'
+import type { Usage } from './types.js'
 
 export interface ModelPrice {
   /** USD per million input (prompt) tokens. */
