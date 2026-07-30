@@ -12,6 +12,7 @@ import { WorkspacePanel } from '../chat/WorkspacePanel.js'
 import { CanvasPane } from '../canvas/CanvasPane.js'
 import { SideThread } from '../chat/SideThread.js'
 import { SecretWarning } from '../chat/SecretWarning.js'
+import { DiffGate } from '../chat/DiffGate.js'
 import { CommandPalette } from './CommandPalette.js'
 import { ModelPicker } from './ModelPicker.js'
 import { sessionCost, formatTotal } from '../chat/cost.js'
@@ -107,6 +108,7 @@ export function App(): React.JSX.Element {
 
       <SettingsDialog />
       <SecretWarning />
+      <DiffGate />
       <CommandPalette />
     </div>
   )

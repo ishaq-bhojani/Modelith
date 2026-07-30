@@ -10,6 +10,13 @@ const DEFAULT_BASE_URL = 'https://api.anthropic.com/v1'
 /** Per-stream SSE framing for Anthropic's `messages` streaming wire format. */
 function makeAnthropicChunkHandler(): (chunk: string) => ChunkResult {
   let residual = ''
+  // tool_use blocks: opened by content_block_start, their JSON input streamed
+  // via input_json_delta, keyed by the event's block index.
+  const toolAcc = new Map<number, { id: string; name: string; args: string }>()
+  const flushTools = (): StreamEvent[] =>
+    [...toolAcc.entries()].sort((a, b) => a[0] - b[0])
+      .map(([, t]) => ({ type: 'tool_call' as const, id: t.id, name: t.name, arguments: t.args }))
+
   return (chunk) => {
     const parsed = parseSse(chunk, residual)
     residual = parsed.residual
@@ -18,7 +25,9 @@ function makeAnthropicChunkHandler(): (chunk: string) => ChunkResult {
     for (const record of parsed.events) {
       let payload: {
         type?: string
-        delta?: { type?: string; text?: string; thinking?: string }
+        index?: number
+        content_block?: { type?: string; id?: string; name?: string }
+        delta?: { type?: string; text?: string; thinking?: string; partial_json?: string }
       }
       try {
         payload = JSON.parse(record.data) as typeof payload
@@ -27,12 +36,17 @@ function makeAnthropicChunkHandler(): (chunk: string) => ChunkResult {
       }
 
       if (payload.type === 'error') {
-        // Anthropic can report an error mid-stream after a 200 response;
-        // the message text itself is provider-authored and not echoed.
         events.push({ type: 'error', error: { kind: 'unknown', message: 'The provider reported an error.' } })
         return { events, stop: true }
       }
-      if (payload.type === 'message_stop') return { events, complete: true }
+      if (payload.type === 'message_stop') return { events: [...events, ...flushTools()], complete: true }
+      if (payload.type === 'content_block_start' && payload.content_block?.type === 'tool_use') {
+        toolAcc.set(payload.index ?? 0, { id: payload.content_block.id ?? '', name: payload.content_block.name ?? '', args: '' })
+      }
+      if (payload.delta?.type === 'input_json_delta' && payload.delta.partial_json !== undefined) {
+        const cur = toolAcc.get(payload.index ?? 0)
+        if (cur) cur.args += payload.delta.partial_json
+      }
       if (payload.delta?.type === 'thinking_delta' && payload.delta.thinking) {
         events.push({ type: 'reasoning', delta: payload.delta.thinking })
       }
@@ -91,6 +105,9 @@ export function createAnthropicProvider(): Provider {
             max_tokens: 8192,
             stream: true,
             ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+            ...(request.tools && request.tools.length > 0
+              ? { tools: request.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) }
+              : {}),
             ...(system ? { system } : {}),
             messages: turns,
           }),

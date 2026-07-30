@@ -99,6 +99,12 @@ interface AppState {
   draft: string
   /** Image attachments staged in the composer, sent with the next turn (spec §B). */
   pendingAttachments: Attachment[]
+  /** Agentic-edits opt-in (spec §6): the model may call edit tools this session. */
+  agentMode: boolean
+  /** A write awaiting approval at the diff gate, or null (agentic-edits spec §4). */
+  pendingEdit: { callId: string; tool: string; relPath: string; previous: string | null; proposed: string } | null
+  /** The most recent turn that applied edits, for a one-click revert affordance. */
+  lastEditTurnId: string | null
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
 
@@ -115,6 +121,11 @@ interface AppState {
   setDraft(value: string): void
   addAttachment(attachment: Attachment): void
   removeAttachment(index: number): void
+  toggleAgentMode(): void
+  /** Answer the diff gate: accept / reject / accept-with-edited-content. */
+  resolveEdit(action: 'accept' | 'reject' | 'edited', content?: string): void
+  /** Revert every edit made in a turn (agentic-edits spec §5). */
+  revertEdits(turnId: string): Promise<void>
   setCanvasSelection(outerHTML: string | null): void
   /** Focus the canvas on an artifact language (from a transcript card). */
   focusCanvas(lang: string): void
@@ -191,6 +202,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   canvasFocus: null,
   draft: '',
   pendingAttachments: [],
+  agentMode: false,
+  pendingEdit: null,
+  lastEditTurnId: null,
   pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
@@ -224,6 +238,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDraft(value) { set({ draft: value }) },
   addAttachment(attachment) { set((s) => ({ pendingAttachments: [...s.pendingAttachments, attachment] })) },
   removeAttachment(index) { set((s) => ({ pendingAttachments: s.pendingAttachments.filter((_, i) => i !== index) })) },
+  toggleAgentMode() { set((s) => ({ agentMode: !s.agentMode })) },
+  resolveEdit(action, content) {
+    const edit = get().pendingEdit
+    if (!edit) return
+    set({ pendingEdit: null })
+    void window.openCoder.chat.toolDecision(edit.callId, action, content)
+  },
+  async revertEdits(turnId) {
+    try {
+      await window.openCoder.workspace.revert(turnId)
+      set({ lastEditTurnId: null })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
   focusCanvas(lang) {
     const token = (get().canvasFocus?.token ?? 0) + 1
@@ -536,6 +565,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         model: get().model,
         content,
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...(get().agentMode ? { agent: true } : {}),
         ...(fallbacks.length > 0 ? { fallbacks } : {}),
         ...(mode?.systemPrompt ? { systemPrompt: mode.systemPrompt } : {}),
         ...(mode?.temperature !== undefined ? { temperature: mode.temperature } : {}),
@@ -618,6 +648,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (event.type === 'reasoning') {
       // Reasoning/thinking deltas are not rendered in v0; ignore rather than
       // letting them fall through to the text accumulator.
+      return
+    }
+    if (event.type === 'tool_call') {
+      // Activity only; the outcome arrives as tool_result. Surfaced transiently.
+      if (sessionId === get().activeSessionId) set({ streamNotice: `Calling ${event.name}…` })
+      return
+    }
+    if (event.type === 'tool_pending') {
+      // A write awaiting approval at the diff gate (agentic-edits spec §4).
+      if (sessionId === get().activeSessionId) {
+        set({ pendingEdit: { callId: event.callId, tool: event.tool, relPath: event.relPath, previous: event.previous, proposed: event.proposed } })
+      }
+      return
+    }
+    if (event.type === 'tool_result') {
+      if (sessionId === get().activeSessionId) {
+        const isWrite = event.name === 'write_file' || event.name === 'apply_edit'
+        set({
+          streamNotice: `${event.ok ? '✓' : '✗'} ${event.name}`,
+          ...(event.ok && isWrite ? { lastEditTurnId: streamId } : {}),
+        })
+      }
+      // A tool round-trip means more messages landed on disk; refresh so the
+      // transcript shows the assistant tool-call turn and the result.
+      if (sessionId === get().activeSessionId) void get().refreshMessages()
       return
     }
     if (event.type === 'text') {

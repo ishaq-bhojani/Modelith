@@ -4,7 +4,7 @@ import { ModeMenu } from './ModeMenu.js'
 import { fencedAttachment } from './fence-lang.js'
 import { ALLOWED_IMAGE_MIME, validateAttachment } from '@shared/attachments'
 import type { Attachment } from '@shared/types'
-import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconStop } from '../app/icons.js'
+import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconSliders, IconStop } from '../app/icons.js'
 
 /** Read a File's bytes as bare base64 (no data: prefix) for an Attachment. */
 async function fileToBase64(file: File): Promise<string> {
@@ -44,6 +44,11 @@ export function Composer(): React.JSX.Element {
   const removeAttachment = useAppStore((s) => s.removeAttachment)
   const providerId = useAppStore((s) => s.providerId)
   const providers = useAppStore((s) => s.providers)
+  const agentMode = useAppStore((s) => s.agentMode)
+  const toggleAgentMode = useAppStore((s) => s.toggleAgentMode)
+  const workspaceRoot = useAppStore((s) => s.workspaceRoot)
+  const lastEditTurnId = useAppStore((s) => s.lastEditTurnId)
+  const revertEdits = useAppStore((s) => s.revertEdits)
   const reportError = useAppStore((s) => s.reportError)
 
   // `stop()` aborts whichever stream is globally tracked by `streamId`,
@@ -111,6 +116,14 @@ export function Composer(): React.JSX.Element {
   return (
     <div className="composer-dock">
       <div className="composer-column">
+        {lastEditTurnId ? (
+          <div className="revert-bar" data-testid="revert-bar">
+            <span>Edits applied to your files.</span>
+            <button className="ghost-button" data-testid="revert-edits" onClick={() => void revertEdits(lastEditTurnId)}>
+              Revert changes
+            </button>
+          </div>
+        ) : null}
         {canvasSelection ? (
           <div className="selection-chip" data-testid="selection-chip">
             <span className="selection-chip-label" title={canvasSelection}>
@@ -190,6 +203,17 @@ export function Composer(): React.JSX.Element {
             >
               <IconFolder size={13} />
               Files
+            </button>
+            <button
+              className={`chip-button${agentMode ? ' chip-button-active' : ''}`}
+              data-testid="toggle-agent"
+              aria-pressed={agentMode}
+              disabled={!workspaceRoot}
+              title={workspaceRoot ? 'Let the model edit files (every change is approved)' : 'Open a workspace folder to enable agent edits'}
+              onClick={toggleAgentMode}
+            >
+              <IconSliders size={13} />
+              Agent
             </button>
             <button
               className="chip-button"

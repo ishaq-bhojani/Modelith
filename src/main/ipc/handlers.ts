@@ -20,6 +20,8 @@ import {
   ModelsListSchema,
   SettingsPatchSchema,
   WorkspaceReadSchema,
+  WorkspaceRevertSchema,
+  ToolDecisionSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -28,6 +30,7 @@ import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
 import { Workspace } from '../workspace/service.js'
+import { CheckpointStore } from '../workspace/checkpoints.js'
 import { StreamEngine } from '../chat/stream-engine.js'
 import { applyContextBudget, estimateTokens } from '../chat/context-budget.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
@@ -57,6 +60,20 @@ let settingsStoreInstance: AppSettingsStore | undefined
 export function getSettingsStore(): AppSettingsStore {
   settingsStoreInstance ??= new AppSettingsStore(AppSettingsStore.defaultPath(app.getPath('userData')))
   return settingsStoreInstance
+}
+
+// A single Workspace (with its checkpoint store) shared by the workspace handlers
+// and the chat engine, so reads, gated writes, and revert all confine to the
+// same dialog-chosen root. getWindow is late-bound via a mutable holder.
+let workspaceInstance: Workspace | undefined
+let workspaceGetWindow: () => BrowserWindow | undefined = () => undefined
+export function getWorkspace(): Workspace {
+  workspaceInstance ??= new Workspace(
+    getSettingsStore(),
+    () => workspaceGetWindow(),
+    new CheckpointStore(join(app.getPath('userData'), 'checkpoints')),
+  )
+  return workspaceInstance
 }
 
 /**
@@ -106,12 +123,16 @@ export function registerSecretHandlers(): void {
 }
 
 export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undefined): void {
-  const workspace = new Workspace(getSettingsStore(), getWindow)
+  workspaceGetWindow = getWindow
+  const workspace = getWorkspace()
   ipcMain.handle(CHANNELS.workspacePick, () => workspace.pick())
   ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.current())
   ipcMain.handle(CHANNELS.workspaceTree, () => workspace.tree())
   ipcMain.handle(CHANNELS.workspaceRead, withZodMapping((_e, raw: unknown) => {
     return workspace.read(WorkspaceReadSchema.parse(raw).relPath)
+  }))
+  ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping((_e, raw: unknown) => {
+    return workspace.revertTurn(WorkspaceRevertSchema.parse(raw).turnId)
   }))
 }
 
@@ -129,11 +150,17 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     // Shared with the context-inspector preview below so the two never disagree
     // about what "fits".
     maxContextTokens: MAX_CONTEXT_TOKENS,
+    // Enables agentic edits (gated writes) when a turn opts in.
+    workspace: getWorkspace(),
   })
 
   ipcMain.handle(CHANNELS.chatSend, withZodMapping((_e, raw: unknown) => engine.start(SendSchema.parse(raw))))
   ipcMain.handle(CHANNELS.chatAbort, withZodMapping((_e, raw: unknown) => {
     engine.abort(AbortSchema.parse(raw).streamId)
+  }))
+  ipcMain.handle(CHANNELS.chatToolDecision, withZodMapping((_e, raw: unknown) => {
+    const { callId, action, content } = ToolDecisionSchema.parse(raw)
+    engine.resolveApproval(callId, action === 'edited' ? { action, content: content ?? '' } : { action })
   }))
   ipcMain.handle(CHANNELS.providersList, () => listProviders())
   ipcMain.handle(CHANNELS.sessionsList, () => store.list())

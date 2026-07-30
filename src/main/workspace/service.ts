@@ -158,6 +158,18 @@ export class Workspace {
     return effective
   }
 
+  /** Current text of a file for computing a diff, or null if it does not exist. */
+  async currentContent(relPath: string): Promise<string | null> {
+    const root = await this.current()
+    if (!root) throw new WorkspaceError('no-root')
+    const target = await this.resolveWritable(root, relPath)
+    try {
+      return await readFile(target, 'utf8')
+    } catch {
+      return null
+    }
+  }
+
   /** Apply an approved write, snapshotting the pre-image first (reversible). */
   async applyWrite(input: WriteInput): Promise<void> {
     const root = await this.current()

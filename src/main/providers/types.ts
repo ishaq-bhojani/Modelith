@@ -1,4 +1,4 @@
-import type { ChatMessage, ModelInfo, StreamEvent } from '../../shared/types.js'
+import type { ChatMessage, ModelInfo, StreamEvent, ToolSpec } from '../../shared/types.js'
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>
 
@@ -14,6 +14,8 @@ export interface ChatRequest {
   config: ProviderConfig
   /** Optional sampling temperature; omitted means the provider's default. */
   temperature?: number
+  /** Tool definitions to advertise (agentic-edits spec §3); omitted = no tools. */
+  tools?: ToolSpec[]
 }
 
 export interface Provider {

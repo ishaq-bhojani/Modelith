@@ -43,25 +43,52 @@ export function statusToError(
   return { kind: 'unknown', message: `Unexpected status ${status}.` }
 }
 
+interface OpenAiToolCallDelta {
+  index?: number
+  id?: string
+  function?: { name?: string; arguments?: string }
+}
+
 /** Per-stream SSE framing for the OpenAI-compatible `chat/completions` wire format. */
 function makeOpenAiChunkHandler(): (chunk: string) => ChunkResult {
   let residual = ''
+  // Tool calls stream as fragments across chunks, keyed by index; assembled
+  // here and emitted as complete tool_call events when the stream finishes.
+  const toolAcc = new Map<number, { id: string; name: string; args: string }>()
+
+  const flushTools = (): StreamEvent[] =>
+    [...toolAcc.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, t]) => ({ type: 'tool_call' as const, id: t.id, name: t.name, arguments: t.args }))
+
   return (chunk) => {
     const parsed = parseSse(chunk, residual)
     residual = parsed.residual
 
     const events: StreamEvent[] = []
     for (const record of parsed.events) {
-      if (record.data === '[DONE]') return { events, complete: true }
-      let payload: { choices?: { delta?: { content?: string; reasoning_content?: string } }[] }
+      if (record.data === '[DONE]') return { events: [...events, ...flushTools()], complete: true }
+      let payload: {
+        choices?: { delta?: { content?: string; reasoning_content?: string; tool_calls?: OpenAiToolCallDelta[] }; finish_reason?: string }[]
+      }
       try {
         payload = JSON.parse(record.data) as typeof payload
       } catch {
         continue
       }
-      const delta = payload.choices?.[0]?.delta
+      const choice = payload.choices?.[0]
+      const delta = choice?.delta
       if (delta?.reasoning_content) events.push({ type: 'reasoning', delta: delta.reasoning_content })
       if (delta?.content) events.push({ type: 'text', delta: delta.content })
+      for (const tc of delta?.tool_calls ?? []) {
+        const idx = tc.index ?? 0
+        const cur = toolAcc.get(idx) ?? { id: '', name: '', args: '' }
+        if (tc.id) cur.id = tc.id
+        if (tc.function?.name) cur.name = tc.function.name
+        if (tc.function?.arguments) cur.args += tc.function.arguments
+        toolAcc.set(idx, cur)
+      }
+      if (choice?.finish_reason === 'tool_calls') return { events: [...events, ...flushTools()], complete: true }
     }
     return { events }
   }
@@ -108,6 +135,9 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
             model: request.model,
             stream: true,
             ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+            ...(request.tools && request.tools.length > 0
+              ? { tools: request.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) }
+              : {}),
             messages: toOpenAiMessages(request.messages),
           }),
         })

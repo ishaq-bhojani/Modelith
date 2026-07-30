@@ -42,6 +42,8 @@ export const CHANNELS = {
   workspaceCurrent: 'workspace:current',
   workspaceTree: 'workspace:tree',
   workspaceRead: 'workspace:read',
+  workspaceRevert: 'workspace:revert',
+  chatToolDecision: 'chat:tool-decision',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -69,6 +71,8 @@ export const SendSchema = z.object({
   content: z.string(),
   // Image attachments sent with this turn (spec §B). Optional and additive.
   attachments: z.array(AttachmentSchema).optional(),
+  // Opt-in to agentic edit tools for this turn (agentic-edits spec §3).
+  agent: z.boolean().optional(),
   // Optional system prompt (from a Mode); prepended by the engine before
   // budgeting. Optional temperature flows through to the provider request.
   systemPrompt: z.string().optional(),
@@ -107,3 +111,12 @@ export const ModelsListSchema = z.object({ providerId: z.string().min(1) })
 // renderer; the root itself is chosen and held by main and is never accepted as
 // an argument, so the renderer cannot point main at an arbitrary directory.
 export const WorkspaceReadSchema = z.object({ relPath: z.string().min(1) })
+export const WorkspaceRevertSchema = z.object({ turnId: z.string().min(1) })
+
+// A diff-gate decision from the renderer (agentic-edits spec §4). `content` is
+// present only for an edited-then-accepted write.
+export const ToolDecisionSchema = z.object({
+  callId: z.string().min(1),
+  action: z.enum(['accept', 'reject', 'edited']),
+  content: z.string().optional(),
+})
