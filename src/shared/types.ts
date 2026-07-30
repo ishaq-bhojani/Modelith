@@ -1,10 +1,27 @@
 export type Role = 'system' | 'user' | 'assistant'
 
+/**
+ * A non-text part of a message (spec §B.1). Additive: `content` stays the
+ * canonical text, so the fence scanner, secret scan, context budget, session
+ * JSONL, and the streaming core all keep operating on `content` untouched —
+ * only provider request builders and the composer learn about attachments.
+ */
+export interface Attachment {
+  type: 'image'
+  /** e.g. image/png. */
+  mimeType: string
+  /** base64-encoded bytes, without a `data:` prefix. */
+  data: string
+  name?: string
+}
+
 export interface ChatMessage {
   id: string
   role: Role
   content: string
   createdAt: number
+  /** Non-text parts (images) sent with this message; absent on most messages. */
+  attachments?: Attachment[]
   incomplete?: boolean
   /** Provenance: the model that produced an assistant reply. Absent on user
    *  messages and on any message persisted before provenance was recorded, so
@@ -48,6 +65,9 @@ export interface ProviderSummary {
   label: string
   defaultBaseUrl: string
   dataPolicy: DataPolicy
+  /** Whether the provider can read image attachments (spec §B.2). Conservative
+   *  default false; the composer warns quietly when attaching to a false one. */
+  vision: boolean
 }
 
 /** A named preset: system prompt + model + temperature, applied to a turn. */

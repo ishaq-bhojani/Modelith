@@ -27,6 +27,14 @@ function dataPolicyFor(id: string): DataPolicy {
   return DATA_POLICY[id] ?? { trainsOnInput: true, local: false }
 }
 
+/**
+ * Providers that can read image attachments (spec §B.2). Conservative: only
+ * those with broad, reliable vision support are marked true, so the composer's
+ * "may not read images" note errs toward warning rather than false confidence.
+ * OpenRouter routes to many vision models; Ollama runs vision models locally.
+ */
+const VISION = new Set(['anthropic', 'openrouter', 'ollama', 'fake'])
+
 /** Chromium's network stack, so system proxy configuration is honoured. */
 export const mainFetch: FetchLike = (url, init) => net.fetch(url, init)
 
@@ -37,7 +45,19 @@ const fakeProvider: Provider = {
     // When a prompt asks for "canvas", emit a small HTML artifact so the canvas
     // pane can be exercised in E2E. No existing test uses that word, so the
     // default greeting path is unaffected.
-    const lastUser = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+    const lastUserMsg = [...req.messages].reverse().find((m) => m.role === 'user')
+    const lastUser = lastUserMsg?.content ?? ''
+    // Echo received image attachments so E2E can prove they reached the provider.
+    const imgs = (lastUserMsg?.attachments ?? []).filter((a) => a.type === 'image')
+    if (imgs.length > 0) {
+      for (const c of [`GOT_IMAGE:${imgs.length}:`, imgs.map((a) => a.mimeType).join(',')]) {
+        if (signal.aborted) return
+        await new Promise((r) => setTimeout(r, 15))
+        yield { type: 'text' as const, delta: c }
+      }
+      yield { type: 'done' as const }
+      return
+    }
     // Deliberate keyword triggers so E2E can exercise each canvas render path.
     // No existing test uses these words, so the default greeting is unaffected.
     let chunks: string[]
@@ -82,5 +102,6 @@ export function listProviders(): ProviderSummary[] {
     label: p.label,
     defaultBaseUrl: p.defaultBaseUrl,
     dataPolicy: dataPolicyFor(p.id),
+    vision: VISION.has(p.id),
   }))
 }

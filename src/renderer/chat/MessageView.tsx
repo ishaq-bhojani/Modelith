@@ -132,6 +132,18 @@ export const MessageView = memo(function MessageView({
             <code>{selection.replace(/\s+/g, ' ').trim().slice(0, 80)}</code>
           </div>
         ) : null}
+        {message.attachments && message.attachments.length > 0 ? (
+          <div className="msg-attachments" data-testid="msg-attachments">
+            {message.attachments.map((a, i) => (
+              <img
+                key={i}
+                className="msg-attachment"
+                src={`data:${a.mimeType};base64,${a.data}`}
+                alt={a.name ?? 'attachment'}
+              />
+            ))}
+          </div>
+        ) : null}
         <div className="msg-user">{body}</div>
         {canAct ? (
           <div className="msg-actions msg-actions-user">

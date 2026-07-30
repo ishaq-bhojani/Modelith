@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
-import type { ChatMessage, ProviderError, StreamEnvelope, StreamEvent, Usage } from '../../shared/types.js'
+import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, Usage } from '../../shared/types.js'
 
 export interface Fallback {
   providerId: string
@@ -14,6 +14,8 @@ export interface StartInput {
   providerId: string
   model: string
   content: string
+  /** Image attachments sent with this turn (spec §B). */
+  attachments?: Attachment[]
   /** Optional system prompt (from a Mode), prepended before budgeting. */
   systemPrompt?: string
   /** Optional sampling temperature passed through to the provider. */
@@ -101,6 +103,7 @@ export class StreamEngine {
 
     const userMessage: ChatMessage = {
       id: randomUUID(), role: 'user', content: input.content, createdAt: Date.now(),
+      ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
     }
     try {
       await store.append(sessionId, userMessage)

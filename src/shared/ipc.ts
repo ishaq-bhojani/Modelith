@@ -55,11 +55,20 @@ export const FallbackSchema = z.object({
   model: z.string().min(1),
 })
 
+export const AttachmentSchema = z.object({
+  type: z.literal('image'),
+  mimeType: z.string().min(1),
+  data: z.string().min(1),
+  name: z.string().optional(),
+})
+
 export const SendSchema = z.object({
   sessionId: z.string().min(1),
   providerId: z.string().min(1),
   model: z.string().min(1),
   content: z.string(),
+  // Image attachments sent with this turn (spec §B). Optional and additive.
+  attachments: z.array(AttachmentSchema).optional(),
   // Optional system prompt (from a Mode); prepended by the engine before
   // budgeting. Optional temperature flows through to the provider request.
   systemPrompt: z.string().optional(),
