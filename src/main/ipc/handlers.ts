@@ -19,6 +19,7 @@ import {
   SessionEditMessageSchema,
   ModelsListSchema,
   SettingsPatchSchema,
+  WorkspaceReadSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -26,6 +27,7 @@ import { Keystore } from '../secrets/keystore.js'
 import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
+import { Workspace } from '../workspace/service.js'
 import { StreamEngine } from '../chat/stream-engine.js'
 import { applyContextBudget, estimateTokens } from '../chat/context-budget.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
@@ -100,6 +102,16 @@ export function registerSecretHandlers(): void {
   }))
   ipcMain.handle(CHANNELS.keyHas, withZodMapping(async (_e, raw: unknown) => {
     return getKeystore().has(KeyRefSchema.parse(raw).providerId)
+  }))
+}
+
+export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undefined): void {
+  const workspace = new Workspace(getSettingsStore(), getWindow)
+  ipcMain.handle(CHANNELS.workspacePick, () => workspace.pick())
+  ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.current())
+  ipcMain.handle(CHANNELS.workspaceTree, () => workspace.tree())
+  ipcMain.handle(CHANNELS.workspaceRead, withZodMapping((_e, raw: unknown) => {
+    return workspace.read(WorkspaceReadSchema.parse(raw).relPath)
   }))
 }
 

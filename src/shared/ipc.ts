@@ -38,6 +38,10 @@ export const CHANNELS = {
   menuSearch: 'menu:search',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  workspacePick: 'workspace:pick',
+  workspaceCurrent: 'workspace:current',
+  workspaceTree: 'workspace:tree',
+  workspaceRead: 'workspace:read',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -89,3 +93,8 @@ export const SessionEditMessageSchema = SessionMessageRefSchema.extend({ content
 // keeps a main-side-only `baseUrl` for the contract suite and future
 // main-side configuration).
 export const ModelsListSchema = z.object({ providerId: z.string().min(1) })
+
+// Workspace read (spec §A.3). Only a root-relative path crosses from the
+// renderer; the root itself is chosen and held by main and is never accepted as
+// an argument, so the renderer cannot point main at an arbitrary directory.
+export const WorkspaceReadSchema = z.object({ relPath: z.string().min(1) })
