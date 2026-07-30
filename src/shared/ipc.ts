@@ -50,6 +50,8 @@ export const CHANNELS = {
   mcpSetEnabled: 'mcp:set-enabled',
   gitStatus: 'git:status',
   gitDiff: 'git:diff',
+  chatRace: 'chat:race',
+  chatChooseWinner: 'chat:choose-winner',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -141,3 +143,13 @@ export const McpIdSchema = z.object({ id: z.string().min(1) })
 export const McpSetEnabledSchema = z.object({ id: z.string().min(1), enabled: z.boolean() })
 
 export const GitDiffSchema = z.object({ path: z.string().optional() })
+
+// Model Race (model-race spec §2–3): a prompt sent to 2–4 targets at once.
+export const RaceSchema = z.object({
+  sessionId: z.string().min(1),
+  content: z.string().min(1),
+  systemPrompt: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  entries: z.array(FallbackSchema).min(2).max(4),
+})
+export const ChooseWinnerSchema = z.object({ raceId: z.string().min(1), columnId: z.string().min(1) })

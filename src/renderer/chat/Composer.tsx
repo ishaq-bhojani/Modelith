@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import { ModeMenu } from './ModeMenu.js'
 import { fencedAttachment } from './fence-lang.js'
@@ -41,6 +41,16 @@ export function Composer(): React.JSX.Element {
   const toggleWorkspace = useAppStore((s) => s.toggleWorkspace)
   const toggleMcp = useAppStore((s) => s.toggleMcp)
   const toggleGit = useAppStore((s) => s.toggleGit)
+  const model = useAppStore((s) => s.model)
+  const raceOpen = useAppStore((s) => s.raceOpen)
+  const raceTargets = useAppStore((s) => s.raceTargets)
+  const race = useAppStore((s) => s.race)
+  const toggleRaceBar = useAppStore((s) => s.toggleRaceBar)
+  const addRaceTarget = useAppStore((s) => s.addRaceTarget)
+  const removeRaceTarget = useAppStore((s) => s.removeRaceTarget)
+  const startRace = useAppStore((s) => s.startRace)
+  const [raceProvider, setRaceProvider] = useState('')
+  const [raceModel, setRaceModel] = useState('')
   const pendingAttachments = useAppStore((s) => s.pendingAttachments)
   const addAttachment = useAppStore((s) => s.addAttachment)
   const removeAttachment = useAppStore((s) => s.removeAttachment)
@@ -118,6 +128,51 @@ export function Composer(): React.JSX.Element {
   return (
     <div className="composer-dock">
       <div className="composer-column">
+        {raceOpen && !race ? (
+          <div className="race-bar" data-testid="race-bar">
+            <div className="race-bar-add">
+              <select
+                className="mcp-input"
+                data-testid="race-provider"
+                value={raceProvider || providerId}
+                onChange={(e) => setRaceProvider(e.target.value)}
+              >
+                {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <input
+                className="mcp-input"
+                data-testid="race-model"
+                placeholder={model || 'model id'}
+                value={raceModel}
+                onChange={(e) => setRaceModel(e.target.value)}
+              />
+              <button
+                className="chip-button"
+                data-testid="race-add"
+                disabled={raceTargets.length >= 4}
+                onClick={() => { addRaceTarget(raceProvider || providerId, raceModel.trim() || model); setRaceModel('') }}
+              >
+                Add
+              </button>
+            </div>
+            <div className="race-targets">
+              {raceTargets.map((t, i) => (
+                <span key={i} className="selection-chip" data-testid="race-target">
+                  <span className="selection-chip-label">{t.providerId} · {t.model}</span>
+                  <button className="selection-chip-dismiss" aria-label="Remove target" onClick={() => removeRaceTarget(i)}>×</button>
+                </span>
+              ))}
+            </div>
+            <button
+              className="send-button race-go"
+              data-testid="race-start"
+              disabled={raceTargets.length < 2 || draft.trim() === ''}
+              onClick={() => void startRace()}
+            >
+              Race {raceTargets.length} models
+            </button>
+          </div>
+        ) : null}
         {lastEditTurnId ? (
           <div className="revert-bar" data-testid="revert-bar">
             <span>Edits applied to your files.</span>
@@ -235,6 +290,15 @@ export function Composer(): React.JSX.Element {
             >
               <IconGitBranch size={13} />
               Git
+            </button>
+            <button
+              className={`chip-button${raceOpen ? ' chip-button-active' : ''}`}
+              data-testid="toggle-race"
+              title="Race this prompt across multiple models"
+              onClick={toggleRaceBar}
+            >
+              <IconGauge size={13} />
+              Race
             </button>
             <button
               className="chip-button"

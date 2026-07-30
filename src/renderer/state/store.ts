@@ -118,6 +118,13 @@ interface AppState {
   gitOpen: boolean
   gitStatus: GitStatus | null
   gitDiff: string
+  /** Model Race (model-race spec): chosen targets, control open, live columns. */
+  raceOpen: boolean
+  raceTargets: { providerId: string; model: string }[]
+  race: {
+    raceId: string
+    columns: { columnId: string; providerId: string; model: string; text: string; done: boolean; error: string | null }[]
+  } | null
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
 
@@ -147,6 +154,12 @@ interface AppState {
   toggleGit(): void
   refreshGit(): Promise<void>
   showGitDiff(path?: string): Promise<void>
+  toggleRaceBar(): void
+  addRaceTarget(providerId: string, model: string): void
+  removeRaceTarget(index: number): void
+  startRace(): Promise<void>
+  chooseWinner(columnId: string): Promise<void>
+  abortRace(): Promise<void>
   loadMcpServers(): Promise<void>
   addMcpServer(config: { id: string; name: string; command: string; args?: string[] }): Promise<void>
   removeMcpServer(id: string): Promise<void>
@@ -193,7 +206,7 @@ interface AppState {
   setProvider(id: string): void
   setModel(id: string): void
   setSidebarWidth(px: number): void
-  applyEvent(envelope: { streamId: string; sessionId: string; event: StreamEvent }): void
+  applyEvent(envelope: { streamId: string; sessionId: string; event: StreamEvent; columnId?: string }): void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -238,6 +251,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   gitOpen: false,
   gitStatus: null,
   gitDiff: '',
+  raceOpen: false,
+  raceTargets: [],
+  race: null,
   pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
@@ -317,6 +333,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   async showGitDiff(path) {
     try { set({ gitDiff: await window.openCoder.git.diff(path) }) }
     catch (err) { set({ error: toProviderError(err) }) }
+  },
+  toggleRaceBar() { set((s) => ({ raceOpen: !s.raceOpen })) },
+  addRaceTarget(providerId, model) {
+    set((s) => (s.raceTargets.length >= 4 ? s : { raceTargets: [...s.raceTargets, { providerId, model }] }))
+  },
+  removeRaceTarget(index) { set((s) => ({ raceTargets: s.raceTargets.filter((_, i) => i !== index) })) },
+
+  async startRace() {
+    let sessionId = get().activeSessionId
+    if (!sessionId) { await get().newSession(); sessionId = get().activeSessionId }
+    if (!sessionId) return
+    const content = get().draft.trim()
+    const entries = get().raceTargets
+    if (!content || entries.length < 2 || get().race) return
+    // Show the user message and initialise the columns immediately.
+    set((s) => ({
+      draft: '',
+      raceOpen: false,
+      error: null,
+      messages: [...s.messages, { id: `local-${Date.now()}`, role: 'user', content, createdAt: Date.now() }],
+      race: {
+        raceId: 'pending',
+        columns: entries.map((e, i) => ({ columnId: `col-${i}`, providerId: e.providerId, model: e.model, text: '', done: false, error: null })),
+      },
+    }))
+    try {
+      const { raceId } = await window.openCoder.chat.startRace({ sessionId, content, entries })
+      set((s) => (s.race ? { race: { ...s.race, raceId } } : {}))
+    } catch (err) {
+      set({ error: toProviderError(err), race: null })
+    }
+  },
+
+  async chooseWinner(columnId) {
+    const race = get().race
+    if (!race || race.raceId === 'pending') return
+    try {
+      await window.openCoder.chat.chooseWinner(race.raceId, columnId)
+      set({ race: null })
+      await get().refreshMessages()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async abortRace() {
+    const race = get().race
+    if (!race) return
+    try { if (race.raceId !== 'pending') await window.openCoder.chat.abort(race.raceId) }
+    catch { /* discard regardless */ }
+    set({ race: null })
   },
   async loadMcpServers() {
     try { set({ mcpServers: await window.openCoder.mcp.list() }) }
@@ -717,7 +784,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   // `lastStreamId` keeps identifying the turn, so e.g. a persistence error
   // arriving after the provider error already terminated the stream still
   // matches and replaces the displayed error with the more actionable one.
-  applyEvent({ streamId, sessionId, event }) {
+  applyEvent({ streamId, sessionId, event, columnId }) {
+    // Race column events are routed by columnId (streamId is the raceId, which
+    // is not the normal lastStreamId). Only one race runs at a time.
+    if (columnId !== undefined) {
+      const race = get().race
+      if (!race) return
+      set((s) => {
+        if (!s.race) return {}
+        const raceId = s.race.raceId === 'pending' ? streamId : s.race.raceId
+        const columns = s.race.columns.map((c) => {
+          if (c.columnId !== columnId) return c
+          if (event.type === 'text') return { ...c, text: c.text + event.delta }
+          if (event.type === 'done') return { ...c, done: true }
+          if (event.type === 'error') return { ...c, done: true, error: event.error.message }
+          return c
+        })
+        return { race: { raceId, columns } }
+      })
+      return
+    }
     if (streamId !== get().lastStreamId) return
     if (sessionId !== get().streamingSessionId) return
     if (event.type === 'notice') {
