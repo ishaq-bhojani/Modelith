@@ -1,10 +1,11 @@
 import { dialog } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AppSettingsStore } from '../settings/store.js'
 import type { WorkspaceTreeEntry as TreeEntry } from '../../shared/types.js'
 import { isIgnored, isInsideRoot } from './paths.js'
+import type { CheckpointStore } from './checkpoints.js'
 
 /** Per-file text cap, matching the composer's text-attach ceiling (spec §A.2). */
 const MAX_BYTES = 256 * 1024
@@ -31,6 +32,7 @@ export class Workspace {
   constructor(
     private readonly settings: AppSettingsStore,
     private readonly getWindow: () => BrowserWindow | undefined,
+    private readonly checkpoints?: CheckpointStore,
   ) {}
 
   /** Open the native directory picker; persist and return the chosen root. */
@@ -133,7 +135,68 @@ export class Workspace {
     if (isBinary(buffer)) throw new WorkspaceError('not-text')
     return { relPath, text: buffer.toString('utf8') }
   }
+
+  // ── Writes (agentic edits, spec §5–6) ────────────────────────────────────
+
+  /**
+   * Resolve a write target inside the root. The parent directory must already
+   * exist (v1), so its realpath defends against a symlinked ancestor escaping
+   * the root; the effective target is the real parent joined with the basename.
+   */
+  private async resolveWritable(root: string, relPath: string): Promise<string> {
+    const realRoot = await realpath(root)
+    const candidate = path.resolve(realRoot, relPath)
+    let realParent: string
+    try {
+      realParent = await realpath(path.dirname(candidate))
+    } catch {
+      throw new WorkspaceError('not-found')
+    }
+    const effective = path.join(realParent, path.basename(candidate))
+    const posix = (p: string) => p.split(path.sep).join('/')
+    if (!isInsideRoot(posix(realRoot), posix(effective))) throw new WorkspaceError('outside-root')
+    return effective
+  }
+
+  /** Apply an approved write, snapshotting the pre-image first (reversible). */
+  async applyWrite(input: WriteInput): Promise<void> {
+    const root = await this.current()
+    if (!root) throw new WorkspaceError('no-root')
+    const target = await this.resolveWritable(root, input.relPath)
+
+    let existed = true
+    let prev = Buffer.alloc(0)
+    try { prev = await readFile(target) } catch { existed = false }
+
+    await this.checkpoints?.record({
+      turnId: input.turnId,
+      callId: input.callId,
+      relPath: input.relPath,
+      existed,
+      prevBase64: existed ? prev.toString('base64') : '',
+    })
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, input.content, 'utf8')
+  }
+
+  /** Restore every pre-image recorded for a turn (newest first). */
+  async revertTurn(turnId: string): Promise<number> {
+    const root = await this.current()
+    if (!root) throw new WorkspaceError('no-root')
+    const cps = (await this.checkpoints?.list(turnId)) ?? []
+    let reverted = 0
+    for (const cp of cps) {
+      let target: string
+      try { target = await this.resolveWritable(root, cp.relPath) } catch { continue }
+      if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
+      else await unlink(target).catch(() => {})
+      reverted++
+    }
+    return reverted
+  }
 }
+
+export interface WriteInput { relPath: string; content: string; turnId: string; callId: string }
 
 /** A NUL byte in the first 8 KB is the cheap, reliable "this is binary" signal. */
 function isBinary(buffer: Buffer): boolean {
