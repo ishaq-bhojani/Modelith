@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
 import { buildCsp } from '../../src/main/security/csp.js'
+import { HARNESS_HTML, HARNESS_SCRIPT_HASH } from '../../src/renderer/canvas/harness.js'
 
 /**
  * The renderer is loaded two different ways, and they need different policies.
@@ -14,13 +16,26 @@ import { buildCsp } from '../../src/main/security/csp.js'
  * React never mounts — a completely blank window.
  */
 describe('buildCsp', () => {
-  it('forbids inline script in production', () => {
+  it('forbids arbitrary inline script in production', () => {
     // Scoped to script-src deliberately: style-src carries 'unsafe-inline' by
     // design, so asserting on the whole policy string would be a false alarm.
+    // Production allow-lists exactly one inline script — the canvas harness
+    // bootstrap, by hash — and never opens 'unsafe-inline'.
     const scriptSrc = buildCsp(false)
       .split('; ')
       .find((d) => d.startsWith('script-src'))
-    expect(scriptSrc).toBe("script-src 'self'")
+    expect(scriptSrc).not.toContain("'unsafe-inline'")
+    expect(scriptSrc).toBe(`script-src 'self' '${HARNESS_SCRIPT_HASH}'`)
+  })
+
+  it('the allow-listed hash actually matches the harness bootstrap script', () => {
+    // If the harness script is edited without recomputing the hash, its srcdoc
+    // frame (which inherits this CSP) would silently refuse to run — breaking
+    // every artifact. Recompute from source so that drift fails here instead.
+    const script = /<script>([\s\S]*?)<\/script>/.exec(HARNESS_HTML)?.[1] ?? ''
+    const digest = createHash('sha256').update(script, 'utf8').digest('base64')
+    expect(`sha256-${digest}`).toBe(HARNESS_SCRIPT_HASH)
+    expect(buildCsp(false)).toContain(HARNESS_SCRIPT_HASH)
   })
 
   it('allows inline script in development so the Vite preamble runs', () => {

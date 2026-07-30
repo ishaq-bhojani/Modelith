@@ -82,6 +82,8 @@ interface AppState {
    *  subscription), so none of the main streaming fields are touched. */
   sideThreadOpen: boolean
   sideThreadSeed: string
+  /** The element markup selected in the canvas for point-and-refine (Canvas 8). */
+  canvasSelection: string | null
   /** Composer draft, held here so attachments and the secret guard can act on it. */
   draft: string
   /** Set when send is paused because the draft looks like it contains secrets. */
@@ -93,6 +95,7 @@ interface AppState {
   openSideThread(seed: string): void
   closeSideThread(): void
   setDraft(value: string): void
+  setCanvasSelection(outerHTML: string | null): void
   /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
   requestSend(): void
   confirmSecretSend(): void
@@ -159,6 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspectorOpen: false,
   sideThreadOpen: false,
   sideThreadSeed: '',
+  canvasSelection: null,
   draft: '',
   pendingSecret: null,
 
@@ -168,6 +172,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
   setDraft(value) { set({ draft: value }) },
+  setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
 
   // Outbound secret guard (roadmap 28): scan before anything leaves the
   // machine. A match pauses the send and opens a confirm gate rather than

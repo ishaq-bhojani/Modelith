@@ -33,7 +33,21 @@ export const mainFetch: FetchLike = (url, init) => net.fetch(url, init)
 const fakeProvider: Provider = {
   id: 'fake', label: 'Fake (test)', defaultBaseUrl: 'http://localhost', requiresKey: false,
   listModels: async () => [{ id: 'fake-1', label: 'fake-1', contextWindow: 8000 }],
-  async *streamChat(_req, signal) {
+  async *streamChat(req, signal) {
+    // When a prompt asks for "canvas", emit a small HTML artifact so the canvas
+    // pane can be exercised in E2E. No existing test uses that word, so the
+    // default greeting path is unaffected.
+    const lastUser = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+    if (/canvas/i.test(lastUser)) {
+      const chunks = ['Here is a page.\n\n', '```html\n', '<h1 id="t">Hello canvas</h1>\n', '```\n']
+      for (const c of chunks) {
+        if (signal.aborted) return
+        await new Promise((r) => setTimeout(r, 15))
+        yield { type: 'text' as const, delta: c }
+      }
+      yield { type: 'done' as const }
+      return
+    }
     for (const word of ['Hello', ' from', ' the', ' fake', ' provider']) {
       if (signal.aborted) return
       await new Promise((r) => setTimeout(r, 20))
