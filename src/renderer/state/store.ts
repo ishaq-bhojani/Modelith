@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
+import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 
 function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -76,10 +77,26 @@ interface AppState {
   platform: string
   /** Whether the context inspector drawer is open. */
   inspectorOpen: boolean
+  /** Side-thread drawer open state + optional seeded quote. Streaming for the
+   *  side thread is handled entirely inside SideThread (its own session + event
+   *  subscription), so none of the main streaming fields are touched. */
+  sideThreadOpen: boolean
+  sideThreadSeed: string
+  /** Composer draft, held here so attachments and the secret guard can act on it. */
+  draft: string
+  /** Set when send is paused because the draft looks like it contains secrets. */
+  pendingSecret: SecretCategory[] | null
 
   openSettings(): void
   closeSettings(): void
   toggleInspector(): void
+  openSideThread(seed: string): void
+  closeSideThread(): void
+  setDraft(value: string): void
+  /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
+  requestSend(): void
+  confirmSecretSend(): void
+  cancelSecretSend(): void
   setQuery(value: string): void
   setTheme(theme: 'dark' | 'light'): void
   loadPlatform(): Promise<void>
@@ -140,10 +157,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: 'dark',
   platform: '',
   inspectorOpen: false,
+  sideThreadOpen: false,
+  sideThreadSeed: '',
+  draft: '',
+  pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
   toggleInspector() { set((s) => ({ inspectorOpen: !s.inspectorOpen })) },
+  openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
+  closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
+  setDraft(value) { set({ draft: value }) },
+
+  // Outbound secret guard (roadmap 28): scan before anything leaves the
+  // machine. A match pauses the send and opens a confirm gate rather than
+  // blocking outright — a guard against the common paste-a-key accident, not a
+  // hard stop, since the user may legitimately be discussing a key.
+  requestSend() {
+    const content = get().draft.trim()
+    if (!content || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    const categories = [...new Set(scanSecrets(content).map((m) => m.category))]
+    if (categories.length > 0) { set({ pendingSecret: categories }); return }
+    set({ draft: '' })
+    void get().send(content)
+  },
+
+  confirmSecretSend() {
+    const content = get().draft.trim()
+    set({ pendingSecret: null, draft: '' })
+    if (content) void get().send(content)
+  },
+
+  cancelSecretSend() { set({ pendingSecret: null }) },
   reportError(err) { set({ error: toProviderError(err) }) },
   setQuery(value) { set({ query: value }) },
   setTheme(theme) { set({ theme }) },

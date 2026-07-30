@@ -194,6 +194,26 @@ export const IconGauge = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+export const IconPaperclip = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M20 11l-8.5 8.5a4 4 0 0 1-5.7-5.7L14 5.6a2.6 2.6 0 0 1 3.7 3.7L9.2 17.8" />
+  </Svg>
+)
+
+export const IconSideThread = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M4 5h16v10H9l-4 3v-3H4z" />
+    <path d="M9 9h6" />
+  </Svg>
+)
+
+export const IconWarning = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M12 4l9 16H3z" />
+    <path d="M12 10v4M12 17h.01" />
+  </Svg>
+)
+
 /** Brand glyph: the </> code marks in the app icon. */
 export const IconBrand = ({ size = 16 }: { size?: number }): React.JSX.Element => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

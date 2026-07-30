@@ -79,8 +79,13 @@ export function installAppMenu(getWindow: () => BrowserWindow | undefined): void
     {
       label: 'View',
       submenu: [
-        { label: 'Command palette', accelerator: 'CmdOrCtrl+K', click: send(CHANNELS.menuCommandPalette) },
-        { label: 'Search chats', accelerator: 'CmdOrCtrl+F', click: send(CHANNELS.menuSearch) },
+        // No accelerators here: ⌘K and ⌘F are owned by the renderer's own key
+        // handlers (CommandPalette, Sidebar). Binding them on the menu too would
+        // double-fire — the menu path and the keydown both running for one press,
+        // which toggled the palette open then immediately shut. The menu items
+        // stay clickable and route through the same channels.
+        { label: 'Command palette', click: send(CHANNELS.menuCommandPalette) },
+        { label: 'Search chats', click: send(CHANNELS.menuSearch) },
         { type: 'separator' },
         { role: 'togglefullscreen' },
         ...(process.env['ELECTRON_RENDERER_URL'] ? [{ role: 'toggleDevTools' as const }] : []),

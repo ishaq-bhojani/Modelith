@@ -8,9 +8,12 @@ import { Composer } from '../chat/Composer.js'
 import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
 import { ContextInspector } from '../chat/ContextInspector.js'
+import { SideThread } from '../chat/SideThread.js'
+import { SecretWarning } from '../chat/SecretWarning.js'
+import { CommandPalette } from './CommandPalette.js'
 import { ModelPicker } from './ModelPicker.js'
 import { sessionCost, formatTotal } from '../chat/cost.js'
-import { IconMoon, IconSun } from './icons.js'
+import { IconMoon, IconSideThread, IconSun } from './icons.js'
 
 export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
@@ -28,6 +31,7 @@ export function App(): React.JSX.Element {
   const messages = useAppStore((s) => s.messages)
   const openSettings = useAppStore((s) => s.openSettings)
   const newSession = useAppStore((s) => s.newSession)
+  const openSideThread = useAppStore((s) => s.openSideThread)
 
   useEffect(() => { void loadSessions() }, [loadSessions])
   useEffect(() => { void loadProviders() }, [loadProviders])
@@ -68,6 +72,15 @@ export function App(): React.JSX.Element {
             ) : null}
             <button
               className="icon-button"
+              data-testid="side-thread-open"
+              title="Open a side thread"
+              aria-label="Open a side thread"
+              onClick={() => openSideThread(window.getSelection?.()?.toString().trim() ?? '')}
+            >
+              <IconSideThread size={16} />
+            </button>
+            <button
+              className="icon-button"
               data-testid="toggle-theme"
               title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
               aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -83,9 +96,12 @@ export function App(): React.JSX.Element {
         </main>
 
         <ContextInspector />
+        <SideThread />
       </div>
 
       <SettingsDialog />
+      <SecretWarning />
+      <CommandPalette />
     </div>
   )
 }
