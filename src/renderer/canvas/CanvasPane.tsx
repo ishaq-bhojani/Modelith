@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import { deriveArtifacts, type Artifact } from './artifacts.js'
+import { deriveArtifacts, type ArtifactLang } from './artifacts.js'
 import { HARNESS_HTML } from './harness.js'
 import { compileMermaid } from './mermaid.js'
 import { useHarness } from './useHarness.js'
-import { IconChevronDown } from '../app/icons.js'
+import { IconChevronDown, IconGitBranch } from '../app/icons.js'
+
+/** A pinned snapshot of one version, kept only in renderer state (spec §5). */
+interface Branch { id: string; lang: ArtifactLang; content: string }
+
+/** A tab in the canvas toolbar — a derived artifact or a pinned branch. */
+interface Tab { key: string; label: string; lang: ArtifactLang; versions: string[]; pinned: boolean }
 
 /**
  * The live artifact canvas (artifact-canvas spec §7). Present only when the
  * viewed conversation has at least one artifact, so the app stays a clean chat
  * window until it needs to be more. Renders into a sandboxed, no-egress harness
  * iframe; mermaid is compiled to SVG before it crosses the boundary (Canvas 5).
+ *
+ * Tabs are the derived artifacts (one per language) plus any "branches" — the
+ * escape hatch of spec §5: pinning the current version under a new id (html#2)
+ * so a user genuinely building a second page is not forced to fight the
+ * one-artifact-per-language rule. Branches live only in renderer state; on
+ * reload the conversation re-derives without them.
  */
 export function CanvasPane(): React.JSX.Element | null {
   const messages = useAppStore((s) => s.messages)
@@ -24,7 +36,8 @@ export function CanvasPane(): React.JSX.Element | null {
     [messages, streamHere],
   )
 
-  const [activeLang, setActiveLang] = useState<string | null>(null)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [activeKey, setActiveKey] = useState<string | null>(null)
   const [versionOverride, setVersionOverride] = useState<number | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [compiled, setCompiled] = useState<{ kind: 'html' | 'svg'; content: string } | null>(null)
@@ -36,19 +49,27 @@ export function CanvasPane(): React.JSX.Element | null {
     setSelectMode(false)
   })
 
-  // Keep a valid active tab as artifacts come and go.
-  const active: Artifact | undefined =
-    artifacts.find((a) => a.lang === activeLang) ?? artifacts[0]
-  useEffect(() => {
-    if (active && active.lang !== activeLang) setActiveLang(active.lang)
-  }, [active, activeLang])
+  // Branches belong to the conversation on screen; drop them when it changes.
+  useEffect(() => { setBranches([]) }, [activeSessionId])
 
-  // A transcript "Open in canvas" card focuses a specific language. The token
-  // changes on every click so re-clicking the same card re-focuses it.
+  const tabs: Tab[] = useMemo(() => [
+    ...artifacts.map((a) => ({ key: a.id, label: a.lang, lang: a.lang, versions: a.versions, pinned: false })),
+    ...branches.map((b) => ({ key: b.id, label: b.id, lang: b.lang, versions: [b.content], pinned: true })),
+  ], [artifacts, branches])
+
+  // Keep a valid active tab as tabs come and go.
+  const active: Tab | undefined = tabs.find((t) => t.key === activeKey) ?? tabs[0]
+  useEffect(() => {
+    if (active && active.key !== activeKey) setActiveKey(active.key)
+  }, [active, activeKey])
+
+  // A transcript "Open in canvas" card focuses a language (its derived tab key
+  // equals the language). The token changes on every click so re-clicking the
+  // same card re-focuses even when the language is unchanged.
   const canvasFocus = useAppStore((s) => s.canvasFocus)
   useEffect(() => {
     if (canvasFocus && artifacts.some((a) => a.lang === canvasFocus.lang)) {
-      setActiveLang(canvasFocus.lang)
+      setActiveKey(canvasFocus.lang)
       setVersionOverride(null)
     }
   }, [canvasFocus, artifacts])
@@ -56,7 +77,7 @@ export function CanvasPane(): React.JSX.Element | null {
   // A newly-arrived version snaps to newest unless the user has stepped back.
   const versionCount = active?.versions.length ?? 0
   const versionIndex = versionOverride ?? (versionCount > 0 ? versionCount - 1 : 0)
-  useEffect(() => { setVersionOverride(null) }, [versionCount, activeLang])
+  useEffect(() => { setVersionOverride(null) }, [versionCount, activeKey])
 
   const source = active?.versions[versionIndex] ?? ''
 
@@ -92,19 +113,28 @@ export function CanvasPane(): React.JSX.Element | null {
 
   useEffect(() => { sendSelectMode(selectMode) }, [selectMode, sendSelectMode])
 
-  if (artifacts.length === 0 || !active) return null
+  if (tabs.length === 0 || !active) return null
+
+  const branchHere = () => {
+    const n = branches.filter((b) => b.lang === active.lang).length + 2 // #1 is the derived tab
+    const branch: Branch = { id: `${active.lang}#${n}`, lang: active.lang, content: source }
+    setBranches((prev) => [...prev, branch])
+    setActiveKey(branch.id)
+    setVersionOverride(null)
+  }
 
   return (
     <section className="canvas" data-testid="canvas">
       <div className="canvas-toolbar">
         <div className="canvas-tabs">
-          {artifacts.map((a) => (
+          {tabs.map((t) => (
             <button
-              key={a.id}
-              className={`canvas-tab${a.lang === active.lang ? ' canvas-tab-active' : ''}`}
-              onClick={() => { setActiveLang(a.lang); setVersionOverride(null) }}
+              key={t.key}
+              className={`canvas-tab${t.key === active.key ? ' canvas-tab-active' : ''}`}
+              data-testid="canvas-tab"
+              onClick={() => { setActiveKey(t.key); setVersionOverride(null) }}
             >
-              {a.lang}
+              {t.label}
             </button>
           ))}
         </div>
@@ -119,7 +149,7 @@ export function CanvasPane(): React.JSX.Element | null {
             >
               <IconChevronDown size={13} />
             </button>
-            <span className="canvas-version-label">v{versionIndex + 1} of {versionCount}</span>
+            <span className="canvas-version-label" data-testid="canvas-version-label">v{versionIndex + 1} of {versionCount}</span>
             <button
               className="icon-button"
               aria-label="Next version"
@@ -130,6 +160,14 @@ export function CanvasPane(): React.JSX.Element | null {
             </button>
           </div>
         ) : null}
+        <button
+          className="chip-button"
+          data-testid="canvas-branch"
+          title="Pin this version as a separate artifact"
+          onClick={branchHere}
+        >
+          <IconGitBranch size={13} /> Branch
+        </button>
         <button
           className={`chip-button${selectMode ? ' chip-button-active' : ''}`}
           data-testid="canvas-select"

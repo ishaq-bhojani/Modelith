@@ -60,6 +60,29 @@ test('an invalid mermaid diagram surfaces an error, not a broken frame', async (
   await expect(page.getByTestId('canvas-error')).toBeVisible({ timeout: 15_000 })
 })
 
+test('two artifact languages produce two tabs', async () => {
+  const page = await makeArtifact(app, 'draw a multicanvas please')
+  await expect(page.getByTestId('canvas-tab')).toHaveCount(2, { timeout: 10_000 })
+})
+
+test('a rewrite is a new version, steppable — not a second tab', async () => {
+  const page = await makeArtifact(app, 'give me twoversions')
+  // A second html block is v2 of the same artifact, not a new tab (spec §5).
+  await expect(page.getByTestId('canvas-tab')).toHaveCount(1)
+  const label = page.getByTestId('canvas-version-label')
+  await expect(label).toHaveText('v2 of 2', { timeout: 10_000 })
+  await page.getByRole('button', { name: 'Previous version' }).click()
+  await expect(label).toHaveText('v1 of 2')
+})
+
+test('Branch pins the current version as a new tab', async () => {
+  const page = await makeArtifact(app, 'make a canvas page')
+  await expect(page.getByTestId('canvas-tab')).toHaveCount(1)
+  await page.getByTestId('canvas-branch').click()
+  await expect(page.getByTestId('canvas-tab')).toHaveCount(2)
+  await expect(page.getByTestId('canvas-tab').nth(1)).toHaveText('html#2')
+})
+
 test('code inside the harness cannot reach the network (no egress)', async () => {
   const page = await makeArtifact(app)
   const frames = page.frames()

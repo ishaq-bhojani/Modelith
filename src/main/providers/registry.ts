@@ -41,7 +41,9 @@ const fakeProvider: Provider = {
     // Deliberate keyword triggers so E2E can exercise each canvas render path.
     // No existing test uses these words, so the default greeting is unaffected.
     let chunks: string[]
-    if (/badmermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'not a valid diagram <<<\n', '```\n']
+    if (/multicanvas/i.test(lastUser)) chunks = ['```html\n', '<h1>Page</h1>\n', '```\n\n', '```mermaid\n', 'graph TD;\nA-->B;\n', '```\n']
+    else if (/twoversions/i.test(lastUser)) chunks = ['```html\n', '<h1 id="t">v1</h1>\n', '```\n\n', 'Bigger:\n\n', '```html\n', '<h1 id="t">v2</h1>\n', '```\n']
+    else if (/badmermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'not a valid diagram <<<\n', '```\n']
     else if (/mermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'graph TD;\n', 'A-->B;\n', '```\n']
     else if (/canvas/i.test(lastUser)) chunks = ['Here is a page.\n\n', '```html\n', '<h1 id="t">Hello canvas</h1>\n', '```\n']
     else chunks = ['Hello', ' from', ' the', ' fake', ' provider']
