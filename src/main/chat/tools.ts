@@ -74,6 +74,10 @@ export interface ToolDeps {
   turnId: string
   /** Ask the user to approve a write; resolves with their decision. */
   requestApproval(edit: PendingEdit): Promise<ApprovalDecision>
+  /** Ask the user to approve a non-diff tool call (e.g. MCP); yes/no. */
+  requestConfirm?(confirm: { callId: string; name: string; argsJson: string }): Promise<'accept' | 'reject'>
+  /** Route an MCP tool call to its server (mcp-client spec §3). */
+  mcpCall?(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>
 }
 
 export interface ToolOutcome {
@@ -110,6 +114,16 @@ export async function executeTool(
 ): Promise<ToolOutcome> {
   const args = parseArgs(argsRaw)
   const { workspace } = deps
+
+  // MCP tools (mcp__server__tool) are gated with a generic confirm, then routed.
+  if (name.startsWith('mcp__')) {
+    if (!deps.mcpCall || !deps.requestConfirm) return { result: 'MCP is not available.', isError: true }
+    const decision = await deps.requestConfirm({ callId, name, argsJson: JSON.stringify(args, null, 2) })
+    if (decision === 'reject') return { result: 'The user rejected this tool call; it was not run.', isError: false }
+    const out = await deps.mcpCall(name, args)
+    return { result: out.text, isError: out.isError }
+  }
+
   try {
     if (name === 'read_file') {
       const { text } = await workspace.read(String(args['path'] ?? ''))

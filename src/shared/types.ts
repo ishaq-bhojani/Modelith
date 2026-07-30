@@ -67,6 +67,16 @@ export interface WorkspaceTreeEntry {
   readable: boolean
 }
 
+/** Status of a configured MCP server for the servers panel (mcp-client spec §2). */
+export interface McpServerStatus {
+  id: string
+  name: string
+  enabled: boolean
+  connected: boolean
+  error?: string
+  tools: { name: string; description?: string }[]
+}
+
 export interface ModelInfo {
   id: string
   label: string
@@ -164,6 +174,9 @@ export type StreamEvent =
   // Engine-originated: a write awaiting the user's approval at the diff gate
   // (agentic-edits spec §4). The renderer diffs `previous`→`proposed`.
   | { type: 'tool_pending'; callId: string; tool: string; relPath: string; previous: string | null; proposed: string }
+  // Engine-originated: a non-diff tool call (e.g. an MCP tool) awaiting a yes/no
+  // approval (mcp-client spec §3). `argsJson` is the pretty-printed arguments.
+  | { type: 'tool_confirm'; callId: string; name: string; argsJson: string }
   // Engine-originated: a tool call finished (activity line in the transcript).
   | { type: 'tool_result'; callId: string; name: string; ok: boolean; summary: string }
 

@@ -4,6 +4,7 @@ import { TOOL_SPECS, executeTool, type ApprovalDecision, type PendingEdit } from
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
 import type { Workspace } from '../workspace/service.js'
+import type { McpManager } from '../mcp/manager.js'
 import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
 
 export interface Fallback {
@@ -41,6 +42,8 @@ export interface StreamEngineDeps {
   maxContextTokens?: number
   /** Present when agentic edits are available; absent = tools disabled. */
   workspace?: Workspace
+  /** Present when MCP servers may contribute tools (mcp-client spec §3). */
+  mcp?: McpManager
 }
 
 /** Hard cap on tool round-trips per user turn (agentic-edits spec §3). */
@@ -152,7 +155,9 @@ export class StreamEngine {
     // Agentic edits are available only when explicitly requested AND a
     // workspace is wired; otherwise this stays a plain chat with no tools.
     const agent = input.agent === true && this.deps.workspace !== undefined
-    const tools = agent ? TOOL_SPECS : undefined
+    // In agent mode, offer the edit tools plus any connected MCP server tools.
+    const mcpTools = agent ? (this.deps.mcp?.toolSpecs() ?? []) : []
+    const tools = agent ? [...TOOL_SPECS, ...mcpTools] : undefined
     const turnId = streamId // one id for the whole user turn (checkpoints/revert)
 
     // The primary followed by any configured fallbacks. Failover only happens on
@@ -230,6 +235,8 @@ export class StreamEngine {
           workspace: this.deps.workspace!,
           turnId,
           requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller),
+          requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller),
+          ...(this.deps.mcp ? { mcpCall: (n, a) => this.deps.mcp!.call(n, a) } : {}),
         })
         this.send(streamId, sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: !outcome.isError, summary: outcome.result.slice(0, 200) })
         try {
@@ -267,6 +274,26 @@ export class StreamEngine {
       this.send(streamId, sessionId, {
         type: 'tool_pending', callId: edit.callId, tool: edit.tool, relPath: edit.relPath, previous: edit.previous, proposed: edit.proposed,
       })
+    })
+  }
+
+  /** Emit a generic tool-call confirmation and await the user's yes/no. */
+  private requestConfirm(
+    streamId: string,
+    sessionId: string,
+    confirm: { callId: string; name: string; argsJson: string },
+    controller: AbortController,
+  ): Promise<'accept' | 'reject'> {
+    return new Promise<'accept' | 'reject'>((resolve) => {
+      if (controller.signal.aborted) { resolve('reject'); return }
+      const settle = (decision: ApprovalDecision) => {
+        controller.signal.removeEventListener('abort', onAbort)
+        resolve(decision.action === 'reject' ? 'reject' : 'accept')
+      }
+      const onAbort = () => { this.pendingApprovals.delete(confirm.callId); settle({ action: 'reject' }) }
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+      this.pendingApprovals.set(confirm.callId, settle)
+      this.send(streamId, sessionId, { type: 'tool_confirm', callId: confirm.callId, name: confirm.name, argsJson: confirm.argsJson })
     })
   }
 

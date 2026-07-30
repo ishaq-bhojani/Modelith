@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Attachment, ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
+import type { Attachment, ChatMessage, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { encodeSelection } from '../canvas/selection.js'
 
@@ -103,8 +103,15 @@ interface AppState {
   agentMode: boolean
   /** A write awaiting approval at the diff gate, or null (agentic-edits spec §4). */
   pendingEdit: { callId: string; tool: string; relPath: string; previous: string | null; proposed: string } | null
+  /** A non-diff tool call (MCP) awaiting yes/no, or null (mcp-client spec §3). */
+  pendingConfirm: { callId: string; name: string; argsJson: string } | null
+  /** Tool names the user chose to allow for the rest of the session. */
+  allowedTools: string[]
   /** The most recent turn that applied edits, for a one-click revert affordance. */
   lastEditTurnId: string | null
+  /** Configured MCP servers and their status (mcp-client spec §2). */
+  mcpServers: McpServerStatus[]
+  mcpOpen: boolean
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
 
@@ -124,8 +131,15 @@ interface AppState {
   toggleAgentMode(): void
   /** Answer the diff gate: accept / reject / accept-with-edited-content. */
   resolveEdit(action: 'accept' | 'reject' | 'edited', content?: string): void
+  /** Answer the generic tool-confirm gate; `allowSession` remembers the tool. */
+  resolveConfirm(action: 'accept' | 'reject', allowSession?: boolean): void
   /** Revert every edit made in a turn (agentic-edits spec §5). */
   revertEdits(turnId: string): Promise<void>
+  toggleMcp(): void
+  loadMcpServers(): Promise<void>
+  addMcpServer(config: { id: string; name: string; command: string; args?: string[] }): Promise<void>
+  removeMcpServer(id: string): Promise<void>
+  setMcpEnabled(id: string, enabled: boolean): Promise<void>
   setCanvasSelection(outerHTML: string | null): void
   /** Focus the canvas on an artifact language (from a transcript card). */
   focusCanvas(lang: string): void
@@ -204,7 +218,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingAttachments: [],
   agentMode: false,
   pendingEdit: null,
+  pendingConfirm: null,
+  allowedTools: [],
   lastEditTurnId: null,
+  mcpServers: [],
+  mcpOpen: false,
   pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
@@ -245,6 +263,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ pendingEdit: null })
     void window.openCoder.chat.toolDecision(edit.callId, action, content)
   },
+  resolveConfirm(action, allowSession) {
+    const confirm = get().pendingConfirm
+    if (!confirm) return
+    set((s) => ({
+      pendingConfirm: null,
+      allowedTools: allowSession && action === 'accept' ? [...new Set([...s.allowedTools, confirm.name])] : s.allowedTools,
+    }))
+    void window.openCoder.chat.toolDecision(confirm.callId, action)
+  },
   async revertEdits(turnId) {
     try {
       await window.openCoder.workspace.revert(turnId)
@@ -252,6 +279,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       set({ error: toProviderError(err) })
     }
+  },
+  toggleMcp() { set((s) => ({ mcpOpen: !s.mcpOpen })) },
+  async loadMcpServers() {
+    try { set({ mcpServers: await window.openCoder.mcp.list() }) }
+    catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async addMcpServer(config) {
+    try { set({ mcpServers: await window.openCoder.mcp.add(config) }) }
+    catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async removeMcpServer(id) {
+    try { set({ mcpServers: await window.openCoder.mcp.remove(id) }) }
+    catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async setMcpEnabled(id, enabled) {
+    try { set({ mcpServers: await window.openCoder.mcp.setEnabled(id, enabled) }) }
+    catch (err) { set({ error: toProviderError(err) }) }
   },
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
   focusCanvas(lang) {
@@ -659,6 +703,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       // A write awaiting approval at the diff gate (agentic-edits spec §4).
       if (sessionId === get().activeSessionId) {
         set({ pendingEdit: { callId: event.callId, tool: event.tool, relPath: event.relPath, previous: event.previous, proposed: event.proposed } })
+      }
+      return
+    }
+    if (event.type === 'tool_confirm') {
+      // A generic tool call (MCP) awaiting yes/no. If the user allowed this tool
+      // for the session, answer immediately; otherwise raise the confirm gate.
+      if (get().allowedTools.includes(event.name)) {
+        void window.openCoder.chat.toolDecision(event.callId, 'accept')
+      } else if (sessionId === get().activeSessionId) {
+        set({ pendingConfirm: { callId: event.callId, name: event.name, argsJson: event.argsJson } })
       }
       return
     }

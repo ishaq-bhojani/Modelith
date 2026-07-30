@@ -10,7 +10,9 @@ import { lineDiff } from './line-diff.js'
  */
 export function DiffGate(): React.JSX.Element | null {
   const pending = useAppStore((s) => s.pendingEdit)
+  const confirm = useAppStore((s) => s.pendingConfirm)
   const resolveEdit = useAppStore((s) => s.resolveEdit)
+  const resolveConfirm = useAppStore((s) => s.resolveConfirm)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -18,6 +20,25 @@ export function DiffGate(): React.JSX.Element | null {
     () => (pending ? lineDiff(pending.previous, pending.proposed) : []),
     [pending],
   )
+
+  // A generic (MCP) tool-call confirmation takes precedence when present.
+  if (confirm) {
+    return (
+      <div className="modal-scrim" data-testid="tool-confirm">
+        <div className="diff-gate">
+          <div className="diff-gate-head">
+            <span className="diff-gate-title">Run tool <code>{confirm.name}</code>?</span>
+          </div>
+          <pre className="diff-view" data-testid="tool-confirm-args">{confirm.argsJson}</pre>
+          <div className="diff-gate-actions">
+            <button className="send-button" data-testid="confirm-accept" onClick={() => resolveConfirm('accept')}>Run</button>
+            <button className="ghost-button" data-testid="confirm-reject" onClick={() => resolveConfirm('reject')}>Reject</button>
+            <button className="ghost-button" data-testid="confirm-allow" onClick={() => resolveConfirm('accept', true)}>Always allow this tool</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (!pending) return null
 

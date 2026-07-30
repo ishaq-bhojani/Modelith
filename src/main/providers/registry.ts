@@ -70,6 +70,14 @@ const fakeProvider: Provider = {
         return
       }
       const callId = `call-${req.messages.length}`
+      if (/agent mcp/i.test(lastUser)) {
+        const mcpTool = req.tools.find((t) => t.name.startsWith('mcp__'))
+        if (mcpTool) {
+          yield { type: 'tool_call' as const, id: callId, name: mcpTool.name, arguments: JSON.stringify({ text: 'hi' }) }
+          yield { type: 'done' as const }
+          return
+        }
+      }
       if (/agent write|create file/i.test(lastUser)) {
         yield { type: 'tool_call' as const, id: callId, name: 'write_file', arguments: JSON.stringify({ path: 'notes.txt', content: 'hello from the agent\n' }) }
         yield { type: 'done' as const }
