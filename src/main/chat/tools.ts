@@ -55,6 +55,36 @@ const READ_ONLY = new Set(['read_file', 'list_dir'])
 const WRITE = new Set(['write_file', 'apply_edit'])
 export const isKnownTool = (name: string): boolean => READ_ONLY.has(name) || WRITE.has(name)
 
+/**
+ * Terminal + git tools (terminal-git spec §1–2). Read-only git tools auto-run;
+ * `run_command` and `git_commit` are gated. Offered only when a shell runner is
+ * available (a workspace is open).
+ */
+export const TERMINAL_TOOL_SPECS: ToolSpec[] = [
+  {
+    name: 'run_command',
+    description: 'Run a shell command in the workspace root. Shown to the user for approval before running.',
+    parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+  },
+  { name: 'git_status', description: 'Show git status of the workspace.', parameters: { type: 'object', properties: {} } },
+  {
+    name: 'git_diff',
+    description: 'Show the git diff, optionally for one path.',
+    parameters: { type: 'object', properties: { path: { type: 'string' } } },
+  },
+  { name: 'git_log', description: 'Show recent git commits.', parameters: { type: 'object', properties: {} } },
+  {
+    name: 'git_commit',
+    description: 'Commit staged changes with a message. Shown for approval first.',
+    parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
+  },
+]
+
+/** Shell-quote a single argument for a POSIX or cmd shell (best effort). */
+function shellQuote(s: string): string {
+  return `"${s.replace(/(["$`\\])/g, '\\$1')}"`
+}
+
 /** A write proposed to the user (spec §4). The renderer diffs previous→proposed. */
 export interface PendingEdit {
   callId: string
@@ -78,6 +108,8 @@ export interface ToolDeps {
   requestConfirm?(confirm: { callId: string; name: string; argsJson: string }): Promise<'accept' | 'reject'>
   /** Route an MCP tool call to its server (mcp-client spec §3). */
   mcpCall?(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>
+  /** Run a shell command in the workspace root (terminal-git spec §1). */
+  runShell?(command: string): Promise<{ output: string; exitCode: number | null }>
 }
 
 export interface ToolOutcome {
@@ -89,6 +121,12 @@ export interface ToolOutcome {
 
 function parseArgs(raw: string): Record<string, unknown> {
   try { return JSON.parse(raw || '{}') as Record<string, unknown> } catch { return {} }
+}
+
+/** Shape a command result into a tool outcome for the model. */
+function runResult(r: { output: string; exitCode: number | null }): ToolOutcome {
+  const status = r.exitCode === 0 ? '' : `\n[exit code ${r.exitCode}]`
+  return { result: (r.output || '(no output)') + status, isError: r.exitCode !== 0 && r.exitCode !== null }
 }
 
 function friendlyWorkspaceError(err: unknown): string {
@@ -114,6 +152,27 @@ export async function executeTool(
 ): Promise<ToolOutcome> {
   const args = parseArgs(argsRaw)
   const { workspace } = deps
+
+  // Terminal + git tools (terminal-git spec §1–2).
+  if (name === 'git_status' || name === 'git_diff' || name === 'git_log' || name === 'run_command' || name === 'git_commit') {
+    if (!deps.runShell) return { result: 'No workspace is open, so commands cannot run.', isError: true }
+    // Read-only git tools auto-run; run_command and git_commit are gated.
+    if (name === 'git_status') return runResult(await deps.runShell('git status --short --branch'))
+    if (name === 'git_log') return runResult(await deps.runShell('git log --oneline -20'))
+    if (name === 'git_diff') {
+      const p = args['path'] ? ` -- ${shellQuote(String(args['path']))}` : ''
+      return runResult(await deps.runShell(`git diff${p}`))
+    }
+    // Gated: run_command and git_commit.
+    const command = name === 'git_commit'
+      ? `git commit -m ${shellQuote(String(args['message'] ?? ''))}`
+      : String(args['command'] ?? '')
+    if (!command) return { result: 'Missing command.', isError: true }
+    if (!deps.requestConfirm) return { result: 'Approval is unavailable.', isError: true }
+    const decision = await deps.requestConfirm({ callId, name, argsJson: JSON.stringify({ command }, null, 2) })
+    if (decision === 'reject') return { result: 'The user rejected this command; it was not run.', isError: false }
+    return runResult(await deps.runShell(command))
+  }
 
   // MCP tools (mcp__server__tool) are gated with a generic confirm, then routed.
   if (name.startsWith('mcp__')) {

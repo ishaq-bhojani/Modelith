@@ -458,6 +458,11 @@ body.resizing {
   white-space: nowrap;
 }
 
+.git-row { width: 100%; text-align: left; border: none; background: none; }
+.git-badge { flex: none; width: 18px; font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-secondary); }
+.git-badge-staged { color: #2ea043; }
+.git-diff { max-height: 40%; border-top: 1px solid var(--hairline); }
+
 .mcp-server { padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
 .mcp-server-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .mcp-server-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }

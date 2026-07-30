@@ -1,0 +1,50 @@
+import { runCommand } from './runner.js'
+import type { Workspace } from '../workspace/service.js'
+import type { GitFile, GitStatus } from '../../shared/types.js'
+
+/**
+ * View-only git state for the Git panel (terminal-git spec §2). Runs the git
+ * binary in the workspace root and parses porcelain output; commits are not
+ * done here (that is the model's gated `git_commit` tool).
+ */
+export class GitService {
+  constructor(private readonly workspace: Workspace) {}
+
+  private async root(): Promise<string | null> { return this.workspace.current() }
+
+  async status(): Promise<GitStatus> {
+    const root = await this.root()
+    if (!root) return { isRepo: false, branch: null, files: [] }
+    const r = await runCommand('git status --porcelain=v1 --branch', { cwd: root, timeoutMs: 15_000 })
+    if (r.exitCode !== 0) return { isRepo: false, branch: null, files: [] }
+    return parseStatus(r.output)
+  }
+
+  async diff(path?: string): Promise<string> {
+    const root = await this.root()
+    if (!root) return ''
+    const cmd = path ? `git diff -- ${JSON.stringify(path)}` : 'git diff'
+    const r = await runCommand(cmd, { cwd: root, timeoutMs: 15_000 })
+    return r.output
+  }
+}
+
+/** Parse `git status --porcelain=v1 --branch` into a structured status. */
+export function parseStatus(output: string): GitStatus {
+  const lines = output.split('\n')
+  let branch: string | null = null
+  const files: GitFile[] = []
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      // e.g. "## main...origin/main [ahead 1]" → "main"
+      branch = line.slice(3).split(/\.\.\.|\s/)[0] ?? null
+      continue
+    }
+    if (line.length < 3) continue
+    const index = line[0]!
+    const work = line[1]!
+    const path = line.slice(3)
+    files.push({ path, staged: index !== ' ' && index !== '?', work: work === ' ' ? index : work })
+  }
+  return { isRepo: true, branch, files }
+}

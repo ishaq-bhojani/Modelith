@@ -78,6 +78,11 @@ const fakeProvider: Provider = {
           return
         }
       }
+      if (/agent run/i.test(lastUser)) {
+        yield { type: 'tool_call' as const, id: callId, name: 'run_command', arguments: JSON.stringify({ command: 'echo oc-ran' }) }
+        yield { type: 'done' as const }
+        return
+      }
       if (/agent write|create file/i.test(lastUser)) {
         yield { type: 'tool_call' as const, id: callId, name: 'write_file', arguments: JSON.stringify({ path: 'notes.txt', content: 'hello from the agent\n' }) }
         yield { type: 'done' as const }

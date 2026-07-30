@@ -48,6 +48,8 @@ export const CHANNELS = {
   mcpAdd: 'mcp:add',
   mcpRemove: 'mcp:remove',
   mcpSetEnabled: 'mcp:set-enabled',
+  gitStatus: 'git:status',
+  gitDiff: 'git:diff',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -137,3 +139,5 @@ export const McpAddSchema = z.object({
 })
 export const McpIdSchema = z.object({ id: z.string().min(1) })
 export const McpSetEnabledSchema = z.object({ id: z.string().min(1), enabled: z.boolean() })
+
+export const GitDiffSchema = z.object({ path: z.string().optional() })

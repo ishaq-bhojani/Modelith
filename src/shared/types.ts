@@ -67,6 +67,11 @@ export interface WorkspaceTreeEntry {
   readable: boolean
 }
 
+/** A changed file in git status (terminal-git spec §2). */
+export interface GitFile { path: string; staged: boolean; work: string }
+/** Working-tree git status for the Git panel. */
+export interface GitStatus { isRepo: boolean; branch: string | null; files: GitFile[] }
+
 /** Status of a configured MCP server for the servers panel (mcp-client spec §2). */
 export interface McpServerStatus {
   id: string
