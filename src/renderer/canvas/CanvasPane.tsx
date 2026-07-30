@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import { deriveArtifacts, type Artifact } from './artifacts.js'
 import { HARNESS_HTML } from './harness.js'
+import { compileMermaid } from './mermaid.js'
 import { useHarness } from './useHarness.js'
 import { IconChevronDown } from '../app/icons.js'
 
@@ -27,6 +28,7 @@ export function CanvasPane(): React.JSX.Element | null {
   const [versionOverride, setVersionOverride] = useState<number | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [compiled, setCompiled] = useState<{ kind: 'html' | 'svg'; content: string } | null>(null)
+  const [compileError, setCompileError] = useState<string | null>(null)
 
   const setSelection = useAppStore((s) => s.setCanvasSelection)
   const { ref, handleLoad, render, setSelectMode: sendSelectMode } = useHarness((outerHTML) => {
@@ -49,12 +51,24 @@ export function CanvasPane(): React.JSX.Element | null {
   const source = active?.versions[versionIndex] ?? ''
 
   // Compile the current version to what the harness renders. HTML/SVG pass
-  // through; mermaid is compiled to SVG in Canvas 5 (async), hence the effect.
+  // through unchanged; mermaid is compiled to SVG here — on the trusted side,
+  // never inside the harness (spec §2.2) — which is async, hence the effect.
   useEffect(() => {
-    if (!active) { setCompiled(null); return }
-    if (active.lang === 'html') setCompiled({ kind: 'html', content: source })
-    else if (active.lang === 'svg') setCompiled({ kind: 'svg', content: source })
-    else setCompiled({ kind: 'svg', content: '' }) // mermaid: wired in Canvas 5
+    if (!active) { setCompiled(null); setCompileError(null); return }
+    if (active.lang === 'html') { setCompiled({ kind: 'html', content: source }); setCompileError(null); return }
+    if (active.lang === 'svg') { setCompiled({ kind: 'svg', content: source }); setCompileError(null); return }
+
+    // Mermaid: debounce so a diagram half-written by the stream is not compiled
+    // (and error-flashed) on every token; only compile once the source settles.
+    let cancelled = false
+    const handle = setTimeout(() => {
+      void compileMermaid(source).then((result) => {
+        if (cancelled) return
+        if (result.ok) { setCompiled({ kind: 'svg', content: result.svg }); setCompileError(null) }
+        else setCompileError(result.error) // keep the last good render visible
+      })
+    }, 200)
+    return () => { cancelled = true; clearTimeout(handle) }
   }, [active, source])
 
   // Throttle render dispatch so streaming does not thrash the frame (spec §6.6).
@@ -115,6 +129,13 @@ export function CanvasPane(): React.JSX.Element | null {
           {selectMode ? 'Click an element…' : 'Select'}
         </button>
       </div>
+
+      {compileError ? (
+        <div className="canvas-error" role="alert" data-testid="canvas-error">
+          <span className="canvas-error-title">Diagram error</span>
+          <span className="canvas-error-detail">{compileError}</span>
+        </div>
+      ) : null}
 
       <iframe
         ref={ref}

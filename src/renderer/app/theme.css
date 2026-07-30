@@ -407,6 +407,30 @@ body.resizing {
   background: #fff;
 }
 
+.canvas-error {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  background: var(--danger-bg, rgba(220, 38, 38, 0.1));
+  border-bottom: 1px solid var(--danger, #dc2626);
+}
+
+.canvas-error-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger, #dc2626);
+}
+
+.canvas-error-detail {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ============================================================================
    Sidebar
    ========================================================================= */

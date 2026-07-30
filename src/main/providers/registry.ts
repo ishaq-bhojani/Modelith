@@ -38,20 +38,18 @@ const fakeProvider: Provider = {
     // pane can be exercised in E2E. No existing test uses that word, so the
     // default greeting path is unaffected.
     const lastUser = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
-    if (/canvas/i.test(lastUser)) {
-      const chunks = ['Here is a page.\n\n', '```html\n', '<h1 id="t">Hello canvas</h1>\n', '```\n']
-      for (const c of chunks) {
-        if (signal.aborted) return
-        await new Promise((r) => setTimeout(r, 15))
-        yield { type: 'text' as const, delta: c }
-      }
-      yield { type: 'done' as const }
-      return
-    }
-    for (const word of ['Hello', ' from', ' the', ' fake', ' provider']) {
+    // Deliberate keyword triggers so E2E can exercise each canvas render path.
+    // No existing test uses these words, so the default greeting is unaffected.
+    let chunks: string[]
+    if (/badmermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'not a valid diagram <<<\n', '```\n']
+    else if (/mermaid/i.test(lastUser)) chunks = ['```mermaid\n', 'graph TD;\n', 'A-->B;\n', '```\n']
+    else if (/canvas/i.test(lastUser)) chunks = ['Here is a page.\n\n', '```html\n', '<h1 id="t">Hello canvas</h1>\n', '```\n']
+    else chunks = ['Hello', ' from', ' the', ' fake', ' provider']
+
+    for (const c of chunks) {
       if (signal.aborted) return
-      await new Promise((r) => setTimeout(r, 20))
-      yield { type: 'text' as const, delta: word }
+      await new Promise((r) => setTimeout(r, 18))
+      yield { type: 'text' as const, delta: c }
     }
     yield { type: 'done' as const }
   },

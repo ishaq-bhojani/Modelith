@@ -6,10 +6,10 @@ let app: ElectronApplication
 test.beforeAll(async () => { app = await launchApp({ OPEN_CODER_FAKE_PROVIDER: '1' }) })
 test.afterAll(async () => { await app.close() })
 
-async function makeArtifact(app: ElectronApplication) {
+async function makeArtifact(app: ElectronApplication, prompt = 'make a canvas page') {
   const page = await app.firstWindow()
   await page.getByTestId('new-session').click()
-  await page.getByTestId('composer-input').fill('make a canvas page')
+  await page.getByTestId('composer-input').fill(prompt)
   await page.getByTestId('composer-send').click()
   await expect(page.getByTestId('canvas')).toBeVisible({ timeout: 10_000 })
   return page
@@ -32,6 +32,20 @@ test('the harness renders the artifact content', async () => {
   const page = await makeArtifact(app)
   const frame = page.frameLocator('[data-testid="canvas-frame"]')
   await expect(frame.locator('#t')).toHaveText('Hello canvas', { timeout: 5000 })
+})
+
+test('a mermaid diagram is compiled to SVG and rendered', async () => {
+  const page = await makeArtifact(app, 'draw a mermaid diagram')
+  const frame = page.frameLocator('[data-testid="canvas-frame"]')
+  // Mermaid is compiled to SVG in the renderer, then rendered inertly here.
+  // Generous timeout: mermaid is lazily imported and initialised on first use,
+  // which can be slow under parallel-worker contention.
+  await expect(frame.locator('svg')).toBeVisible({ timeout: 15_000 })
+})
+
+test('an invalid mermaid diagram surfaces an error, not a broken frame', async () => {
+  const page = await makeArtifact(app, 'draw a badmermaid diagram')
+  await expect(page.getByTestId('canvas-error')).toBeVisible({ timeout: 15_000 })
 })
 
 test('code inside the harness cannot reach the network (no egress)', async () => {
