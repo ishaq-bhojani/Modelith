@@ -67,20 +67,53 @@ test('two artifact languages produce two tabs', async () => {
 
 test('a rewrite is a new version, steppable — not a second tab', async () => {
   const page = await makeArtifact(app, 'give me twoversions')
-  // A second html block is v2 of the same artifact, not a new tab (spec §5).
-  await expect(page.getByTestId('canvas-tab')).toHaveCount(1)
+  // Wait for the settled end-state (both versions streamed) before counting, so
+  // the assertion never races a stale canvas from a previous test's session.
   const label = page.getByTestId('canvas-version-label')
   await expect(label).toHaveText('v2 of 2', { timeout: 10_000 })
+  // A second html block is v2 of the same artifact, not a new tab (spec §5).
+  await expect(page.getByTestId('canvas-tab')).toHaveCount(1)
   await page.getByRole('button', { name: 'Previous version' }).click()
   await expect(label).toHaveText('v1 of 2')
 })
 
 test('Branch pins the current version as a new tab', async () => {
   const page = await makeArtifact(app, 'make a canvas page')
+  const frame = page.frameLocator('[data-testid="canvas-frame"]')
+  await expect(frame.locator('#t')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByTestId('canvas-tab')).toHaveCount(1)
   await page.getByTestId('canvas-branch').click()
   await expect(page.getByTestId('canvas-tab')).toHaveCount(2)
   await expect(page.getByTestId('canvas-tab').nth(1)).toHaveText('html#2')
+})
+
+test('point-and-refine: selecting an element populates a chip and is sent inline', async () => {
+  const page = await makeArtifact(app, 'make a canvas page')
+  const frame = page.frameLocator('[data-testid="canvas-frame"]')
+  await expect(frame.locator('#t')).toBeVisible({ timeout: 5000 })
+
+  await page.getByTestId('canvas-select').click()
+  await frame.locator('#t').click()
+  // The selected element becomes a dismissible chip above the composer.
+  await expect(page.getByTestId('selection-chip')).toBeVisible({ timeout: 5000 })
+
+  await page.getByTestId('composer-input').fill('make it green')
+  await page.getByTestId('composer-send').click()
+
+  // The transcript collapses the persisted <selected-element> block to a chip.
+  await expect(page.getByTestId('msg-selection-chip')).toBeVisible({ timeout: 8000 })
+  await expect(page.getByTestId('transcript')).toContainText('make it green')
+})
+
+test('the selection chip can be dismissed', async () => {
+  const page = await makeArtifact(app, 'make a canvas page')
+  const frame = page.frameLocator('[data-testid="canvas-frame"]')
+  await expect(frame.locator('#t')).toBeVisible({ timeout: 5000 })
+  await page.getByTestId('canvas-select').click()
+  await frame.locator('#t').click()
+  await expect(page.getByTestId('selection-chip')).toBeVisible({ timeout: 5000 })
+  await page.getByTestId('selection-chip-dismiss').click()
+  await expect(page.getByTestId('selection-chip')).toHaveCount(0)
 })
 
 test('code inside the harness cannot reach the network (no egress)', async () => {

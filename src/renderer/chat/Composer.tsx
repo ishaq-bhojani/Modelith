@@ -29,6 +29,8 @@ export function Composer(): React.JSX.Element {
 
   const draft = useAppStore((s) => s.draft)
   const setDraft = useAppStore((s) => s.setDraft)
+  const canvasSelection = useAppStore((s) => s.canvasSelection)
+  const setCanvasSelection = useAppStore((s) => s.setCanvasSelection)
   const requestSend = useAppStore((s) => s.requestSend)
   const streamId = useAppStore((s) => s.streamId)
   const streamingSessionId = useAppStore((s) => s.streamingSessionId)
@@ -71,9 +73,29 @@ export function Composer(): React.JSX.Element {
     }
   }
 
+  // A one-line preview of the selected element for the refine chip.
+  const selectionLabel = canvasSelection
+    ? canvasSelection.replace(/\s+/g, ' ').trim().slice(0, 60)
+    : ''
+
   return (
     <div className="composer-dock">
       <div className="composer-column">
+        {canvasSelection ? (
+          <div className="selection-chip" data-testid="selection-chip">
+            <span className="selection-chip-label" title={canvasSelection}>
+              Refining: <code>{selectionLabel}</code>
+            </span>
+            <button
+              className="selection-chip-dismiss"
+              data-testid="selection-chip-dismiss"
+              aria-label="Clear selection"
+              onClick={() => setCanvasSelection(null)}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
         <div className="composer">
           <textarea
             ref={textareaRef}

@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 import type { ChatMessage } from '@shared/types'
 import { useAppStore } from '../state/store.js'
 import { CANVAS_LANGS, scanBlocks } from '../canvas/fence-scanner.js'
+import { decodeSelection } from '../canvas/selection.js'
 import { IconCheck, IconCopy, IconGitBranch, IconPanel, IconPencil } from '../app/icons.js'
 import { formatCost } from './cost.js'
 
@@ -120,9 +121,18 @@ export const MessageView = memo(function MessageView({
   }
 
   if (message.role === 'user') {
+    // A point-and-refine message carries a <selected-element> block in its
+    // persisted content; collapse it into a chip so the transcript shows what
+    // was sent without the raw markup (spec §7).
+    const { selection, body } = decodeSelection(message.content)
     return (
       <div className="msg-user-group">
-        <div className="msg-user">{message.content}</div>
+        {selection ? (
+          <div className="msg-selection-chip" data-testid="msg-selection-chip" title={selection}>
+            <code>{selection.replace(/\s+/g, ' ').trim().slice(0, 80)}</code>
+          </div>
+        ) : null}
+        <div className="msg-user">{body}</div>
         {canAct ? (
           <div className="msg-actions msg-actions-user">
             <button className="ghost-button" data-testid="edit-message" onClick={startEdit}>

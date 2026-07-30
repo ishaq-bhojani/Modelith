@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
+import { encodeSelection } from '../canvas/selection.js'
 
 function newId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -192,18 +193,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   // blocking outright — a guard against the common paste-a-key accident, not a
   // hard stop, since the user may legitimately be discussing a key.
   requestSend() {
-    const content = get().draft.trim()
-    if (!content || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    const prompt = get().draft.trim()
+    if (!prompt || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    // A canvas selection is folded into the persisted content (spec §7), so the
+    // secret scan runs over exactly what will be sent.
+    const selection = get().canvasSelection
+    const content = selection ? encodeSelection(selection, prompt) : prompt
     const categories = [...new Set(scanSecrets(content).map((m) => m.category))]
     if (categories.length > 0) { set({ pendingSecret: categories }); return }
-    set({ draft: '' })
+    set({ draft: '', canvasSelection: null })
     void get().send(content)
   },
 
   confirmSecretSend() {
-    const content = get().draft.trim()
-    set({ pendingSecret: null, draft: '' })
-    if (content) void get().send(content)
+    const prompt = get().draft.trim()
+    const selection = get().canvasSelection
+    const content = selection ? encodeSelection(selection, prompt) : prompt
+    set({ pendingSecret: null, draft: '', canvasSelection: null })
+    if (prompt) void get().send(content)
   },
 
   cancelSecretSend() { set({ pendingSecret: null }) },
