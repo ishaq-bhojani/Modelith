@@ -9,6 +9,7 @@ import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
 import { ContextInspector } from '../chat/ContextInspector.js'
 import { WorkspacePanel } from '../chat/WorkspacePanel.js'
+import { McpPanel } from '../chat/McpPanel.js'
 import { CanvasPane } from '../canvas/CanvasPane.js'
 import { SideThread } from '../chat/SideThread.js'
 import { SecretWarning } from '../chat/SecretWarning.js'
@@ -26,6 +27,7 @@ export function App(): React.JSX.Element {
   const loadPlatform = useAppStore((s) => s.loadPlatform)
   const loadSettings = useAppStore((s) => s.loadSettings)
   const initWorkspace = useAppStore((s) => s.initWorkspace)
+  const loadMcpServers = useAppStore((s) => s.loadMcpServers)
   const applyEvent = useAppStore((s) => s.applyEvent)
   const theme = useAppStore((s) => s.theme)
   const setTheme = useAppStore((s) => s.setTheme)
@@ -42,6 +44,7 @@ export function App(): React.JSX.Element {
   useEffect(() => { void loadPlatform() }, [loadPlatform])
   useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => { void initWorkspace() }, [initWorkspace])
+  useEffect(() => { void loadMcpServers() }, [loadMcpServers])
   useEffect(() => window.openCoder.chat.onEvent(applyEvent), [applyEvent])
 
   useEffect(() => {
@@ -103,6 +106,7 @@ export function App(): React.JSX.Element {
         <CanvasPane />
         <ContextInspector />
         <WorkspacePanel />
+        <McpPanel />
         <SideThread />
       </div>
 

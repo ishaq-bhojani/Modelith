@@ -22,6 +22,9 @@ import {
   WorkspaceReadSchema,
   WorkspaceRevertSchema,
   ToolDecisionSchema,
+  McpAddSchema,
+  McpIdSchema,
+  McpSetEnabledSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -31,6 +34,7 @@ import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
 import { Workspace } from '../workspace/service.js'
 import { CheckpointStore } from '../workspace/checkpoints.js'
+import { McpManager } from '../mcp/manager.js'
 import { StreamEngine } from '../chat/stream-engine.js'
 import { applyContextBudget, estimateTokens } from '../chat/context-budget.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
@@ -74,6 +78,12 @@ export function getWorkspace(): Workspace {
     new CheckpointStore(join(app.getPath('userData'), 'checkpoints')),
   )
   return workspaceInstance
+}
+
+let mcpInstance: McpManager | undefined
+export function getMcpManager(): McpManager {
+  mcpInstance ??= new McpManager(getSettingsStore())
+  return mcpInstance
 }
 
 /**
@@ -152,7 +162,24 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     maxContextTokens: MAX_CONTEXT_TOKENS,
     // Enables agentic edits (gated writes) when a turn opts in.
     workspace: getWorkspace(),
+    // Contributes MCP server tools to agent turns (gated per call).
+    mcp: getMcpManager(),
   })
+
+  ipcMain.handle(CHANNELS.mcpList, () => getMcpManager().list())
+  ipcMain.handle(CHANNELS.mcpAdd, withZodMapping(async (_e, raw: unknown) => {
+    await getMcpManager().addServer(McpAddSchema.parse(raw))
+    return getMcpManager().list()
+  }))
+  ipcMain.handle(CHANNELS.mcpRemove, withZodMapping(async (_e, raw: unknown) => {
+    await getMcpManager().removeServer(McpIdSchema.parse(raw).id)
+    return getMcpManager().list()
+  }))
+  ipcMain.handle(CHANNELS.mcpSetEnabled, withZodMapping(async (_e, raw: unknown) => {
+    const { id, enabled } = McpSetEnabledSchema.parse(raw)
+    await getMcpManager().setEnabled(id, enabled)
+    return getMcpManager().list()
+  }))
 
   ipcMain.handle(CHANNELS.chatSend, withZodMapping((_e, raw: unknown) => engine.start(SendSchema.parse(raw))))
   ipcMain.handle(CHANNELS.chatAbort, withZodMapping((_e, raw: unknown) => {

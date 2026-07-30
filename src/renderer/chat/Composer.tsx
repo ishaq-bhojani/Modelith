@@ -4,7 +4,7 @@ import { ModeMenu } from './ModeMenu.js'
 import { fencedAttachment } from './fence-lang.js'
 import { ALLOWED_IMAGE_MIME, validateAttachment } from '@shared/attachments'
 import type { Attachment } from '@shared/types'
-import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconSliders, IconStop } from '../app/icons.js'
+import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconPanel, IconSliders, IconStop } from '../app/icons.js'
 
 /** Read a File's bytes as bare base64 (no data: prefix) for an Attachment. */
 async function fileToBase64(file: File): Promise<string> {
@@ -39,6 +39,7 @@ export function Composer(): React.JSX.Element {
   const stop = useAppStore((s) => s.stop)
   const toggleInspector = useAppStore((s) => s.toggleInspector)
   const toggleWorkspace = useAppStore((s) => s.toggleWorkspace)
+  const toggleMcp = useAppStore((s) => s.toggleMcp)
   const pendingAttachments = useAppStore((s) => s.pendingAttachments)
   const addAttachment = useAppStore((s) => s.addAttachment)
   const removeAttachment = useAppStore((s) => s.removeAttachment)
@@ -214,6 +215,15 @@ export function Composer(): React.JSX.Element {
             >
               <IconSliders size={13} />
               Agent
+            </button>
+            <button
+              className="chip-button"
+              data-testid="open-mcp"
+              title="Manage MCP servers"
+              onClick={toggleMcp}
+            >
+              <IconPanel size={13} />
+              MCP
             </button>
             <button
               className="chip-button"

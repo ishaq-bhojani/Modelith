@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { Attachment, ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
+import type { Attachment, ChatMessage, ContextPreview, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -68,6 +68,13 @@ export interface OpenCoderBridge {
     read(relPath: string): Promise<{ relPath: string; text: string }>
     /** Revert every edit made in a turn (agentic-edits spec §5). */
     revert(turnId: string): Promise<number>
+  }
+  /** MCP server management (mcp-client spec §2). */
+  mcp: {
+    list(): Promise<McpServerStatus[]>
+    add(config: { id: string; name: string; command: string; args?: string[]; env?: Record<string, string>; enabled?: boolean }): Promise<McpServerStatus[]>
+    remove(id: string): Promise<McpServerStatus[]>
+    setEnabled(id: string, enabled: boolean): Promise<McpServerStatus[]>
   }
 }
 
@@ -141,6 +148,12 @@ const bridge: OpenCoderBridge = {
     tree: () => ipcRenderer.invoke(CHANNELS.workspaceTree),
     read: (relPath) => ipcRenderer.invoke(CHANNELS.workspaceRead, { relPath }),
     revert: (turnId) => ipcRenderer.invoke(CHANNELS.workspaceRevert, { turnId }),
+  },
+  mcp: {
+    list: () => ipcRenderer.invoke(CHANNELS.mcpList),
+    add: (config) => ipcRenderer.invoke(CHANNELS.mcpAdd, config),
+    remove: (id) => ipcRenderer.invoke(CHANNELS.mcpRemove, { id }),
+    setEnabled: (id, enabled) => ipcRenderer.invoke(CHANNELS.mcpSetEnabled, { id, enabled }),
   },
 }
 

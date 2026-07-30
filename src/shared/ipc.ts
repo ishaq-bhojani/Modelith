@@ -44,6 +44,10 @@ export const CHANNELS = {
   workspaceRead: 'workspace:read',
   workspaceRevert: 'workspace:revert',
   chatToolDecision: 'chat:tool-decision',
+  mcpList: 'mcp:list',
+  mcpAdd: 'mcp:add',
+  mcpRemove: 'mcp:remove',
+  mcpSetEnabled: 'mcp:set-enabled',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })
@@ -120,3 +124,16 @@ export const ToolDecisionSchema = z.object({
   action: z.enum(['accept', 'reject', 'edited']),
   content: z.string().optional(),
 })
+
+// MCP server management (mcp-client spec §2). The renderer supplies the config;
+// main spawns and manages the process.
+export const McpAddSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  enabled: z.boolean().optional(),
+})
+export const McpIdSchema = z.object({ id: z.string().min(1) })
+export const McpSetEnabledSchema = z.object({ id: z.string().min(1), enabled: z.boolean() })

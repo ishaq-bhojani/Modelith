@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers, getMcpManager } from './ipc/handlers.js'
 import { registerWindowHandlers, installAppMenu } from './window/controls.js'
 import { CHANNELS } from '../shared/ipc.js'
 
@@ -50,6 +50,9 @@ void app.whenReady().then(() => {
   // `activate` can create new windows over the lifetime of the app.
   registerChatHandlers(() => mainWindow)
   registerWorkspaceHandlers(() => mainWindow)
+  // Connect any configured MCP servers in the background; failures surface as
+  // per-server error status in the panel, never as a startup hang.
+  void getMcpManager().init()
   registerWindowHandlers(() => mainWindow)
   installAppMenu(() => mainWindow)
   app.on('activate', () => {
