@@ -3,6 +3,29 @@ import { createOpenAiCompatProvider } from './openai-compat.js'
 import { createAnthropicProvider } from './anthropic.js'
 import { createOllamaProvider } from './ollama.js'
 import type { FetchLike, Provider } from './types.js'
+import type { DataPolicy, ProviderSummary } from '../../shared/types.js'
+
+/**
+ * Plainly-stated data handling per provider, shown as a badge so a user knows
+ * before pasting proprietary code whether the provider may train on it. Best
+ * effort from public policies; conservative where a provider is ambiguous. A
+ * provider with no entry falls back to "trains on input, remote" — the safe
+ * assumption to surface rather than implying a stronger guarantee than we can.
+ */
+const DATA_POLICY: Record<string, DataPolicy> = {
+  anthropic: { trainsOnInput: false, local: false, url: 'https://www.anthropic.com/legal/privacy' },
+  kimi: { trainsOnInput: true, local: false },
+  openrouter: { trainsOnInput: false, local: false, url: 'https://openrouter.ai/privacy' },
+  deepseek: { trainsOnInput: true, local: false },
+  groq: { trainsOnInput: false, local: false },
+  ollama: { trainsOnInput: false, local: true },
+  lmstudio: { trainsOnInput: false, local: true },
+  fake: { trainsOnInput: false, local: true },
+}
+
+function dataPolicyFor(id: string): DataPolicy {
+  return DATA_POLICY[id] ?? { trainsOnInput: true, local: false }
+}
 
 /** Chromium's network stack, so system proxy configuration is honoured. */
 export const mainFetch: FetchLike = (url, init) => net.fetch(url, init)
@@ -39,6 +62,11 @@ export function getProvider(id: string): Provider {
   return provider
 }
 
-export function listProviders(): { id: string; label: string; defaultBaseUrl: string }[] {
-  return [...registry.values()].map((p) => ({ id: p.id, label: p.label, defaultBaseUrl: p.defaultBaseUrl }))
+export function listProviders(): ProviderSummary[] {
+  return [...registry.values()].map((p) => ({
+    id: p.id,
+    label: p.label,
+    defaultBaseUrl: p.defaultBaseUrl,
+    dataPolicy: dataPolicyFor(p.id),
+  }))
 }

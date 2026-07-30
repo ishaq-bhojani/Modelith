@@ -79,6 +79,37 @@ describe('StreamEngine', () => {
     expect(saved.map((m) => [m.role, m.content])).toEqual([['user', 'hi'], ['assistant', 'hello']])
   })
 
+  it('records provenance (model, provider, usage) on the persisted assistant reply', async () => {
+    const s = await store.create('t')
+    const engine = build(fakeProvider([
+      { type: 'text', delta: 'hi' },
+      { type: 'done', usage: { promptTokens: 12, completionTokens: 3 } },
+    ]))
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'sonnet', content: 'q' })
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+    const reply = (await store.load(s.id))[1]
+    expect(reply?.model).toBe('sonnet')
+    expect(reply?.provider).toBe('fake')
+    expect(reply?.usage).toEqual({ promptTokens: 12, completionTokens: 3 })
+  })
+
+  it('prepends a system prompt so it reaches the provider', async () => {
+    const s = await store.create('t')
+    let seenRoles: string[] = []
+    const provider: Provider = {
+      id: 'fake', label: 'Fake', defaultBaseUrl: 'http://localhost', requiresKey: false,
+      listModels: async () => [],
+      async *streamChat(req) {
+        seenRoles = req.messages.map((m) => m.role)
+        yield { type: 'done' }
+      },
+    }
+    const engine = build(provider)
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi', systemPrompt: 'You are terse.' })
+    await waitFor(() => seenRoles.length > 0)
+    expect(seenRoles[0]).toBe('system')
+  })
+
   it('emits an auth error when no key is configured', async () => {
     const s = await store.create('t')
     const engine = new StreamEngine({
@@ -275,5 +306,143 @@ describe('StreamEngine', () => {
     expect(secondEnvelopes.some((e) => e.event.type === 'error' && e.event.error.kind === 'busy')).toBe(false)
 
     // (b) no unhandled rejection: reaching this point is part of the proof.
+  })
+})
+
+describe('StreamEngine failover', () => {
+  // A provider whose streamChat yields a fixed script, keyed by id so the
+  // engine can resolve different providers per attempt.
+  function scripted(id: string, events: StreamEvent[], requiresKey = true): Provider {
+    return {
+      id, label: id, defaultBaseUrl: 'http://localhost', requiresKey,
+      listModels: async () => [],
+      async *streamChat(_req, signal) {
+        for (const e of events) {
+          if (signal.aborted) return
+          await new Promise((r) => setTimeout(r, 2))
+          yield e
+        }
+      },
+    }
+  }
+
+  function buildWith(
+    providers: Record<string, Provider>,
+    keys: Record<string, string | null> = {},
+  ): StreamEngine {
+    emitted = []
+    return new StreamEngine({
+      emit: (envelope) => { emitted.push(envelope) },
+      readKey: async (id) => (id in keys ? keys[id]! : 'test-key'),
+      store,
+      resolveProvider: (id) => {
+        const p = providers[id]
+        if (!p) throw new Error(`no provider ${id}`)
+        return p
+      },
+    })
+  }
+
+  const terminalTypes = () => emitted.filter((e) => e.event.type === 'done' || e.event.type === 'error').map((e) => e.event.type)
+
+  it('fails over to the next provider on a retryable error before any text', async () => {
+    const providers = {
+      primary: scripted('primary', [{ type: 'error', error: { kind: 'rate_limit', message: 'slow down' } }]),
+      backup: scripted('backup', [{ type: 'text', delta: 'from backup' }, { type: 'done' }]),
+    }
+    const s = await store.create('t')
+    const engine = buildWith(providers)
+    await engine.start({
+      sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
+      fallbacks: [{ providerId: 'backup', model: 'm2' }],
+    })
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+
+    // A visible failover notice was emitted.
+    expect(emitted.some((e) => e.event.type === 'notice')).toBe(true)
+    // Exactly one terminal event, and it is `done` (the backup succeeded).
+    expect(terminalTypes()).toEqual(['done'])
+    // The primary's rate_limit error was NOT forwarded as terminal.
+    expect(emitted.some((e) => e.event.type === 'error')).toBe(false)
+    // The reply text and provenance come from the backup.
+    const reply = (await store.load(s.id))[1]
+    expect(reply?.content).toBe('from backup')
+    expect(reply?.provider).toBe('backup')
+    expect(reply?.model).toBe('m2')
+  })
+
+  it('does NOT fail over once text has already streamed', async () => {
+    const providers = {
+      primary: scripted('primary', [
+        { type: 'text', delta: 'partial' },
+        { type: 'error', error: { kind: 'provider_5xx', message: 'boom' } },
+      ]),
+      backup: scripted('backup', [{ type: 'text', delta: 'SHOULD NOT APPEAR' }, { type: 'done' }]),
+    }
+    const s = await store.create('t')
+    const engine = buildWith(providers)
+    await engine.start({
+      sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
+      fallbacks: [{ providerId: 'backup', model: 'm2' }],
+    })
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+    // The error is terminal; the backup was never invoked.
+    expect(terminalTypes()).toEqual(['error'])
+    expect(emitted.some((e) => e.event.type === 'text' && e.event.delta === 'SHOULD NOT APPEAR')).toBe(false)
+    const reply = (await store.load(s.id))[1]
+    expect(reply?.content).toBe('partial')
+    expect(reply?.incomplete).toBe(true)
+    expect(reply?.provider).toBe('primary')
+  })
+
+  it('does NOT fail over on a non-retryable error', async () => {
+    const providers = {
+      primary: scripted('primary', [{ type: 'error', error: { kind: 'context_overflow', message: 'too long' } }]),
+      backup: scripted('backup', [{ type: 'text', delta: 'nope' }, { type: 'done' }]),
+    }
+    const s = await store.create('t')
+    const engine = buildWith(providers)
+    await engine.start({
+      sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
+      fallbacks: [{ providerId: 'backup', model: 'm2' }],
+    })
+    await waitFor(() => terminalTypes().length > 0)
+    expect(terminalTypes()).toEqual(['error'])
+    expect(emitted.some((e) => e.event.type === 'notice')).toBe(false)
+  })
+
+  it('skips a fallback with no key and continues to the next', async () => {
+    const providers = {
+      primary: scripted('primary', [{ type: 'error', error: { kind: 'network', message: 'down' } }]),
+      needsKey: scripted('needsKey', [{ type: 'text', delta: 'nope' }, { type: 'done' }], true),
+      backup: scripted('backup', [{ type: 'text', delta: 'reached backup' }, { type: 'done' }]),
+    }
+    const s = await store.create('t')
+    const engine = buildWith(providers, { needsKey: null })
+    await engine.start({
+      sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
+      fallbacks: [{ providerId: 'needsKey', model: 'x' }, { providerId: 'backup', model: 'm3' }],
+    })
+    await waitFor(async () => (await store.load(s.id)).length === 2)
+    const reply = (await store.load(s.id))[1]
+    expect(reply?.content).toBe('reached backup')
+    expect(reply?.provider).toBe('backup')
+    expect(terminalTypes()).toEqual(['done'])
+  })
+
+  it('emits the primary error when all fallbacks are exhausted', async () => {
+    const providers = {
+      primary: scripted('primary', [{ type: 'error', error: { kind: 'rate_limit', message: 'slow' } }]),
+      backup: scripted('backup', [{ type: 'error', error: { kind: 'network', message: 'down' } }]),
+    }
+    const s = await store.create('t')
+    const engine = buildWith(providers)
+    await engine.start({
+      sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
+      fallbacks: [{ providerId: 'backup', model: 'm2' }],
+    })
+    await waitFor(() => terminalTypes().length > 0)
+    // The last attempt's error is terminal; exactly one terminal event overall.
+    expect(terminalTypes()).toEqual(['error'])
   })
 })

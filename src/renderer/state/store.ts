@@ -1,8 +1,20 @@
 import { create } from 'zustand'
-import type { ChatMessage, ProviderError, StreamEvent } from '@shared/types'
+import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
+import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 
-interface SessionMeta { id: string; title: string; updatedAt: number }
-interface ProviderMeta { id: string; label: string }
+function newId(): string {
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+interface SessionMeta {
+  id: string
+  title: string
+  updatedAt: number
+  pinned?: boolean
+  archived?: boolean
+  tags?: string[]
+}
+export interface Fallback { providerId: string; model: string }
 
 // Shared with Splitter.tsx, which needs the same bounds to report accurate
 // aria-valuemin/aria-valuemax for its keyboard-resize affordance — a single
@@ -46,19 +58,48 @@ interface AppState {
   streamingSessionId: string | null
   streamingText: string
   error: ProviderError | null
+  /** Transient engine status (e.g. a failover notice) shown above the reply. */
+  streamNotice: string | null
   providerId: string
-  providers: ProviderMeta[]
+  providers: ProviderSummary[]
   model: string
+  /** Ordered failover targets, persisted in settings, sent with each turn. */
+  fallbacks: Fallback[]
+  /** Named presets (system prompt + model + temperature), persisted in settings. */
+  modes: Mode[]
+  activeModeId: string | null
   sidebarWidth: number
   settingsOpen: boolean
   /** Sidebar filter. Purely client-side over the already-loaded session index. */
   query: string
   theme: 'dark' | 'light'
+  /** OS platform, from appInfo(). Drives the frameless title-bar chrome. */
+  platform: string
+  /** Whether the context inspector drawer is open. */
+  inspectorOpen: boolean
+  /** Side-thread drawer open state + optional seeded quote. Streaming for the
+   *  side thread is handled entirely inside SideThread (its own session + event
+   *  subscription), so none of the main streaming fields are touched. */
+  sideThreadOpen: boolean
+  sideThreadSeed: string
+  /** Composer draft, held here so attachments and the secret guard can act on it. */
+  draft: string
+  /** Set when send is paused because the draft looks like it contains secrets. */
+  pendingSecret: SecretCategory[] | null
 
   openSettings(): void
   closeSettings(): void
+  toggleInspector(): void
+  openSideThread(seed: string): void
+  closeSideThread(): void
+  setDraft(value: string): void
+  /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
+  requestSend(): void
+  confirmSecretSend(): void
+  cancelSecretSend(): void
   setQuery(value: string): void
   setTheme(theme: 'dark' | 'light'): void
+  loadPlatform(): Promise<void>
   renameSession(id: string, title: string): Promise<void>
   deleteSession(id: string): Promise<void>
   /**
@@ -72,6 +113,18 @@ interface AppState {
   reportError(err: unknown): void
   loadSessions(): Promise<void>
   loadProviders(): Promise<void>
+  loadSettings(): Promise<void>
+  setFallbacks(fallbacks: Fallback[]): Promise<void>
+  saveMode(mode: Mode): Promise<void>
+  deleteMode(id: string): Promise<void>
+  setActiveMode(id: string | null): void
+  togglePin(id: string): Promise<void>
+  toggleArchive(id: string): Promise<void>
+  setSessionTags(id: string, tags: string[]): Promise<void>
+  refreshMessages(): Promise<void>
+  branchFrom(messageId: string): Promise<void>
+  editUserMessage(messageId: string, content: string): Promise<void>
+  editAssistantMessage(messageId: string, content: string): Promise<void>
   selectSession(id: string): Promise<void>
   newSession(): Promise<void>
   send(content: string): Promise<void>
@@ -91,19 +144,197 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingSessionId: null,
   streamingText: '',
   error: null,
+  streamNotice: null,
   providerId: '',
   providers: [],
   model: '',
+  fallbacks: [],
+  modes: [],
+  activeModeId: null,
   sidebarWidth: 300,
   settingsOpen: false,
   query: '',
   theme: 'dark',
+  platform: '',
+  inspectorOpen: false,
+  sideThreadOpen: false,
+  sideThreadSeed: '',
+  draft: '',
+  pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
+  toggleInspector() { set((s) => ({ inspectorOpen: !s.inspectorOpen })) },
+  openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
+  closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
+  setDraft(value) { set({ draft: value }) },
+
+  // Outbound secret guard (roadmap 28): scan before anything leaves the
+  // machine. A match pauses the send and opens a confirm gate rather than
+  // blocking outright — a guard against the common paste-a-key accident, not a
+  // hard stop, since the user may legitimately be discussing a key.
+  requestSend() {
+    const content = get().draft.trim()
+    if (!content || (get().streamId !== null && get().streamingSessionId === get().activeSessionId)) return
+    const categories = [...new Set(scanSecrets(content).map((m) => m.category))]
+    if (categories.length > 0) { set({ pendingSecret: categories }); return }
+    set({ draft: '' })
+    void get().send(content)
+  },
+
+  confirmSecretSend() {
+    const content = get().draft.trim()
+    set({ pendingSecret: null, draft: '' })
+    if (content) void get().send(content)
+  },
+
+  cancelSecretSend() { set({ pendingSecret: null }) },
   reportError(err) { set({ error: toProviderError(err) }) },
   setQuery(value) { set({ query: value }) },
   setTheme(theme) { set({ theme }) },
+
+  async loadPlatform() {
+    try {
+      const info = await window.openCoder.appInfo()
+      set({ platform: info.platform })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async loadSettings() {
+    try {
+      const settings = await window.openCoder.settings.get()
+      const fallbacks = settings['fallbacks']
+      if (Array.isArray(fallbacks)) set({ fallbacks: fallbacks as Fallback[] })
+      const modes = settings['modes']
+      if (Array.isArray(modes)) set({ modes: modes as Mode[] })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async setFallbacks(fallbacks) {
+    set({ fallbacks })
+    try {
+      await window.openCoder.settings.set({ fallbacks })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async saveMode(mode) {
+    const modes = get().modes.some((m) => m.id === mode.id)
+      ? get().modes.map((m) => (m.id === mode.id ? mode : m))
+      : [...get().modes, mode]
+    set({ modes })
+    try {
+      await window.openCoder.settings.set({ modes })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async deleteMode(id) {
+    const modes = get().modes.filter((m) => m.id !== id)
+    set({ modes, activeModeId: get().activeModeId === id ? null : get().activeModeId })
+    try {
+      await window.openCoder.settings.set({ modes })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Applying a mode optionally switches the model, then its system prompt and
+  // temperature ride along on subsequent sends (see send()).
+  setActiveMode(id) {
+    set({ activeModeId: id })
+    if (id === null) return
+    const mode = get().modes.find((m) => m.id === id)
+    if (mode?.providerId) set({ providerId: mode.providerId })
+    if (mode?.model) set({ model: mode.model })
+  },
+
+  async togglePin(id) {
+    const current = get().sessions.find((s) => s.id === id)?.pinned ?? false
+    try {
+      await window.openCoder.sessions.setPinned(id, !current)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async toggleArchive(id) {
+    const current = get().sessions.find((s) => s.id === id)?.archived ?? false
+    try {
+      await window.openCoder.sessions.setArchived(id, !current)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async setSessionTags(id, tags) {
+    try {
+      await window.openCoder.sessions.setTags(id, tags)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Reloads the active session's messages from disk, replacing the optimistic
+  // `local-*` ids used during streaming with the canonical persisted ids that
+  // edit and fork operate on. Fire-and-forget after a turn completes.
+  async refreshMessages() {
+    const id = get().activeSessionId
+    if (!id) return
+    try {
+      set({ messages: await window.openCoder.sessions.load(id) })
+    } catch {
+      // A refresh failure is non-fatal — the optimistic messages remain shown.
+    }
+  },
+
+  async branchFrom(messageId) {
+    const sourceId = get().activeSessionId
+    if (!sourceId) return
+    try {
+      const { id } = await window.openCoder.sessions.branch(sourceId, messageId, 'Fork')
+      await get().loadSessions()
+      await get().selectSession(id)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Editing a user message rewinds the conversation to just before it, then
+  // sends the edited text as a fresh turn.
+  async editUserMessage(messageId, content) {
+    const sessionId = get().activeSessionId
+    if (!sessionId) return
+    try {
+      await window.openCoder.sessions.truncateFrom(sessionId, messageId)
+      set({ messages: await window.openCoder.sessions.load(sessionId) })
+      await get().send(content)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Editing an assistant message rewrites its content in place (put words in its
+  // mouth), without re-running the turn.
+  async editAssistantMessage(messageId, content) {
+    const sessionId = get().activeSessionId
+    if (!sessionId) return
+    try {
+      await window.openCoder.sessions.editMessage(sessionId, messageId, content)
+      set({ messages: await window.openCoder.sessions.load(sessionId) })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
 
   async renameSession(id, title) {
     const trimmed = title.trim()
@@ -214,6 +445,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // correct even though selectSession must never do the equivalent.
     set((s) => ({
       error: null,
+      streamNotice: null,
       streamingText: '',
       streamingSessionId: sessionId,
       messages: [...s.messages, {
@@ -221,11 +453,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       }],
     }))
     try {
+      // Only fall back to targets other than the current selection, so a
+      // fallback list that happens to include the primary does not retry it.
+      const fallbacks = get().fallbacks.filter(
+        (f) => !(f.providerId === get().providerId && f.model === get().model),
+      )
+      const mode = get().modes.find((m) => m.id === get().activeModeId)
       const { streamId } = await window.openCoder.chat.send({
         sessionId,
         providerId: get().providerId,
         model: get().model,
         content,
+        ...(fallbacks.length > 0 ? { fallbacks } : {}),
+        ...(mode?.systemPrompt ? { systemPrompt: mode.systemPrompt } : {}),
+        ...(mode?.temperature !== undefined ? { temperature: mode.temperature } : {}),
       })
       set({ streamId, lastStreamId: streamId })
     } catch (err) {
@@ -296,6 +537,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyEvent({ streamId, sessionId, event }) {
     if (streamId !== get().lastStreamId) return
     if (sessionId !== get().streamingSessionId) return
+    if (event.type === 'notice') {
+      // Engine status (a failover retry). Shown transiently for the owning
+      // session only; not persisted, cleared when the next turn starts.
+      if (sessionId === get().activeSessionId) set({ streamNotice: event.text })
+      return
+    }
+    if (event.type === 'reasoning') {
+      // Reasoning/thinking deltas are not rendered in v0; ignore rather than
+      // letting them fall through to the text accumulator.
+      return
+    }
     if (event.type === 'text') {
       // If `streamId` is already null, the renderer has already considered
       // this turn over — most commonly because the user just clicked Stop,
@@ -324,6 +576,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         error: sessionId === s.activeSessionId ? event.error : s.error,
         streamId: null,
         streamingText: '',
+        streamNotice: null,
       }))
       return
     }
@@ -336,17 +589,31 @@ export const useAppStore = create<AppState>((set, get) => ({
         // this is what prevents the reply from leaking into whatever
         // session the user is currently viewing.
         const shouldAppend = sessionId === s.activeSessionId
+        // Carry the provenance from the done event so the model badge and cost
+        // appear immediately, accurate even when failover changed the model —
+        // rather than only after the session is reloaded from disk.
+        const provenance = event.type === 'done'
+          ? {
+              ...(event.model ? { model: event.model } : {}),
+              ...(event.provider ? { provider: event.provider } : {}),
+              ...(event.usage ? { usage: event.usage } : {}),
+            }
+          : {}
         return {
           streamId: null,
           streamingText: '',
+          streamNotice: null,
           messages: shouldAppend
             ? [...s.messages, {
               id: `local-a-${Date.now()}`, role: 'assistant',
-              content: s.streamingText, createdAt: Date.now(),
+              content: s.streamingText, createdAt: Date.now(), ...provenance,
             }]
             : s.messages,
         }
       })
+      // Canonicalize ids so edit/fork on the just-finished turn use real
+      // persisted ids, not the optimistic local-* ones.
+      if (sessionId === get().activeSessionId) void get().refreshMessages()
     }
   },
 }))

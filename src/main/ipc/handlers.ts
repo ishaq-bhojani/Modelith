@@ -11,14 +11,26 @@ import {
   SessionIdSchema,
   SessionCreateSchema,
   SessionRenameSchema,
+  SessionSetPinnedSchema,
+  SessionSetArchivedSchema,
+  SessionSetTagsSchema,
+  SessionBranchSchema,
+  SessionMessageRefSchema,
+  SessionEditMessageSchema,
   ModelsListSchema,
+  SettingsPatchSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
+import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
 import { Keystore } from '../secrets/keystore.js'
 import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
+import { AppSettingsStore } from '../settings/store.js'
 import { StreamEngine } from '../chat/stream-engine.js'
+import { applyContextBudget, estimateTokens } from '../chat/context-budget.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
+
+const MAX_CONTEXT_TOKENS = 96_000
 
 // Lazy singletons: `app.getPath('userData')` must not be evaluated until after
 // index.ts has applied the OPEN_CODER_USER_DATA portable-mode override. Since
@@ -37,6 +49,12 @@ export function getKeystore(): Keystore {
 export function getSessionStore(): SessionStore {
   sessionStoreInstance ??= new SessionStore(join(app.getPath('userData'), 'sessions'))
   return sessionStoreInstance
+}
+
+let settingsStoreInstance: AppSettingsStore | undefined
+export function getSettingsStore(): AppSettingsStore {
+  settingsStoreInstance ??= new AppSettingsStore(AppSettingsStore.defaultPath(app.getPath('userData')))
+  return settingsStoreInstance
 }
 
 /**
@@ -96,6 +114,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     store,
     resolveProvider: getProvider,
     fetch: mainFetch,
+    // Shared with the context-inspector preview below so the two never disagree
+    // about what "fits".
+    maxContextTokens: MAX_CONTEXT_TOKENS,
   })
 
   ipcMain.handle(CHANNELS.chatSend, withZodMapping((_e, raw: unknown) => engine.start(SendSchema.parse(raw))))
@@ -120,6 +141,50 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
       return store.rename(id, title)
     }),
   )
+  ipcMain.handle(CHANNELS.sessionSetPinned, withZodMapping((_e, raw: unknown) => {
+    const { id, pinned } = SessionSetPinnedSchema.parse(raw)
+    return store.setPinned(id, pinned)
+  }))
+  ipcMain.handle(CHANNELS.sessionSetArchived, withZodMapping((_e, raw: unknown) => {
+    const { id, archived } = SessionSetArchivedSchema.parse(raw)
+    return store.setArchived(id, archived)
+  }))
+  ipcMain.handle(CHANNELS.sessionSetTags, withZodMapping((_e, raw: unknown) => {
+    const { id, tags } = SessionSetTagsSchema.parse(raw)
+    return store.setTags(id, tags)
+  }))
+  ipcMain.handle(CHANNELS.sessionBranch, withZodMapping((_e, raw: unknown) => {
+    const { sourceId, uptoId, title } = SessionBranchSchema.parse(raw)
+    return store.branch(sourceId, uptoId, title)
+  }))
+  ipcMain.handle(CHANNELS.sessionTruncateFrom, withZodMapping((_e, raw: unknown) => {
+    const { id, messageId } = SessionMessageRefSchema.parse(raw)
+    return store.truncateFrom(id, messageId)
+  }))
+  ipcMain.handle(CHANNELS.sessionEditMessage, withZodMapping((_e, raw: unknown) => {
+    const { id, messageId, content } = SessionEditMessageSchema.parse(raw)
+    return store.editMessage(id, messageId, content)
+  }))
+  ipcMain.handle(CHANNELS.chatPreview, withZodMapping(async (_e, raw: unknown): Promise<ContextPreview> => {
+    const { id } = SessionIdSchema.parse(raw)
+    const messages = await store.load(id)
+    const budgeted = applyContextBudget(messages, MAX_CONTEXT_TOKENS)
+    const includedIds = new Set(budgeted.messages.map((m) => m.id))
+    const entries: ContextPreviewEntry[] = messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      tokens: estimateTokens(m.content),
+      included: includedIds.has(m.id),
+      preview: m.content.slice(0, 100),
+    }))
+    const includedTokens = entries.filter((e) => e.included).reduce((n, e) => n + e.tokens, 0)
+    const totalTokens = entries.reduce((n, e) => n + e.tokens, 0)
+    return { entries, includedTokens, totalTokens, omittedCount: budgeted.omittedCount, budget: MAX_CONTEXT_TOKENS }
+  }))
+  ipcMain.handle(CHANNELS.settingsGet, () => getSettingsStore().get())
+  ipcMain.handle(CHANNELS.settingsSet, withZodMapping((_e, raw: unknown) => {
+    return getSettingsStore().set(SettingsPatchSchema.parse(raw))
+  }))
   ipcMain.handle(CHANNELS.modelsList, withZodMapping(async (_e, raw: unknown) => {
     const { providerId } = ModelsListSchema.parse(raw)
     const provider = getProvider(providerId)

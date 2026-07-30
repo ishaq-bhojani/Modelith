@@ -7,6 +7,12 @@ export interface SessionMeta {
   id: string
   title: string
   updatedAt: number
+  /** Pinned sessions sort to the top of the sidebar. */
+  pinned?: boolean
+  /** Archived sessions are hidden from the sidebar unless explicitly shown. */
+  archived?: boolean
+  /** Free-form tags for filtering. */
+  tags?: string[]
 }
 
 // randomUUID() output (hex digits and hyphens only) always satisfies this.
@@ -133,13 +139,80 @@ export class SessionStore {
   }
 
   async rename(id: string, title: string): Promise<void> {
+    return this.mutateEntry(id, (entry) => { entry.title = title })
+  }
+
+  async setPinned(id: string, pinned: boolean): Promise<void> {
+    return this.mutateEntry(id, (entry) => { entry.pinned = pinned })
+  }
+
+  async setArchived(id: string, archived: boolean): Promise<void> {
+    return this.mutateEntry(id, (entry) => { entry.archived = archived })
+  }
+
+  async setTags(id: string, tags: string[]): Promise<void> {
+    return this.mutateEntry(id, (entry) => { entry.tags = tags })
+  }
+
+  /** Shared index read-modify-write for the metadata setters above. */
+  private async mutateEntry(id: string, mutate: (entry: SessionMeta) => void): Promise<void> {
     return this.serialize(async () => {
       const index = await this.readIndex()
       const entry = index.find((s) => s.id === id)
       if (entry) {
-        entry.title = title
+        mutate(entry)
         await this.writeIndex(index)
       }
     })
+  }
+
+  /**
+   * Rewrites a session's entire message file atomically (temp file + rename,
+   * the same durability pattern writeIndex uses). Editing a message and
+   * branching both need to produce a file that is an edited copy or a prefix of
+   * another — neither of which the append-only hot path can express. This is the
+   * rare, explicit case; normal turns still append.
+   */
+  async replaceMessages(id: string, messages: ChatMessage[]): Promise<void> {
+    const filePath = this.path(id)
+    await mkdir(this.dir, { recursive: true })
+    const body = messages.map((m) => JSON.stringify(m)).join('\n')
+    const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
+    await writeFile(tmpPath, body.length > 0 ? `${body}\n` : '')
+    await rename(tmpPath, filePath)
+    await this.mutateEntry(id, (entry) => { entry.updatedAt = Date.now() })
+  }
+
+  /**
+   * Drops the message with `messageId` and everything after it, keeping the
+   * prefix before it. Used when a user edits a message: the conversation is
+   * rewound to just before that turn, then the edited turn is sent fresh.
+   */
+  async truncateFrom(id: string, messageId: string): Promise<void> {
+    const messages = await this.load(id)
+    const cut = messages.findIndex((m) => m.id === messageId)
+    if (cut === -1) return
+    await this.replaceMessages(id, messages.slice(0, cut))
+  }
+
+  /** Rewrites one message's content in place (edit an assistant reply). */
+  async editMessage(id: string, messageId: string, content: string): Promise<void> {
+    const messages = await this.load(id)
+    const target = messages.find((m) => m.id === messageId)
+    if (!target) return
+    await this.replaceMessages(id, messages.map((m) => (m.id === messageId ? { ...m, content } : m)))
+  }
+
+  /**
+   * Creates a new session containing the source session's messages up to and
+   * including `uptoId`. Used by "Fork here". Returns the new session's meta.
+   */
+  async branch(sourceId: string, uptoId: string, title: string): Promise<SessionMeta> {
+    const source = await this.load(sourceId)
+    const cutoff = source.findIndex((m) => m.id === uptoId)
+    const slice = cutoff === -1 ? source : source.slice(0, cutoff + 1)
+    const meta = await this.create(title)
+    await this.replaceMessages(meta.id, slice)
+    return meta
   }
 }

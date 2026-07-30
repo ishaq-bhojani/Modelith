@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ModelInfo, StreamEnvelope } from '../shared/types.js'
+import type { ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -13,22 +13,47 @@ export interface OpenCoderBridge {
     has(providerId: string): Promise<boolean>
   }
   providers: {
-    list(): Promise<{ id: string; label: string }[]>
+    list(): Promise<ProviderSummary[]>
     models(providerId: string): Promise<ModelInfo[]>
   }
   chat: {
     send(input: {
       sessionId: string; providerId: string; model: string; content: string
+      systemPrompt?: string; temperature?: number
+      fallbacks?: { providerId: string; model: string }[]
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
+    preview(sessionId: string): Promise<ContextPreview>
   }
   sessions: {
-    list(): Promise<{ id: string; title: string; updatedAt: number }[]>
+    list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[] }[]>
     load(id: string): Promise<ChatMessage[]>
     create(title: string): Promise<{ id: string }>
     delete(id: string): Promise<void>
     rename(id: string, title: string): Promise<void>
+    setPinned(id: string, pinned: boolean): Promise<void>
+    setArchived(id: string, archived: boolean): Promise<void>
+    setTags(id: string, tags: string[]): Promise<void>
+    branch(sourceId: string, uptoId: string, title: string): Promise<{ id: string }>
+    truncateFrom(id: string, messageId: string): Promise<void>
+    editMessage(id: string, messageId: string, content: string): Promise<void>
+  }
+  window: {
+    minimize(): Promise<void>
+    maximizeToggle(): Promise<void>
+    close(): Promise<void>
+    isMaximized(): Promise<boolean>
+    onMaximizedChange(handler: (isMaximized: boolean) => void): () => void
+    openChatsFolder(): Promise<void>
+    about(): Promise<void>
+    quit(): Promise<void>
+  }
+  /** Subscribe to a keyboard-accelerator action forwarded from the app menu. */
+  onMenu(action: 'new-chat' | 'settings' | 'command-palette' | 'search', handler: () => void): () => void
+  settings: {
+    get(): Promise<Record<string, unknown>>
+    set(patch: Record<string, unknown>): Promise<void>
   }
 }
 
@@ -51,6 +76,7 @@ const bridge: OpenCoderBridge = {
       ipcRenderer.on(CHANNELS.chatEvent, listener)
       return () => { ipcRenderer.off(CHANNELS.chatEvent, listener) }
     },
+    preview: (sessionId) => ipcRenderer.invoke(CHANNELS.chatPreview, { id: sessionId }),
   },
   sessions: {
     list: () => ipcRenderer.invoke(CHANNELS.sessionsList),
@@ -58,6 +84,41 @@ const bridge: OpenCoderBridge = {
     create: (title) => ipcRenderer.invoke(CHANNELS.sessionCreate, { title }),
     delete: (id) => ipcRenderer.invoke(CHANNELS.sessionDelete, { id }),
     rename: (id, title) => ipcRenderer.invoke(CHANNELS.sessionRename, { id, title }),
+    setPinned: (id, pinned) => ipcRenderer.invoke(CHANNELS.sessionSetPinned, { id, pinned }),
+    setArchived: (id, archived) => ipcRenderer.invoke(CHANNELS.sessionSetArchived, { id, archived }),
+    setTags: (id, tags) => ipcRenderer.invoke(CHANNELS.sessionSetTags, { id, tags }),
+    branch: (sourceId, uptoId, title) => ipcRenderer.invoke(CHANNELS.sessionBranch, { sourceId, uptoId, title }),
+    truncateFrom: (id, messageId) => ipcRenderer.invoke(CHANNELS.sessionTruncateFrom, { id, messageId }),
+    editMessage: (id, messageId, content) => ipcRenderer.invoke(CHANNELS.sessionEditMessage, { id, messageId, content }),
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke(CHANNELS.windowMinimize),
+    maximizeToggle: () => ipcRenderer.invoke(CHANNELS.windowMaximizeToggle),
+    close: () => ipcRenderer.invoke(CHANNELS.windowClose),
+    isMaximized: () => ipcRenderer.invoke(CHANNELS.windowIsMaximized),
+    onMaximizedChange: (handler) => {
+      const listener = (_e: unknown, isMaximized: boolean) => handler(isMaximized)
+      ipcRenderer.on(CHANNELS.windowMaximizedChanged, listener)
+      return () => { ipcRenderer.off(CHANNELS.windowMaximizedChanged, listener) }
+    },
+    openChatsFolder: () => ipcRenderer.invoke(CHANNELS.windowOpenChatsFolder),
+    about: () => ipcRenderer.invoke(CHANNELS.windowAbout),
+    quit: () => ipcRenderer.invoke(CHANNELS.appQuit),
+  },
+  onMenu: (action, handler) => {
+    const channel = {
+      'new-chat': CHANNELS.menuNewChat,
+      settings: CHANNELS.menuSettings,
+      'command-palette': CHANNELS.menuCommandPalette,
+      search: CHANNELS.menuSearch,
+    }[action]
+    const listener = () => handler()
+    ipcRenderer.on(channel, listener)
+    return () => { ipcRenderer.off(channel, listener) }
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(CHANNELS.settingsGet),
+    set: (patch) => ipcRenderer.invoke(CHANNELS.settingsSet, patch),
   },
 }
 

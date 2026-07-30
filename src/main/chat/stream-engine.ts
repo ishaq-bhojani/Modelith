@@ -2,14 +2,28 @@ import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
-import type { ChatMessage, StreamEnvelope, StreamEvent } from '../../shared/types.js'
+import type { ChatMessage, ProviderError, StreamEnvelope, StreamEvent, Usage } from '../../shared/types.js'
+
+export interface Fallback {
+  providerId: string
+  model: string
+}
 
 export interface StartInput {
   sessionId: string
   providerId: string
   model: string
   content: string
+  /** Optional system prompt (from a Mode), prepended before budgeting. */
+  systemPrompt?: string
+  /** Optional sampling temperature passed through to the provider. */
+  temperature?: number
+  /** Ordered failover targets tried if the primary fails before any output. */
+  fallbacks?: Fallback[]
 }
+
+/** Error kinds worth retrying on another provider (transient, not the user's fault). */
+const RETRYABLE = new Set(['rate_limit', 'provider_5xx', 'network'])
 
 export interface StreamEngineDeps {
   emit(envelope: StreamEnvelope): void
@@ -101,9 +115,12 @@ export class StreamEngine {
       return
     }
 
-    const provider = resolveProvider(input.providerId)
-    const apiKey = await readKey(input.providerId)
-    if (provider.requiresKey && !apiKey) {
+    // Authenticate the PRIMARY provider up front: a missing key here is the
+    // user's own configuration error and must surface as `auth`, not silently
+    // fall through to a fallback (which would hide the real problem).
+    const primary = resolveProvider(input.providerId)
+    const primaryKey = await readKey(input.providerId)
+    if (primary.requiresKey && !primaryKey) {
       this.send(streamId, sessionId, {
         type: 'error',
         error: { kind: 'auth', message: 'No API key is configured for this provider.' },
@@ -112,45 +129,103 @@ export class StreamEngine {
     }
 
     const history = await store.load(sessionId)
-    const budgeted = applyContextBudget(history, this.deps.maxContextTokens ?? 96_000)
+    // A Mode's system prompt is prepended before budgeting. The context budget
+    // always retains system messages, and providers already handle the system
+    // role, so this needs no special downstream handling.
+    const withSystem: ChatMessage[] = input.systemPrompt
+      ? [
+          { id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() },
+          ...history,
+        ]
+      : history
+    const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
     // budgeted.omittedCount is intentionally unconsumed here — see context-budget.ts.
+
+    // The primary followed by any configured fallbacks. Failover only happens
+    // *within this one turn* — the session stays marked busy throughout, so the
+    // one-turn-per-session invariant is never violated (a fallback is a retry,
+    // not a second concurrent turn).
+    const attempts: Fallback[] = [
+      { providerId: input.providerId, model: input.model },
+      ...(input.fallbacks ?? []),
+    ]
 
     let assembled = ''
     let incomplete = false
+    let usage: Usage | undefined
+    let finalProviderId = input.providerId
+    let finalModel = input.model
 
-    try {
-      const request = {
-        model: input.model,
-        messages: budgeted.messages,
-        config: {
-          apiKey: apiKey ?? '',
-          fetch: this.deps.fetch ?? globalThis.fetch,
-        },
+    for (let i = 0; i < attempts.length; i++) {
+      const attempt = attempts[i]
+      if (!attempt || controller.signal.aborted) break
+
+      const provider = resolveProvider(attempt.providerId)
+      const apiKey = i === 0 ? primaryKey : await readKey(attempt.providerId)
+      // A fallback with no usable key is simply skipped, not reported — it is an
+      // alternative, not the user's stated choice.
+      if (provider.requiresKey && !apiKey) continue
+
+      finalProviderId = attempt.providerId
+      finalModel = attempt.model
+      let attemptError: ProviderError | undefined
+
+      try {
+        const request = {
+          model: attempt.model,
+          messages: budgeted.messages,
+          ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
+          config: { apiKey: apiKey ?? '', fetch: this.deps.fetch ?? globalThis.fetch },
+        }
+        for await (const event of provider.streamChat(request, controller.signal)) {
+          if (controller.signal.aborted) { incomplete = true; break }
+          if (event.type === 'text') { assembled += event.delta; this.send(streamId, sessionId, event) }
+          else if (event.type === 'reasoning') { this.send(streamId, sessionId, event) }
+          else if (event.type === 'done') { usage = event.usage; break }
+          else if (event.type === 'error') { attemptError = event.error; break }
+        }
+      } catch {
+        // Contractually a provider never throws (it yields an error event), but
+        // a misbehaving one must not discard partial output. Treated as a
+        // non-retryable failure (unknown), so it never triggers failover.
+        if (!controller.signal.aborted) attemptError = { kind: 'unknown', message: 'The turn ended unexpectedly.' }
+        incomplete = true
       }
-      for await (const event of provider.streamChat(request, controller.signal)) {
-        if (controller.signal.aborted) { incomplete = true; break }
-        if (event.type === 'text') assembled += event.delta
-        this.send(streamId, sessionId, event)
-        // A stream that ends via a provider error (a rate limit or 5xx that
-        // arrives mid-stream, after some text has already been yielded) has
-        // truncated output exactly as much as an abort does — it must be
-        // persisted and marked `incomplete` too, not silently indistinguishable
-        // from a reply that finished normally.
-        if (event.type === 'error') { incomplete = true; break }
-        if (event.type === 'done') break
-      }
-    } catch {
-      // provider.streamChat contractually never throws (it yields an `error`
-      // event instead), but this guards against a misbehaving provider so a
-      // thrown exception can never silently discard partial output. A crash
-      // that happens to coincide with a user-initiated abort is treated as
-      // an abort (see note below) rather than reported as an error.
-      incomplete = true
-      if (!controller.signal.aborted) {
+
+      if (controller.signal.aborted) { incomplete = true; break }
+
+      // Fail over only when: the failure is transient, nothing has been shown to
+      // the user yet (no duplicated output), and a fallback remains. Otherwise
+      // this attempt is terminal.
+      const canFailOver =
+        attemptError !== undefined &&
+        RETRYABLE.has(attemptError.kind) &&
+        assembled === '' &&
+        i < attempts.length - 1
+      if (canFailOver) {
+        const next = attempts[i + 1]
         this.send(streamId, sessionId, {
-          type: 'error', error: { kind: 'unknown', message: 'The turn ended unexpectedly.' },
+          type: 'notice',
+          text: `${attempt.providerId} failed (${attemptError!.kind}) — retrying on ${next?.providerId}.`,
+        })
+        continue
+      }
+
+      if (attemptError) {
+        // A stream that ends via a provider error has output as truncated as an
+        // abort does — persist it marked incomplete, indistinguishable from a
+        // reply that finished normally would be wrong.
+        incomplete = true
+        this.send(streamId, sessionId, { type: 'error', error: attemptError })
+      } else {
+        this.send(streamId, sessionId, {
+          type: 'done',
+          model: finalModel,
+          provider: finalProviderId,
+          ...(usage ? { usage } : {}),
         })
       }
+      break
     }
 
     if (controller.signal.aborted) incomplete = true
@@ -162,6 +237,13 @@ export class StreamEngine {
           role: 'assistant',
           content: assembled,
           createdAt: Date.now(),
+          // Provenance: which model/provider actually produced this reply (the
+          // fallback, if failover occurred), and its token usage. Rendered as a
+          // badge and used to derive cost. All optional, so messages persisted
+          // before this stays valid.
+          model: finalModel,
+          provider: finalProviderId,
+          ...(usage ? { usage } : {}),
           ...(incomplete ? { incomplete: true } : {}),
         })
       } catch {

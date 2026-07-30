@@ -106,6 +106,7 @@ export function createOpenAiCompatProvider(spec: OpenAiCompatSpec): Provider {
           body: JSON.stringify({
             model: request.model,
             stream: true,
+            ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
             messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
           }),
         })

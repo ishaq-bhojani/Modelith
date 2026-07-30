@@ -70,6 +70,8 @@ export function createOllamaProvider(): Provider {
           body: JSON.stringify({
             model: request.model,
             stream: true,
+            // Ollama takes sampling params under `options`.
+            ...(request.temperature !== undefined ? { options: { temperature: request.temperature } } : {}),
             messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
           }),
         })

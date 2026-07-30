@@ -11,6 +11,7 @@ export function Transcript(): React.JSX.Element {
   const error = useAppStore((s) => s.error)
   const openSettings = useAppStore((s) => s.openSettings)
   const model = useAppStore((s) => s.model)
+  const streamNotice = useAppStore((s) => s.streamNotice)
 
   // A stream keeps accumulating into `streamingText` even while the user is
   // viewing a different session (see store.ts). Only render the buffer here
@@ -23,6 +24,10 @@ export function Transcript(): React.JSX.Element {
     <div data-testid="transcript" className="transcript" ref={ref}>
       <div className="transcript-column">
         {messages.map((m) => <MessageView key={m.id} message={m} />)}
+
+        {streamNotice && streamingSessionId === activeSessionId ? (
+          <div className="stream-notice" role="status" data-testid="stream-notice">{streamNotice}</div>
+        ) : null}
 
         {showStreaming ? (
           <MessageView

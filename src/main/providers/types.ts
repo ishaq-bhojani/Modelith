@@ -12,6 +12,8 @@ export interface ChatRequest {
   model: string
   messages: ChatMessage[]
   config: ProviderConfig
+  /** Optional sampling temperature; omitted means the provider's default. */
+  temperature?: number
 }
 
 export interface Provider {

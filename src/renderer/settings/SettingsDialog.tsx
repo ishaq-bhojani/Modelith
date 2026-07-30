@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import type { ModelInfo } from '@shared/types'
+import type { ModelInfo, ProviderSummary } from '@shared/types'
 import { IconCheck, IconLock } from '../app/icons.js'
+import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
 
 export function SettingsDialog(): React.JSX.Element | null {
   const open = useAppStore((s) => s.settingsOpen)
@@ -11,11 +12,31 @@ export function SettingsDialog(): React.JSX.Element | null {
   const setProvider = useAppStore((s) => s.setProvider)
   const model = useAppStore((s) => s.model)
   const setModel = useAppStore((s) => s.setModel)
+  const fallbacks = useAppStore((s) => s.fallbacks)
+  const setFallbacks = useAppStore((s) => s.setFallbacks)
+  const modes = useAppStore((s) => s.modes)
+  const saveMode = useAppStore((s) => s.saveMode)
+  const deleteMode = useAppStore((s) => s.deleteMode)
 
-  const [providers, setProviders] = useState<{ id: string; label: string }[]>([])
+  const [providers, setProviders] = useState<ProviderSummary[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
   const [draftKey, setDraftKey] = useState('')
   const [configured, setConfigured] = useState(false)
+  const [fallbackModels, setFallbackModels] = useState<ModelInfo[]>([])
+  const [modeName, setModeName] = useState('')
+  const [modePrompt, setModePrompt] = useState('')
+
+  const selectedProvider = providers.find((p) => p.id === providerId)
+  const fallback = fallbacks[0]
+
+  // When a fallback provider is chosen, fetch its models so a concrete model can
+  // be paired with it (the engine needs both).
+  useEffect(() => {
+    if (!open || !fallback) { setFallbackModels([]); return }
+    void window.openCoder.providers.models(fallback.providerId)
+      .then(setFallbackModels)
+      .catch(() => setFallbackModels([]))
+  }, [open, fallback?.providerId, fallback])
 
   useEffect(() => {
     if (open) void window.openCoder.providers.list().then(setProviders).catch(reportError)
@@ -75,6 +96,14 @@ export function SettingsDialog(): React.JSX.Element | null {
           >
             {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
+          {selectedProvider?.dataPolicy ? (
+            <span className="field-policy">
+              <DataPolicyBadge policy={selectedProvider.dataPolicy} />
+              {selectedProvider.dataPolicy.url ? (
+                <a href={selectedProvider.dataPolicy.url} target="_blank" rel="noreferrer">Policy</a>
+              ) : null}
+            </span>
+          ) : null}
         </div>
 
         <div className="field">
@@ -124,6 +153,98 @@ export function SettingsDialog(): React.JSX.Element | null {
               stored.
             </p>
           ) : null}
+        </div>
+
+        <div className="field">
+          <label htmlFor="fallback-provider">Failover (optional)</label>
+          <div className="fallback-row">
+            <select
+              id="fallback-provider"
+              data-testid="fallback-provider"
+              value={fallback?.providerId ?? ''}
+              onChange={(e) => {
+                const pid = e.target.value
+                if (!pid) { void setFallbacks([]); return }
+                // Provisional until a model is chosen; the engine skips a
+                // fallback whose model is empty, so this is harmless meanwhile.
+                void setFallbacks([{ providerId: pid, model: '' }])
+              }}
+            >
+              <option value="">No fallback</option>
+              {providers
+                .filter((p) => p.id !== providerId)
+                .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            {fallback ? (
+              <select
+                data-testid="fallback-model"
+                value={fallback.model}
+                onChange={(e) => void setFallbacks([{ providerId: fallback.providerId, model: e.target.value }])}
+              >
+                <option value="">Select a model</option>
+                {fallbackModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            ) : null}
+          </div>
+          <p className="field-hint">
+            If the primary provider hits a rate limit or is unavailable before any text
+            arrives, the turn retries here automatically.
+          </p>
+        </div>
+
+        <div className="field">
+          <label>Modes</label>
+          <p className="field-hint">
+            Named presets. Applying one (from the composer) sets its system prompt and the
+            current model for following turns.
+          </p>
+          {modes.length > 0 ? (
+            <ul className="mode-list">
+              {modes.map((m) => (
+                <li key={m.id} className="mode-list-item">
+                  <span className="mode-list-name">{m.name}</span>
+                  <button
+                    className="row-action row-action-danger"
+                    data-testid="delete-mode"
+                    aria-label={`Delete mode ${m.name}`}
+                    onClick={() => void deleteMode(m.id)}
+                  >✕</button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <input
+            data-testid="mode-name"
+            placeholder="Mode name (e.g. Rust reviewer)"
+            value={modeName}
+            onChange={(e) => setModeName(e.target.value)}
+          />
+          <textarea
+            className="mode-prompt"
+            data-testid="mode-prompt"
+            placeholder="System prompt"
+            rows={3}
+            value={modePrompt}
+            onChange={(e) => setModePrompt(e.target.value)}
+          />
+          <button
+            className="button-secondary"
+            data-testid="mode-save"
+            disabled={modeName.trim() === '' || modePrompt.trim() === ''}
+            onClick={() => {
+              void saveMode({
+                id: `mode-${Date.now()}`,
+                name: modeName.trim(),
+                systemPrompt: modePrompt.trim(),
+                providerId,
+                model,
+              })
+              setModeName('')
+              setModePrompt('')
+            }}
+          >
+            Add mode (uses the current provider &amp; model)
+          </button>
         </div>
 
         <div className="dialog-actions">
