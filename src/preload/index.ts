@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
+import type { Attachment, ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -19,6 +19,7 @@ export interface OpenCoderBridge {
   chat: {
     send(input: {
       sessionId: string; providerId: string; model: string; content: string
+      attachments?: Attachment[]
       systemPrompt?: string; temperature?: number
       fallbacks?: { providerId: string; model: string }[]
     }): Promise<{ streamId: string }>

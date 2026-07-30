@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
+import type { Attachment, ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { encodeSelection } from '../canvas/selection.js'
 
@@ -97,6 +97,8 @@ interface AppState {
   canvasFocus: { lang: string; token: number } | null
   /** Composer draft, held here so attachments and the secret guard can act on it. */
   draft: string
+  /** Image attachments staged in the composer, sent with the next turn (spec §B). */
+  pendingAttachments: Attachment[]
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
 
@@ -111,6 +113,8 @@ interface AppState {
   openSideThread(seed: string): void
   closeSideThread(): void
   setDraft(value: string): void
+  addAttachment(attachment: Attachment): void
+  removeAttachment(index: number): void
   setCanvasSelection(outerHTML: string | null): void
   /** Focus the canvas on an artifact language (from a transcript card). */
   focusCanvas(lang: string): void
@@ -186,6 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   canvasSelection: null,
   canvasFocus: null,
   draft: '',
+  pendingAttachments: [],
   pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
@@ -217,6 +222,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
   setDraft(value) { set({ draft: value }) },
+  addAttachment(attachment) { set((s) => ({ pendingAttachments: [...s.pendingAttachments, attachment] })) },
+  removeAttachment(index) { set((s) => ({ pendingAttachments: s.pendingAttachments.filter((_, i) => i !== index) })) },
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
   focusCanvas(lang) {
     const token = (get().canvasFocus?.token ?? 0) + 1
@@ -500,6 +507,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: { kind: 'no_model', message: 'No model is selected. Choose one in settings.' } })
       return
     }
+    // Staged images ride with this turn, then the composer is cleared.
+    const attachments = get().pendingAttachments
     // A new turn genuinely starts a new buffer, so resetting streamingText
     // and (re)pointing streamingSessionId at the target session here is
     // correct even though selectSession must never do the equivalent.
@@ -508,8 +517,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       streamNotice: null,
       streamingText: '',
       streamingSessionId: sessionId,
+      pendingAttachments: [],
       messages: [...s.messages, {
         id: `local-${Date.now()}`, role: 'user', content, createdAt: Date.now(),
+        ...(attachments.length > 0 ? { attachments } : {}),
       }],
     }))
     try {
@@ -524,6 +535,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         providerId: get().providerId,
         model: get().model,
         content,
+        ...(attachments.length > 0 ? { attachments } : {}),
         ...(fallbacks.length > 0 ? { fallbacks } : {}),
         ...(mode?.systemPrompt ? { systemPrompt: mode.systemPrompt } : {}),
         ...(mode?.temperature !== undefined ? { temperature: mode.temperature } : {}),

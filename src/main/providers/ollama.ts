@@ -1,4 +1,5 @@
 import { statusToError } from './openai-compat.js'
+import { toOllamaMessages } from './message-mapping.js'
 import { consumeStream, type ChunkResult } from './stream-consumer.js'
 import type { ChatRequest, Provider, ProviderConfig } from './types.js'
 import type { ModelInfo, StreamEvent } from '../../shared/types.js'
@@ -72,7 +73,7 @@ export function createOllamaProvider(): Provider {
             stream: true,
             // Ollama takes sampling params under `options`.
             ...(request.temperature !== undefined ? { options: { temperature: request.temperature } } : {}),
-            messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+            messages: toOllamaMessages(request.messages),
           }),
         })
       } catch {

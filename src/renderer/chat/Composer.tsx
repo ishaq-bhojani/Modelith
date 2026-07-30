@@ -2,7 +2,18 @@ import { useLayoutEffect, useRef } from 'react'
 import { useAppStore } from '../state/store.js'
 import { ModeMenu } from './ModeMenu.js'
 import { fencedAttachment } from './fence-lang.js'
+import { ALLOWED_IMAGE_MIME, validateAttachment } from '@shared/attachments'
+import type { Attachment } from '@shared/types'
 import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconStop } from '../app/icons.js'
+
+/** Read a File's bytes as bare base64 (no data: prefix) for an Attachment. */
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
+  return btoa(binary)
+}
 
 /** Same ~4 chars/token heuristic main uses for context budgeting. */
 function estimateTokens(text: string): number {
@@ -28,6 +39,11 @@ export function Composer(): React.JSX.Element {
   const stop = useAppStore((s) => s.stop)
   const toggleInspector = useAppStore((s) => s.toggleInspector)
   const toggleWorkspace = useAppStore((s) => s.toggleWorkspace)
+  const pendingAttachments = useAppStore((s) => s.pendingAttachments)
+  const addAttachment = useAppStore((s) => s.addAttachment)
+  const removeAttachment = useAppStore((s) => s.removeAttachment)
+  const providerId = useAppStore((s) => s.providerId)
+  const providers = useAppStore((s) => s.providers)
   const reportError = useAppStore((s) => s.reportError)
 
   // `stop()` aborts whichever stream is globally tracked by `streamId`,
@@ -42,10 +58,25 @@ export function Composer(): React.JSX.Element {
     el.style.height = `${el.scrollHeight}px`
   }, [draft])
 
+  const addImageFile = async (file: File) => {
+    try {
+      const attachment: Attachment = {
+        type: 'image', mimeType: file.type, name: file.name, data: await fileToBase64(file),
+      }
+      const check = validateAttachment(attachment)
+      if (!check.ok) { reportError(new Error(check.error)); return }
+      addAttachment(attachment)
+    } catch {
+      reportError(new Error(`${file.name} could not be read.`))
+    }
+  }
+
   const onFiles = async (files: FileList | null) => {
     if (!files) return
     const blocks: string[] = []
     for (const file of Array.from(files)) {
+      // Images become vision attachments; everything else is fenced as text.
+      if (ALLOWED_IMAGE_MIME.has(file.type)) { await addImageFile(file); continue }
       if (file.size > MAX_ATTACH_BYTES) {
         reportError(new Error(`${file.name} is too large to attach (max 256 KB of text).`))
         continue
@@ -63,6 +94,14 @@ export function Composer(): React.JSX.Element {
       textareaRef.current?.focus()
     }
   }
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const images = Array.from(e.clipboardData.files).filter((f) => ALLOWED_IMAGE_MIME.has(f.type))
+    if (images.length > 0) { e.preventDefault(); void Promise.all(images.map(addImageFile)) }
+  }
+
+  const visionProvider = providers.find((p) => p.id === providerId)?.vision ?? false
+  const showVisionNote = pendingAttachments.length > 0 && !visionProvider
 
   // A one-line preview of the selected element for the refine chip.
   const selectionLabel = canvasSelection
@@ -87,6 +126,28 @@ export function Composer(): React.JSX.Element {
             </button>
           </div>
         ) : null}
+        {pendingAttachments.length > 0 ? (
+          <div className="attachment-strip" data-testid="attachment-strip">
+            {pendingAttachments.map((a, i) => (
+              <div key={i} className="attachment-thumb" title={a.name}>
+                <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name ?? 'attachment'} />
+                <button
+                  className="attachment-remove"
+                  data-testid="attachment-remove"
+                  aria-label="Remove attachment"
+                  onClick={() => removeAttachment(i)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {showVisionNote ? (
+          <div className="attachment-note" data-testid="vision-note">
+            This model may not read images.
+          </div>
+        ) : null}
         <div className="composer">
           <textarea
             ref={textareaRef}
@@ -96,6 +157,7 @@ export function Composer(): React.JSX.Element {
             placeholder="Ask anything"
             aria-label="Message"
             onChange={(e) => setDraft(e.target.value)}
+            onPaste={onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); requestSend() }
             }}
@@ -105,7 +167,7 @@ export function Composer(): React.JSX.Element {
             <button
               className="chip-button"
               data-testid="attach"
-              title="Attach a text or code file"
+              title="Attach a text/code file or an image"
               onClick={() => fileRef.current?.click()}
             >
               <IconPaperclip size={13} />
@@ -115,6 +177,7 @@ export function Composer(): React.JSX.Element {
               ref={fileRef}
               type="file"
               multiple
+              accept="image/png,image/jpeg,image/gif,image/webp,text/*,.ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.rb,.c,.h,.cpp,.cs,.sh,.json,.yaml,.yml,.toml,.md,.html,.css,.sql,.xml"
               className="visually-hidden"
               data-testid="attach-input"
               onChange={(e) => { void onFiles(e.target.files); e.target.value = '' }}

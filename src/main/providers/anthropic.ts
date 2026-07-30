@@ -1,5 +1,6 @@
 import { parseSse } from '../chat/sse-parser.js'
 import { statusToError } from './openai-compat.js'
+import { toAnthropicMessages } from './message-mapping.js'
 import { consumeStream, type ChunkResult } from './stream-consumer.js'
 import type { ChatRequest, Provider, ProviderConfig } from './types.js'
 import type { ModelInfo, StreamEvent } from '../../shared/types.js'
@@ -77,9 +78,7 @@ export function createAnthropicProvider(): Provider {
       const { config } = request
       // Anthropic takes the system prompt as a top-level field, not a message.
       const system = request.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
-      const turns = request.messages
-        .filter((m) => m.role !== 'system')
-        .map((m) => ({ role: m.role, content: m.content }))
+      const turns = toAnthropicMessages(request.messages.filter((m) => m.role !== 'system'))
 
       let response: Response
       try {
