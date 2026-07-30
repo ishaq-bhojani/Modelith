@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import { IconArrowUp, IconStop } from '../app/icons.js'
+import { ModeMenu } from './ModeMenu.js'
+import { IconArrowUp, IconGauge, IconStop } from '../app/icons.js'
 
 /** Same ~4 chars/token heuristic main uses for context budgeting. */
 function estimateTokens(text: string): number {
@@ -16,6 +17,7 @@ export function Composer(): React.JSX.Element {
   const activeSessionId = useAppStore((s) => s.activeSessionId)
   const send = useAppStore((s) => s.send)
   const stop = useAppStore((s) => s.stop)
+  const toggleInspector = useAppStore((s) => s.toggleInspector)
 
   // `stop()` aborts whichever stream is globally tracked by `streamId`,
   // regardless of which session the user is viewing. Showing Stop here must
@@ -56,6 +58,16 @@ export function Composer(): React.JSX.Element {
             }}
           />
           <div className="composer-row">
+            <ModeMenu />
+            <button
+              className="chip-button"
+              data-testid="inspect-context"
+              title="Inspect context"
+              onClick={toggleInspector}
+            >
+              <IconGauge size={13} />
+              Context
+            </button>
             <span className="composer-spacer" />
             <span className="token-count">
               {draft ? `≈${estimateTokens(draft)} tokens` : ''}

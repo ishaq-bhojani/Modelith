@@ -7,6 +7,7 @@ import { Transcript } from '../chat/Transcript.js'
 import { Composer } from '../chat/Composer.js'
 import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
+import { ContextInspector } from '../chat/ContextInspector.js'
 import { ModelPicker } from './ModelPicker.js'
 import { sessionCost, formatTotal } from '../chat/cost.js'
 import { IconMoon, IconSun } from './icons.js'
@@ -80,6 +81,8 @@ export function App(): React.JSX.Element {
           {activeSessionId === null ? <FirstRun /> : <Transcript />}
           <Composer />
         </main>
+
+        <ContextInspector />
       </div>
 
       <SettingsDialog />

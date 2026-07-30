@@ -15,6 +15,13 @@ export const CHANNELS = {
   sessionCreate: 'sessions:create',
   sessionDelete: 'sessions:delete',
   sessionRename: 'sessions:rename',
+  sessionSetPinned: 'sessions:set-pinned',
+  sessionSetArchived: 'sessions:set-archived',
+  sessionSetTags: 'sessions:set-tags',
+  sessionBranch: 'sessions:branch',
+  sessionTruncateFrom: 'sessions:truncate-from',
+  sessionEditMessage: 'sessions:edit-message',
+  chatPreview: 'chat:preview',
   windowMinimize: 'window:minimize',
   windowMaximizeToggle: 'window:maximize-toggle',
   windowClose: 'window:close',
@@ -65,6 +72,16 @@ export const AbortSchema = z.object({ streamId: z.string().min(1) })
 export const SessionIdSchema = z.object({ id: z.string().min(1) })
 export const SessionCreateSchema = z.object({ title: z.string() })
 export const SessionRenameSchema = z.object({ id: z.string().min(1), title: z.string().min(1) })
+export const SessionSetPinnedSchema = z.object({ id: z.string().min(1), pinned: z.boolean() })
+export const SessionSetArchivedSchema = z.object({ id: z.string().min(1), archived: z.boolean() })
+export const SessionSetTagsSchema = z.object({ id: z.string().min(1), tags: z.array(z.string()) })
+export const SessionBranchSchema = z.object({
+  sourceId: z.string().min(1),
+  uptoId: z.string().min(1),
+  title: z.string(),
+})
+export const SessionMessageRefSchema = z.object({ id: z.string().min(1), messageId: z.string().min(1) })
+export const SessionEditMessageSchema = SessionMessageRefSchema.extend({ content: z.string() })
 // Intentionally no renderer-supplied `baseUrl` field here (or on SendSchema):
 // the renderer cannot read an API key, but a renderer-controlled base URL
 // would let it redirect where main sends that key. Providers use their own

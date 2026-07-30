@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import { AppMenu } from '../app/AppMenu.js'
 import {
+  IconArchive,
   IconLock,
   IconPencil,
+  IconPin,
   IconPlus,
   IconSearch,
   IconSliders,
@@ -14,6 +16,9 @@ interface SessionMeta {
   id: string
   title: string
   updatedAt: number
+  pinned?: boolean
+  archived?: boolean
+  tags?: string[]
 }
 
 const DAY = 86_400_000
@@ -46,10 +51,13 @@ export function Sidebar(): React.JSX.Element {
   const setQuery = useAppStore((s) => s.setQuery)
   const rename = useAppStore((s) => s.renameSession)
   const remove = useAppStore((s) => s.deleteSession)
+  const togglePin = useAppStore((s) => s.togglePin)
+  const toggleArchive = useAppStore((s) => s.toggleArchive)
 
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
 
   // ⌘F / Ctrl+F focuses the filter, matching the hint rendered in the field.
   useEffect(() => {
@@ -65,18 +73,25 @@ export function Sidebar(): React.JSX.Element {
   }, [])
 
   const needle = query.trim().toLowerCase()
-  const visible = needle
-    ? sessions.filter((s) => s.title.toLowerCase().includes(needle))
-    : sessions
+  const matches = (s: SessionMeta) =>
+    (needle ? s.title.toLowerCase().includes(needle) : true) &&
+    (showArchived ? true : !s.archived)
+  const visible = sessions.filter(matches)
 
+  // Pinned sessions form their own section at the very top; the rest keep the
+  // date grouping.
+  const pinned = visible.filter((s) => s.pinned)
+  const rest = visible.filter((s) => !s.pinned)
   const now = Date.now()
   const groups: { label: string; items: SessionMeta[] }[] = []
-  for (const session of visible) {
+  if (pinned.length > 0) groups.push({ label: 'Pinned', items: pinned })
+  for (const session of rest) {
     const label = bucketOf(session.updatedAt, now)
     const last = groups.at(-1)
     if (last && last.label === label) last.items.push(session)
     else groups.push({ label, items: [session] })
   }
+  const archivedCount = sessions.filter((s) => s.archived).length
 
   const commitRename = (id: string) => {
     const title = draftTitle.trim()
@@ -163,8 +178,26 @@ export function Sidebar(): React.JSX.Element {
                       <span className="session-title">{session.title}</span>
                     )}
 
+                    {session.pinned ? <IconPin size={11} /> : null}
+
                     {isEditing ? null : (
                       <span className="row-actions">
+                        <button
+                          className="row-action"
+                          title={session.pinned ? 'Unpin' : 'Pin'}
+                          aria-label={session.pinned ? `Unpin ${session.title}` : `Pin ${session.title}`}
+                          onClick={(e) => { e.stopPropagation(); void togglePin(session.id) }}
+                        >
+                          <IconPin size={13} />
+                        </button>
+                        <button
+                          className="row-action"
+                          title={session.archived ? 'Unarchive' : 'Archive'}
+                          aria-label={session.archived ? `Unarchive ${session.title}` : `Archive ${session.title}`}
+                          onClick={(e) => { e.stopPropagation(); void toggleArchive(session.id) }}
+                        >
+                          <IconArchive size={13} />
+                        </button>
                         <button
                           className="row-action"
                           title="Rename"
@@ -194,6 +227,16 @@ export function Sidebar(): React.JSX.Element {
             })}
           </div>
         ))}
+
+        {archivedCount > 0 ? (
+          <button
+            className="show-archived"
+            data-testid="show-archived"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+          </button>
+        ) : null}
       </div>
 
       <div className="sidebar-foot">

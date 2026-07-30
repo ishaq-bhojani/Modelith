@@ -39,6 +39,33 @@ export interface ProviderSummary {
   dataPolicy: DataPolicy
 }
 
+/** A named preset: system prompt + model + temperature, applied to a turn. */
+export interface Mode {
+  id: string
+  name: string
+  systemPrompt: string
+  providerId?: string
+  model?: string
+  temperature?: number
+}
+
+/** One message's place in what would be sent next, for the context inspector. */
+export interface ContextPreviewEntry {
+  id: string
+  role: Role
+  tokens: number
+  included: boolean
+  preview: string
+}
+
+export interface ContextPreview {
+  entries: ContextPreviewEntry[]
+  includedTokens: number
+  totalTokens: number
+  omittedCount: number
+  budget: number
+}
+
 // No 'aborted' kind: an abort is renderer-initiated (the user clicked Stop),
 // so the renderer already knows without needing an error event, and the
 // engine deliberately never emits one for it (see stream-engine.ts). A kind

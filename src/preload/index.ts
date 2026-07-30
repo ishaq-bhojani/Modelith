@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ModelInfo, ProviderSummary, StreamEnvelope } from '../shared/types.js'
+import type { ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -24,13 +24,20 @@ export interface OpenCoderBridge {
     }): Promise<{ streamId: string }>
     abort(streamId: string): Promise<void>
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
+    preview(sessionId: string): Promise<ContextPreview>
   }
   sessions: {
-    list(): Promise<{ id: string; title: string; updatedAt: number }[]>
+    list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[] }[]>
     load(id: string): Promise<ChatMessage[]>
     create(title: string): Promise<{ id: string }>
     delete(id: string): Promise<void>
     rename(id: string, title: string): Promise<void>
+    setPinned(id: string, pinned: boolean): Promise<void>
+    setArchived(id: string, archived: boolean): Promise<void>
+    setTags(id: string, tags: string[]): Promise<void>
+    branch(sourceId: string, uptoId: string, title: string): Promise<{ id: string }>
+    truncateFrom(id: string, messageId: string): Promise<void>
+    editMessage(id: string, messageId: string, content: string): Promise<void>
   }
   window: {
     minimize(): Promise<void>
@@ -69,6 +76,7 @@ const bridge: OpenCoderBridge = {
       ipcRenderer.on(CHANNELS.chatEvent, listener)
       return () => { ipcRenderer.off(CHANNELS.chatEvent, listener) }
     },
+    preview: (sessionId) => ipcRenderer.invoke(CHANNELS.chatPreview, { id: sessionId }),
   },
   sessions: {
     list: () => ipcRenderer.invoke(CHANNELS.sessionsList),
@@ -76,6 +84,12 @@ const bridge: OpenCoderBridge = {
     create: (title) => ipcRenderer.invoke(CHANNELS.sessionCreate, { title }),
     delete: (id) => ipcRenderer.invoke(CHANNELS.sessionDelete, { id }),
     rename: (id, title) => ipcRenderer.invoke(CHANNELS.sessionRename, { id, title }),
+    setPinned: (id, pinned) => ipcRenderer.invoke(CHANNELS.sessionSetPinned, { id, pinned }),
+    setArchived: (id, archived) => ipcRenderer.invoke(CHANNELS.sessionSetArchived, { id, archived }),
+    setTags: (id, tags) => ipcRenderer.invoke(CHANNELS.sessionSetTags, { id, tags }),
+    branch: (sourceId, uptoId, title) => ipcRenderer.invoke(CHANNELS.sessionBranch, { sourceId, uptoId, title }),
+    truncateFrom: (id, messageId) => ipcRenderer.invoke(CHANNELS.sessionTruncateFrom, { id, messageId }),
+    editMessage: (id, messageId, content) => ipcRenderer.invoke(CHANNELS.sessionEditMessage, { id, messageId, content }),
   },
   window: {
     minimize: () => ipcRenderer.invoke(CHANNELS.windowMinimize),

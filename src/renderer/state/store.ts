@@ -1,5 +1,9 @@
 import { create } from 'zustand'
-import type { ChatMessage, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
+import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
+
+function newId(): string {
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
 interface SessionMeta {
   id: string
@@ -60,6 +64,9 @@ interface AppState {
   model: string
   /** Ordered failover targets, persisted in settings, sent with each turn. */
   fallbacks: Fallback[]
+  /** Named presets (system prompt + model + temperature), persisted in settings. */
+  modes: Mode[]
+  activeModeId: string | null
   sidebarWidth: number
   settingsOpen: boolean
   /** Sidebar filter. Purely client-side over the already-loaded session index. */
@@ -67,9 +74,12 @@ interface AppState {
   theme: 'dark' | 'light'
   /** OS platform, from appInfo(). Drives the frameless title-bar chrome. */
   platform: string
+  /** Whether the context inspector drawer is open. */
+  inspectorOpen: boolean
 
   openSettings(): void
   closeSettings(): void
+  toggleInspector(): void
   setQuery(value: string): void
   setTheme(theme: 'dark' | 'light'): void
   loadPlatform(): Promise<void>
@@ -88,6 +98,16 @@ interface AppState {
   loadProviders(): Promise<void>
   loadSettings(): Promise<void>
   setFallbacks(fallbacks: Fallback[]): Promise<void>
+  saveMode(mode: Mode): Promise<void>
+  deleteMode(id: string): Promise<void>
+  setActiveMode(id: string | null): void
+  togglePin(id: string): Promise<void>
+  toggleArchive(id: string): Promise<void>
+  setSessionTags(id: string, tags: string[]): Promise<void>
+  refreshMessages(): Promise<void>
+  branchFrom(messageId: string): Promise<void>
+  editUserMessage(messageId: string, content: string): Promise<void>
+  editAssistantMessage(messageId: string, content: string): Promise<void>
   selectSession(id: string): Promise<void>
   newSession(): Promise<void>
   send(content: string): Promise<void>
@@ -112,14 +132,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   providers: [],
   model: '',
   fallbacks: [],
+  modes: [],
+  activeModeId: null,
   sidebarWidth: 300,
   settingsOpen: false,
   query: '',
   theme: 'dark',
   platform: '',
+  inspectorOpen: false,
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
+  toggleInspector() { set((s) => ({ inspectorOpen: !s.inspectorOpen })) },
   reportError(err) { set({ error: toProviderError(err) }) },
   setQuery(value) { set({ query: value }) },
   setTheme(theme) { set({ theme }) },
@@ -138,6 +162,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const settings = await window.openCoder.settings.get()
       const fallbacks = settings['fallbacks']
       if (Array.isArray(fallbacks)) set({ fallbacks: fallbacks as Fallback[] })
+      const modes = settings['modes']
+      if (Array.isArray(modes)) set({ modes: modes as Mode[] })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -147,6 +173,119 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ fallbacks })
     try {
       await window.openCoder.settings.set({ fallbacks })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async saveMode(mode) {
+    const modes = get().modes.some((m) => m.id === mode.id)
+      ? get().modes.map((m) => (m.id === mode.id ? mode : m))
+      : [...get().modes, mode]
+    set({ modes })
+    try {
+      await window.openCoder.settings.set({ modes })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async deleteMode(id) {
+    const modes = get().modes.filter((m) => m.id !== id)
+    set({ modes, activeModeId: get().activeModeId === id ? null : get().activeModeId })
+    try {
+      await window.openCoder.settings.set({ modes })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Applying a mode optionally switches the model, then its system prompt and
+  // temperature ride along on subsequent sends (see send()).
+  setActiveMode(id) {
+    set({ activeModeId: id })
+    if (id === null) return
+    const mode = get().modes.find((m) => m.id === id)
+    if (mode?.providerId) set({ providerId: mode.providerId })
+    if (mode?.model) set({ model: mode.model })
+  },
+
+  async togglePin(id) {
+    const current = get().sessions.find((s) => s.id === id)?.pinned ?? false
+    try {
+      await window.openCoder.sessions.setPinned(id, !current)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async toggleArchive(id) {
+    const current = get().sessions.find((s) => s.id === id)?.archived ?? false
+    try {
+      await window.openCoder.sessions.setArchived(id, !current)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async setSessionTags(id, tags) {
+    try {
+      await window.openCoder.sessions.setTags(id, tags)
+      await get().loadSessions()
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Reloads the active session's messages from disk, replacing the optimistic
+  // `local-*` ids used during streaming with the canonical persisted ids that
+  // edit and fork operate on. Fire-and-forget after a turn completes.
+  async refreshMessages() {
+    const id = get().activeSessionId
+    if (!id) return
+    try {
+      set({ messages: await window.openCoder.sessions.load(id) })
+    } catch {
+      // A refresh failure is non-fatal — the optimistic messages remain shown.
+    }
+  },
+
+  async branchFrom(messageId) {
+    const sourceId = get().activeSessionId
+    if (!sourceId) return
+    try {
+      const { id } = await window.openCoder.sessions.branch(sourceId, messageId, 'Fork')
+      await get().loadSessions()
+      await get().selectSession(id)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Editing a user message rewinds the conversation to just before it, then
+  // sends the edited text as a fresh turn.
+  async editUserMessage(messageId, content) {
+    const sessionId = get().activeSessionId
+    if (!sessionId) return
+    try {
+      await window.openCoder.sessions.truncateFrom(sessionId, messageId)
+      set({ messages: await window.openCoder.sessions.load(sessionId) })
+      await get().send(content)
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  // Editing an assistant message rewrites its content in place (put words in its
+  // mouth), without re-running the turn.
+  async editAssistantMessage(messageId, content) {
+    const sessionId = get().activeSessionId
+    if (!sessionId) return
+    try {
+      await window.openCoder.sessions.editMessage(sessionId, messageId, content)
+      set({ messages: await window.openCoder.sessions.load(sessionId) })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -274,12 +413,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const fallbacks = get().fallbacks.filter(
         (f) => !(f.providerId === get().providerId && f.model === get().model),
       )
+      const mode = get().modes.find((m) => m.id === get().activeModeId)
       const { streamId } = await window.openCoder.chat.send({
         sessionId,
         providerId: get().providerId,
         model: get().model,
         content,
         ...(fallbacks.length > 0 ? { fallbacks } : {}),
+        ...(mode?.systemPrompt ? { systemPrompt: mode.systemPrompt } : {}),
+        ...(mode?.temperature !== undefined ? { temperature: mode.temperature } : {}),
       })
       set({ streamId, lastStreamId: streamId })
     } catch (err) {
@@ -424,6 +566,9 @@ export const useAppStore = create<AppState>((set, get) => ({
             : s.messages,
         }
       })
+      // Canonicalize ids so edit/fork on the just-finished turn use real
+      // persisted ids, not the optimistic local-* ones.
+      if (sessionId === get().activeSessionId) void get().refreshMessages()
     }
   },
 }))

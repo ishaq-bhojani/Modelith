@@ -184,6 +184,26 @@ export class SessionStore {
   }
 
   /**
+   * Drops the message with `messageId` and everything after it, keeping the
+   * prefix before it. Used when a user edits a message: the conversation is
+   * rewound to just before that turn, then the edited turn is sent fresh.
+   */
+  async truncateFrom(id: string, messageId: string): Promise<void> {
+    const messages = await this.load(id)
+    const cut = messages.findIndex((m) => m.id === messageId)
+    if (cut === -1) return
+    await this.replaceMessages(id, messages.slice(0, cut))
+  }
+
+  /** Rewrites one message's content in place (edit an assistant reply). */
+  async editMessage(id: string, messageId: string, content: string): Promise<void> {
+    const messages = await this.load(id)
+    const target = messages.find((m) => m.id === messageId)
+    if (!target) return
+    await this.replaceMessages(id, messages.map((m) => (m.id === messageId ? { ...m, content } : m)))
+  }
+
+  /**
    * Creates a new session containing the source session's messages up to and
    * including `uptoId`. Used by "Fork here". Returns the new session's meta.
    */

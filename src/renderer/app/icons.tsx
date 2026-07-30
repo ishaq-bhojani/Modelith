@@ -159,6 +159,41 @@ export const IconLogout = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+export const IconPin = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6zM12 15v5" />
+  </Svg>
+)
+
+export const IconArchive = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+  </Svg>
+)
+
+export const IconGitBranch = (p: IconProps): React.JSX.Element => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 1.8}>
+    <circle cx="6" cy="6" r="2.4" />
+    <circle cx="6" cy="18" r="2.4" />
+    <circle cx="18" cy="7" r="2.4" />
+    <path d="M6 8.4v7.2M18 9.4a6 6 0 0 1-6 6H8" />
+  </Svg>
+)
+
+export const IconSlash = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M15 5 9 19" />
+  </Svg>
+)
+
+export const IconGauge = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M4 18a8 8 0 1 1 16 0" />
+    <path d="M12 18l4-5" />
+  </Svg>
+)
+
 /** Brand glyph: the </> code marks in the app icon. */
 export const IconBrand = ({ size = 16 }: { size?: number }): React.JSX.Element => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
