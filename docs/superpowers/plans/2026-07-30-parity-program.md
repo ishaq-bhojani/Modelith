@@ -92,16 +92,24 @@ attention.
 **Why last:** highest architectural risk, and it shines most once the rest is a
 complete product to show it off in.
 
-## Definition of done (parity-plus, pre-prod)
+## Definition of done (parity-plus, pre-prod) — ✅ COMPLETE
 
-- Artifacts render live (1).
-- A folder can be attached and its files read into context; images attach (2).
-- The agent can edit files behind a diff-approval gate with checkpoints (3).
-- MCP servers can be added and their tools called in a turn (4).
-- Commands run behind an allowlist; git status/diff/commit are visible (5).
-- Model Race works for 2–4 providers at once (6).
-- Every one of the above shipped through the review loop; the security invariants
-  (no key to renderer, no unapproved disk write, no telemetry) hold throughout.
+All six sub-projects shipped and merged to master, each with executable tests.
+
+- ✅ Artifacts render live (1) — spec `2026-07-29-artifact-canvas-design.md`.
+- ✅ A folder can be attached and its files read into context; images attach (2)
+  — spec `2026-07-30-workspace-and-vision.md`.
+- ✅ The agent can edit files behind a diff-approval gate with checkpoints (3)
+  — spec `2026-07-30-agentic-edits.md`.
+- ✅ MCP servers can be added and their tools called in a turn (4)
+  — spec `2026-07-30-mcp-client.md`.
+- ✅ Commands run behind an allowlist; git status/diff/commit are visible (5)
+  — spec `2026-07-30-terminal-git.md`.
+- ✅ Model Race works for 2–4 providers at once (6)
+  — spec `2026-07-30-model-race.md`.
+- ✅ Every one shipped through the review loop; the security invariants (no key to
+  renderer, no unapproved disk write, reads/writes/commands confined and gated,
+  no telemetry) hold throughout, each proved by an executable test.
 
 ## Cross-cutting debts to retire along the way
 
