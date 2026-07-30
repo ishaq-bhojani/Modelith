@@ -1,6 +1,7 @@
 # Spec: Model Race (parity sub-project #6)
 
-**Status:** DRAFT — awaiting sign-off before reworking the engine.
+**Status:** APPROVED. Decisions: A = discard non-picked candidates; B = a
+dedicated 2–4 race multi-select; C = a race is exactly one turn.
 **Depends on:** the stream engine (turn model), providers, cost.
 **The wedge:** send one prompt to 2–4 models at once, compare in parallel
 columns, pick the winner — the 20-second demo nothing else has.
