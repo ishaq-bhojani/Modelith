@@ -1,6 +1,8 @@
 # Spec: Terminal + git awareness (parity sub-project #5)
 
-**Status:** DRAFT — awaiting sign-off before any command-execution code.
+**Status:** APPROVED. Decisions: A = per-command gate + user-defined session
+allow-prefixes; B = read-only git tools + Git panel + gated commit; C = real
+platform shell (`sh -c` / `cmd /c`), approval as the guard.
 **Depends on:** the tool loop + approval gate (#3), workspace root (#2).
 **Roadmap:** the depth Aider/Warp users rely on — run commands, see git state.
 
