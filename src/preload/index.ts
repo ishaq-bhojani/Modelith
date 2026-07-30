@@ -29,6 +29,10 @@ export interface OpenCoderBridge {
     preview(sessionId: string): Promise<ContextPreview>
     /** Deliver a diff-gate decision (agentic-edits spec §4). */
     toolDecision(callId: string, action: 'accept' | 'reject' | 'edited', content?: string): Promise<void>
+    /** Start a Model Race across 2–4 targets (model-race spec §2). */
+    startRace(input: { sessionId: string; content: string; systemPrompt?: string; temperature?: number; entries: { providerId: string; model: string }[] }): Promise<{ raceId: string }>
+    /** Persist the chosen race column as the turn's reply. */
+    chooseWinner(raceId: string, columnId: string): Promise<void>
   }
   sessions: {
     list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[] }[]>
@@ -104,6 +108,8 @@ const bridge: OpenCoderBridge = {
     },
     preview: (sessionId) => ipcRenderer.invoke(CHANNELS.chatPreview, { id: sessionId }),
     toolDecision: (callId, action, content) => ipcRenderer.invoke(CHANNELS.chatToolDecision, { callId, action, content }),
+    startRace: (input) => ipcRenderer.invoke(CHANNELS.chatRace, input),
+    chooseWinner: (raceId, columnId) => ipcRenderer.invoke(CHANNELS.chatChooseWinner, { raceId, columnId }),
   },
   sessions: {
     list: () => ipcRenderer.invoke(CHANNELS.sessionsList),

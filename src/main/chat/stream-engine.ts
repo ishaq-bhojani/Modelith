@@ -31,6 +31,15 @@ export interface StartInput {
   fallbacks?: Fallback[]
 }
 
+/** Input for a Model Race turn (model-race spec §2). */
+export interface RaceInput {
+  sessionId: string
+  content: string
+  systemPrompt?: string
+  temperature?: number
+  entries: Fallback[]
+}
+
 /** Error kinds worth retrying on another provider (transient, not the user's fault). */
 const RETRYABLE = new Set(['rate_limit', 'provider_5xx', 'network'])
 
@@ -63,9 +72,20 @@ export class StreamEngine {
 
   constructor(private readonly deps: StreamEngineDeps) {}
 
+  // In-flight races: raceId → the columns' accumulating state and the session
+  // it belongs to (model-race spec §2). The session stays busy until a winner
+  // is chosen or the race is discarded/aborted.
+  private readonly races = new Map<string, {
+    sessionId: string
+    columns: Map<string, { providerId: string; model: string; assembled: string; usage?: Usage }>
+  }>()
+
   abort(streamId: string): void {
     this.active.get(streamId)?.abort()
     this.active.delete(streamId)
+    // Aborting a race also discards it and frees the session (no winner).
+    const race = this.races.get(streamId)
+    if (race) { this.activeSessions.delete(race.sessionId); this.races.delete(streamId) }
   }
 
   /** Deliver a diff-gate decision from the renderer (agentic-edits spec §4). */
@@ -117,6 +137,114 @@ export class StreamEngine {
 
   private send(streamId: string, sessionId: string, event: StreamEvent): void {
     this.deps.emit({ streamId, sessionId, event })
+  }
+
+  private sendCol(raceId: string, sessionId: string, columnId: string, event: StreamEvent): void {
+    this.deps.emit({ streamId: raceId, sessionId, event, columnId })
+  }
+
+  /**
+   * Start a Model Race (model-race spec §2): append the user message once, then
+   * stream N models concurrently into columns that write nothing to the store.
+   * The session is reserved for the whole race and released only when a winner
+   * is chosen (chooseRaceWinner) or the race is aborted/discarded (abort).
+   */
+  async startRace(input: RaceInput): Promise<{ raceId: string }> {
+    const raceId = randomUUID()
+    const { sessionId } = input
+    if (this.activeSessions.has(sessionId)) {
+      this.send(raceId, sessionId, { type: 'error', error: { kind: 'busy', message: 'A turn is already in progress for this session.' } })
+      return { raceId }
+    }
+    this.activeSessions.add(sessionId)
+    const controller = new AbortController()
+    this.active.set(raceId, controller)
+    this.races.set(raceId, { sessionId, columns: new Map() })
+    void this.runRace(raceId, input, controller).catch(() => {
+      this.send(raceId, sessionId, { type: 'error', error: { kind: 'unknown', message: 'The race ended unexpectedly.' } })
+      // Leave the session reserved so the user can still discard cleanly via abort.
+    })
+    return { raceId }
+  }
+
+  private async runRace(raceId: string, input: RaceInput, controller: AbortController): Promise<void> {
+    const { store } = this.deps
+    const userMessage: ChatMessage = { id: randomUUID(), role: 'user', content: input.content, createdAt: Date.now() }
+    try {
+      await store.append(input.sessionId, userMessage)
+    } catch {
+      this.send(raceId, input.sessionId, { type: 'error', error: { kind: 'unknown', message: 'Your message could not be saved; the race was not started.' } })
+      this.activeSessions.delete(input.sessionId); this.races.delete(raceId)
+      return
+    }
+    const history = await store.load(input.sessionId)
+    const withSystem: ChatMessage[] = input.systemPrompt
+      ? [{ id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() }, ...history]
+      : history
+    const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
+
+    await Promise.all(input.entries.map((entry, i) =>
+      this.runColumn(raceId, input, `col-${i}`, entry, budgeted.messages, controller)))
+    // Columns are done; the session stays busy until the user picks or discards.
+  }
+
+  private async runColumn(
+    raceId: string,
+    input: RaceInput,
+    columnId: string,
+    entry: Fallback,
+    messages: ChatMessage[],
+    controller: AbortController,
+  ): Promise<void> {
+    const race = this.races.get(raceId)
+    if (!race) return
+    race.columns.set(columnId, { providerId: entry.providerId, model: entry.model, assembled: '' })
+    const col = race.columns.get(columnId)!
+
+    const provider = this.deps.resolveProvider(entry.providerId)
+    const apiKey = await this.deps.readKey(entry.providerId)
+    if (provider.requiresKey && !apiKey) {
+      this.sendCol(raceId, input.sessionId, columnId, { type: 'error', error: { kind: 'auth', message: 'No API key for this provider.' } })
+      return
+    }
+    try {
+      const request = {
+        model: entry.model,
+        messages,
+        config: { apiKey: apiKey ?? '', fetch: this.deps.fetch ?? globalThis.fetch },
+        ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
+      }
+      for await (const event of provider.streamChat(request, controller.signal)) {
+        if (controller.signal.aborted) break
+        if (event.type === 'text') { col.assembled += event.delta; this.sendCol(raceId, input.sessionId, columnId, event) }
+        else if (event.type === 'reasoning') { this.sendCol(raceId, input.sessionId, columnId, event) }
+        else if (event.type === 'done') { col.usage = event.usage; this.sendCol(raceId, input.sessionId, columnId, { type: 'done', model: entry.model, provider: entry.providerId, ...(event.usage ? { usage: event.usage } : {}) }); break }
+        else if (event.type === 'error') { this.sendCol(raceId, input.sessionId, columnId, event); break }
+      }
+    } catch {
+      if (!controller.signal.aborted) this.sendCol(raceId, input.sessionId, columnId, { type: 'error', error: { kind: 'unknown', message: 'This column ended unexpectedly.' } })
+    }
+  }
+
+  /** Persist the chosen column as the turn's reply and release the session. */
+  async chooseRaceWinner(raceId: string, columnId: string): Promise<void> {
+    const race = this.races.get(raceId)
+    if (!race) return
+    const col = race.columns.get(columnId)
+    this.active.get(raceId)?.abort() // stop any still-streaming losers
+    if (col) {
+      try {
+        await this.deps.store.append(race.sessionId, {
+          id: randomUUID(), role: 'assistant', content: col.assembled, createdAt: Date.now(),
+          model: col.model, provider: col.providerId, ...(col.usage ? { usage: col.usage } : {}),
+        })
+      } catch {
+        this.send(raceId, race.sessionId, { type: 'error', error: { kind: 'unknown', message: 'The chosen reply could not be saved.' } })
+      }
+    }
+    this.activeSessions.delete(race.sessionId)
+    this.races.delete(raceId)
+    this.active.delete(raceId)
   }
 
   private async run(streamId: string, input: StartInput, controller: AbortController): Promise<void> {

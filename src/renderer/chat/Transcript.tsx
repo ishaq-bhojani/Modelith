@@ -1,6 +1,7 @@
 import { useAppStore } from '../state/store.js'
 import { MessageView } from './MessageView.js'
 import { ErrorNotice } from './ErrorNotice.js'
+import { RaceView } from './RaceView.js'
 import { useAutoScroll } from './useAutoScroll.js'
 
 export function Transcript(): React.JSX.Element {
@@ -36,6 +37,8 @@ export function Transcript(): React.JSX.Element {
             message={{ id: 'streaming', role: 'assistant', content: streamingText, createdAt: 0 }}
           />
         ) : null}
+
+        <RaceView />
 
         {error ? (
           <ErrorNotice

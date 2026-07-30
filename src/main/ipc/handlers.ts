@@ -26,6 +26,8 @@ import {
   McpIdSchema,
   McpSetEnabledSchema,
   GitDiffSchema,
+  RaceSchema,
+  ChooseWinnerSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -190,6 +192,11 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
   ipcMain.handle(CHANNELS.chatSend, withZodMapping((_e, raw: unknown) => engine.start(SendSchema.parse(raw))))
   ipcMain.handle(CHANNELS.chatAbort, withZodMapping((_e, raw: unknown) => {
     engine.abort(AbortSchema.parse(raw).streamId)
+  }))
+  ipcMain.handle(CHANNELS.chatRace, withZodMapping((_e, raw: unknown) => engine.startRace(RaceSchema.parse(raw))))
+  ipcMain.handle(CHANNELS.chatChooseWinner, withZodMapping((_e, raw: unknown) => {
+    const { raceId, columnId } = ChooseWinnerSchema.parse(raw)
+    return engine.chooseRaceWinner(raceId, columnId)
   }))
   ipcMain.handle(CHANNELS.chatToolDecision, withZodMapping((_e, raw: unknown) => {
     const { callId, action, content } = ToolDecisionSchema.parse(raw)

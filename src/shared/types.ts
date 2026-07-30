@@ -185,9 +185,12 @@ export type StreamEvent =
   // Engine-originated: a tool call finished (activity line in the transcript).
   | { type: 'tool_result'; callId: string; name: string; ok: boolean; summary: string }
 
-/** One chat-stream event, tagged with the stream and session it belongs to. */
+/** One chat-stream event, tagged with the stream and session it belongs to.
+ *  For a Model Race, `streamId` is the raceId and `columnId` identifies which
+ *  parallel model produced it (model-race spec §3). */
 export interface StreamEnvelope {
   streamId: string
   sessionId: string
   event: StreamEvent
+  columnId?: string
 }

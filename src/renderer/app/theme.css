@@ -477,6 +477,40 @@ body.resizing {
 .mcp-add-btn { height: 32px; border-radius: 8px; }
 .mcp-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.race-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised, var(--canvas));
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.race-bar-add { display: flex; gap: 6px; }
+.race-bar-add .mcp-input { flex: 1; }
+.race-targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.race-go { align-self: flex-start; height: 32px; border-radius: 8px; padding: 0 14px; }
+.race-go:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.race { margin: 12px 0; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+.race-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  font-weight: 600;
+}
+.race-columns { display: flex; gap: 1px; overflow-x: auto; background: var(--hairline); }
+.race-col { flex: 1 0 260px; min-width: 260px; display: flex; flex-direction: column; background: var(--canvas); }
+.race-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--hairline); }
+.race-col-model { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-col-body { padding: 10px; max-height: 320px; overflow-y: auto; }
+.race-col-text { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; font-family: inherit; }
+.race-col-error { font-size: 12px; color: var(--danger, #dc2626); }
+
 .revert-bar {
   display: flex;
   align-items: center;
@@ -1202,12 +1236,12 @@ body.resizing {
 /* Context inspector (right drawer) */
 .inspector,
 .workspace {
-  position: fixed;
-  top: 40px; /* below the title bar */
-  right: 0;
-  bottom: 0;
+  /* Flex siblings (like the canvas pane) rather than fixed overlays, so an open
+     drawer pushes the chat left and never covers the composer's controls. Only
+     one is ever open at a time (each renders null when closed). */
+  flex: none;
   width: 360px;
-  z-index: 15;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--canvas);
