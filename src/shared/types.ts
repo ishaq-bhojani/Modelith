@@ -16,6 +16,17 @@ export interface ChatMessage {
   usage?: Usage
 }
 
+/** One entry in the workspace file tree (spec §A.3), shared main↔renderer. */
+export interface WorkspaceTreeEntry {
+  /** POSIX-style path relative to the workspace root. */
+  relPath: string
+  name: string
+  kind: 'dir' | 'file'
+  size?: number
+  /** False for oversized files; such entries are shown disabled, never read. */
+  readable: boolean
+}
+
 export interface ModelInfo {
   id: string
   label: string

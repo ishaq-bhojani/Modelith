@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers, registerSecretHandlers, registerChatHandlers } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers } from './ipc/handlers.js'
 import { registerWindowHandlers, installAppMenu } from './window/controls.js'
 import { CHANNELS } from '../shared/ipc.js'
 
@@ -49,6 +49,7 @@ void app.whenReady().then(() => {
   // Registered once: ipcMain.handle() throws if a channel is bound twice, and
   // `activate` can create new windows over the lifetime of the app.
   registerChatHandlers(() => mainWindow)
+  registerWorkspaceHandlers(() => mainWindow)
   registerWindowHandlers(() => mainWindow)
   installAppMenu(() => mainWindow)
   app.on('activate', () => {

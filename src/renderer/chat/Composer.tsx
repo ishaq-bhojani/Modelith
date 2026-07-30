@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef } from 'react'
 import { useAppStore } from '../state/store.js'
 import { ModeMenu } from './ModeMenu.js'
-import { IconArrowUp, IconGauge, IconPaperclip, IconStop } from '../app/icons.js'
+import { fencedAttachment } from './fence-lang.js'
+import { IconArrowUp, IconFolder, IconGauge, IconPaperclip, IconStop } from '../app/icons.js'
 
 /** Same ~4 chars/token heuristic main uses for context budgeting. */
 function estimateTokens(text: string): number {
@@ -11,17 +12,6 @@ function estimateTokens(text: string): number {
 // Attachments are text/code only in v0 (no content-model change). A generous
 // ceiling keeps a stray binary or huge file from bloating the prompt.
 const MAX_ATTACH_BYTES = 256 * 1024
-
-function fenceLang(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, string> = {
-    ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', py: 'python', rs: 'rust', go: 'go',
-    java: 'java', rb: 'ruby', c: 'c', h: 'c', cpp: 'cpp', cs: 'csharp', sh: 'bash',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml', md: 'markdown', html: 'html',
-    css: 'css', sql: 'sql', xml: 'xml',
-  }
-  return map[ext] ?? ''
-}
 
 export function Composer(): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -37,6 +27,7 @@ export function Composer(): React.JSX.Element {
   const activeSessionId = useAppStore((s) => s.activeSessionId)
   const stop = useAppStore((s) => s.stop)
   const toggleInspector = useAppStore((s) => s.toggleInspector)
+  const toggleWorkspace = useAppStore((s) => s.toggleWorkspace)
   const reportError = useAppStore((s) => s.reportError)
 
   // `stop()` aborts whichever stream is globally tracked by `streamId`,
@@ -61,7 +52,7 @@ export function Composer(): React.JSX.Element {
       }
       try {
         const text = await file.text()
-        blocks.push(`${file.name}:\n\n\`\`\`${fenceLang(file.name)}\n${text}\n\`\`\``)
+        blocks.push(fencedAttachment(file.name, text))
       } catch {
         reportError(new Error(`${file.name} could not be read as text.`))
       }
@@ -128,6 +119,15 @@ export function Composer(): React.JSX.Element {
               data-testid="attach-input"
               onChange={(e) => { void onFiles(e.target.files); e.target.value = '' }}
             />
+            <button
+              className="chip-button"
+              data-testid="open-workspace"
+              title="Browse a workspace folder"
+              onClick={toggleWorkspace}
+            >
+              <IconFolder size={13} />
+              Files
+            </button>
             <button
               className="chip-button"
               data-testid="inspect-context"

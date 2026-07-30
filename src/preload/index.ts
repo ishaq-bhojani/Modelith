@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope } from '../shared/types.js'
+import type { ChatMessage, ContextPreview, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -54,6 +54,14 @@ export interface OpenCoderBridge {
   settings: {
     get(): Promise<Record<string, unknown>>
     set(patch: Record<string, unknown>): Promise<void>
+  }
+  /** Read-only workspace folder access (spec §A). The root is chosen and held
+   *  by main; the renderer only ever passes a root-relative path. */
+  workspace: {
+    pick(): Promise<string | null>
+    current(): Promise<string | null>
+    tree(): Promise<WorkspaceTreeEntry[]>
+    read(relPath: string): Promise<{ relPath: string; text: string }>
   }
 }
 
@@ -119,6 +127,12 @@ const bridge: OpenCoderBridge = {
   settings: {
     get: () => ipcRenderer.invoke(CHANNELS.settingsGet),
     set: (patch) => ipcRenderer.invoke(CHANNELS.settingsSet, patch),
+  },
+  workspace: {
+    pick: () => ipcRenderer.invoke(CHANNELS.workspacePick),
+    current: () => ipcRenderer.invoke(CHANNELS.workspaceCurrent),
+    tree: () => ipcRenderer.invoke(CHANNELS.workspaceTree),
+    read: (relPath) => ipcRenderer.invoke(CHANNELS.workspaceRead, { relPath }),
   },
 }
 

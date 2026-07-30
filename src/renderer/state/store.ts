@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent } from '@shared/types'
+import type { ChatMessage, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { encodeSelection } from '../canvas/selection.js'
 
@@ -78,6 +78,10 @@ interface AppState {
   platform: string
   /** Whether the context inspector drawer is open. */
   inspectorOpen: boolean
+  /** Workspace-read (spec §A): open state, chosen root, and pruned file tree. */
+  workspaceOpen: boolean
+  workspaceRoot: string | null
+  workspaceTree: WorkspaceTreeEntry[]
   /** Side-thread drawer open state + optional seeded quote. Streaming for the
    *  side thread is handled entirely inside SideThread (its own session + event
    *  subscription), so none of the main streaming fields are touched. */
@@ -99,6 +103,11 @@ interface AppState {
   openSettings(): void
   closeSettings(): void
   toggleInspector(): void
+  toggleWorkspace(): void
+  /** Load the remembered workspace root and its tree (on startup). */
+  initWorkspace(): Promise<void>
+  /** Open the folder picker, then load the tree. */
+  pickWorkspace(): Promise<void>
   openSideThread(seed: string): void
   closeSideThread(): void
   setDraft(value: string): void
@@ -169,6 +178,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   theme: 'dark',
   platform: '',
   inspectorOpen: false,
+  workspaceOpen: false,
+  workspaceRoot: null,
+  workspaceTree: [],
   sideThreadOpen: false,
   sideThreadSeed: '',
   canvasSelection: null,
@@ -179,6 +191,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
   toggleInspector() { set((s) => ({ inspectorOpen: !s.inspectorOpen })) },
+  toggleWorkspace() { set((s) => ({ workspaceOpen: !s.workspaceOpen })) },
+
+  async initWorkspace() {
+    try {
+      const root = await window.openCoder.workspace.current()
+      if (!root) return
+      const tree = await window.openCoder.workspace.tree()
+      set({ workspaceRoot: root, workspaceTree: tree })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  async pickWorkspace() {
+    try {
+      const root = await window.openCoder.workspace.pick()
+      if (!root) return
+      const tree = await window.openCoder.workspace.tree()
+      set({ workspaceRoot: root, workspaceTree: tree, workspaceOpen: true })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
   openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
   setDraft(value) { set({ draft: value }) },
