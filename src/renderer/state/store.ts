@@ -54,11 +54,14 @@ interface AppState {
   /** Sidebar filter. Purely client-side over the already-loaded session index. */
   query: string
   theme: 'dark' | 'light'
+  /** OS platform, from appInfo(). Drives the frameless title-bar chrome. */
+  platform: string
 
   openSettings(): void
   closeSettings(): void
   setQuery(value: string): void
   setTheme(theme: 'dark' | 'light'): void
+  loadPlatform(): Promise<void>
   renameSession(id: string, title: string): Promise<void>
   deleteSession(id: string): Promise<void>
   /**
@@ -98,12 +101,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   query: '',
   theme: 'dark',
+  platform: '',
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
   reportError(err) { set({ error: toProviderError(err) }) },
   setQuery(value) { set({ query: value }) },
   setTheme(theme) { set({ theme }) },
+
+  async loadPlatform() {
+    try {
+      const info = await window.openCoder.appInfo()
+      set({ platform: info.platform })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
 
   async renameSession(id, title) {
     const trimmed = title.trim()

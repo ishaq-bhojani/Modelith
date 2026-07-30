@@ -30,6 +30,18 @@ export interface OpenCoderBridge {
     delete(id: string): Promise<void>
     rename(id: string, title: string): Promise<void>
   }
+  window: {
+    minimize(): Promise<void>
+    maximizeToggle(): Promise<void>
+    close(): Promise<void>
+    isMaximized(): Promise<boolean>
+    onMaximizedChange(handler: (isMaximized: boolean) => void): () => void
+    openChatsFolder(): Promise<void>
+    about(): Promise<void>
+    quit(): Promise<void>
+  }
+  /** Subscribe to a keyboard-accelerator action forwarded from the app menu. */
+  onMenu(action: 'new-chat' | 'settings' | 'command-palette' | 'search', handler: () => void): () => void
 }
 
 const bridge: OpenCoderBridge = {
@@ -58,6 +70,31 @@ const bridge: OpenCoderBridge = {
     create: (title) => ipcRenderer.invoke(CHANNELS.sessionCreate, { title }),
     delete: (id) => ipcRenderer.invoke(CHANNELS.sessionDelete, { id }),
     rename: (id, title) => ipcRenderer.invoke(CHANNELS.sessionRename, { id, title }),
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke(CHANNELS.windowMinimize),
+    maximizeToggle: () => ipcRenderer.invoke(CHANNELS.windowMaximizeToggle),
+    close: () => ipcRenderer.invoke(CHANNELS.windowClose),
+    isMaximized: () => ipcRenderer.invoke(CHANNELS.windowIsMaximized),
+    onMaximizedChange: (handler) => {
+      const listener = (_e: unknown, isMaximized: boolean) => handler(isMaximized)
+      ipcRenderer.on(CHANNELS.windowMaximizedChanged, listener)
+      return () => { ipcRenderer.off(CHANNELS.windowMaximizedChanged, listener) }
+    },
+    openChatsFolder: () => ipcRenderer.invoke(CHANNELS.windowOpenChatsFolder),
+    about: () => ipcRenderer.invoke(CHANNELS.windowAbout),
+    quit: () => ipcRenderer.invoke(CHANNELS.appQuit),
+  },
+  onMenu: (action, handler) => {
+    const channel = {
+      'new-chat': CHANNELS.menuNewChat,
+      settings: CHANNELS.menuSettings,
+      'command-palette': CHANNELS.menuCommandPalette,
+      search: CHANNELS.menuSearch,
+    }[action]
+    const listener = () => handler()
+    ipcRenderer.on(channel, listener)
+    return () => { ipcRenderer.off(channel, listener) }
   },
 }
 

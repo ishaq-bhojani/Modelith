@@ -155,14 +155,150 @@ button {
 }
 
 /* ============================================================================
-   Shell
+   Shell — frameless window: title bar above the three-zone grid
    ========================================================================= */
 
-.app {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 5px 1fr;
+.shell {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   background: var(--canvas);
+}
+
+.app {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 5px 1fr;
+  background: var(--canvas);
+}
+
+/* ============================================================================
+   Title bar (frameless)
+   ========================================================================= */
+
+.titlebar {
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: stretch;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--divider);
+  /* The whole bar drags the window; interactive controls opt back out below. */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* macOS: native traffic lights sit at top-left; this is just a drag strip. */
+.titlebar-mac {
+  /* nothing to render — the OS draws the controls */
+}
+
+.titlebar-brand {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 14px;
+}
+.titlebar-logo {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #6b70ff, var(--accent));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.titlebar-name {
+  font: 400 12.5px/1 var(--font-body);
+  color: var(--text-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-controls {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+.win-control {
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.win-control:hover {
+  background: var(--hover);
+}
+.win-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ============================================================================
+   App menu (⋯) — folds the removed OS menu strip
+   ========================================================================= */
+
+.app-menu {
+  position: relative;
+}
+.app-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 256px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+.app-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-body);
+  font: 500 13.5px/1 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.app-menu-item span {
+  flex: 1;
+  min-width: 0;
+}
+.app-menu-item kbd {
+  font: 400 11px/1 var(--font-mono);
+  color: var(--text-meta);
+}
+.app-menu-item:hover {
+  background: var(--hover-soft);
+}
+.app-menu-item-danger {
+  color: var(--danger-text);
+}
+.app-menu-item-danger:hover {
+  background: rgba(226, 59, 74, 0.16);
+}
+.app-menu-sep {
+  height: 1px;
+  margin: 5px 9px;
+  background: var(--hairline);
 }
 
 /* The splitter carries the hairline so there is only one line, but keeps a

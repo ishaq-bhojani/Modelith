@@ -15,6 +15,20 @@ export const CHANNELS = {
   sessionCreate: 'sessions:create',
   sessionDelete: 'sessions:delete',
   sessionRename: 'sessions:rename',
+  windowMinimize: 'window:minimize',
+  windowMaximizeToggle: 'window:maximize-toggle',
+  windowClose: 'window:close',
+  windowIsMaximized: 'window:is-maximized',
+  windowMaximizedChanged: 'window:maximized-changed',
+  windowOpenChatsFolder: 'window:open-chats-folder',
+  windowAbout: 'window:about',
+  appQuit: 'app:quit',
+  // Main → renderer: a keyboard accelerator fired; the renderer runs the same
+  // action its ⋯ menu / palette would, so there is one code path per action.
+  menuNewChat: 'menu:new-chat',
+  menuSettings: 'menu:settings',
+  menuCommandPalette: 'menu:command-palette',
+  menuSearch: 'menu:search',
 } as const
 
 export const AppInfoSchema = z.object({ version: z.string(), platform: z.string() })

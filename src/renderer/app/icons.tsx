@@ -130,3 +130,52 @@ export const IconCheck = (p: IconProps): React.JSX.Element => (
     <path d="m5 12.5 4.5 4.5L19 7" />
   </Svg>
 )
+
+export const IconDotsVertical = (p: IconProps): React.JSX.Element => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 1.8}>
+    <circle cx="12" cy="5" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="12" cy="19" r="1.4" />
+  </Svg>
+)
+
+export const IconFolder = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </Svg>
+)
+
+export const IconInfo = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11v5M12 8h.01" />
+  </Svg>
+)
+
+export const IconLogout = (p: IconProps): React.JSX.Element => (
+  <Svg {...p}>
+    <path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3" />
+    <path d="M16 16l4-4-4-4M20 12H10" />
+  </Svg>
+)
+
+/** Brand glyph: the </> code marks in the app icon. */
+export const IconBrand = ({ size = 16 }: { size?: number }): React.JSX.Element => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m8 8-4 4 4 4M16 8l4 4-4 4" />
+  </svg>
+)
+
+/** Windows title-bar controls are 12×12 with a 1px stroke, per the design. */
+export const WinMinimize = (): React.JSX.Element => (
+  <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1" aria-hidden="true"><path d="M1 6h10" /></svg>
+)
+export const WinMaximize = (): React.JSX.Element => (
+  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1.2" /></svg>
+)
+export const WinRestore = (): React.JSX.Element => (
+  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true"><rect x="1.5" y="3.5" width="7" height="7" rx="1" /><path d="M3.5 3.5V2a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H9" /></svg>
+)
+export const WinClose = (): React.JSX.Element => (
+  <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="1" aria-hidden="true"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" /></svg>
+)

@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
 import { registerHandlers, registerSecretHandlers, registerChatHandlers } from './ipc/handlers.js'
+import { registerWindowHandlers, installAppMenu } from './window/controls.js'
+import { CHANNELS } from '../shared/ipc.js'
 
 // Portable-mode override. Keeps E2E runs out of the developer's real app data,
 // and lets users run from a USB stick. Must be set before anything reads the path.
@@ -23,6 +25,16 @@ function createWindow(): BrowserWindow {
   else void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
 
   window.once('ready-to-show', () => window.show())
+
+  // Keep the renderer's maximise/restore icon in sync with the real window
+  // state, including when the user maximises via a double-click on the drag
+  // strip or an OS gesture rather than the custom control.
+  const emitMaximized = (isMaximized: boolean) => {
+    if (!window.isDestroyed()) window.webContents.send(CHANNELS.windowMaximizedChanged, isMaximized)
+  }
+  window.on('maximize', () => emitMaximized(true))
+  window.on('unmaximize', () => emitMaximized(false))
+
   mainWindow = window
   window.once('closed', () => {
     if (mainWindow === window) mainWindow = undefined
@@ -37,6 +49,8 @@ void app.whenReady().then(() => {
   // Registered once: ipcMain.handle() throws if a channel is bound twice, and
   // `activate` can create new windows over the lifetime of the app.
   registerChatHandlers(() => mainWindow)
+  registerWindowHandlers(() => mainWindow)
+  installAppMenu(() => mainWindow)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

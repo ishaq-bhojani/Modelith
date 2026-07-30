@@ -1,20 +1,23 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../state/store.js'
+import { TitleBar } from './TitleBar.js'
 import { Splitter } from './Splitter.js'
 import { Sidebar } from '../sessions/Sidebar.js'
 import { Transcript } from '../chat/Transcript.js'
 import { Composer } from '../chat/Composer.js'
 import { FirstRun } from '../chat/FirstRun.js'
 import { SettingsDialog } from '../settings/SettingsDialog.js'
-import { IconChevronDown } from './icons.js'
+import { IconChevronDown, IconMoon, IconSun } from './icons.js'
 
 export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadProviders = useAppStore((s) => s.loadProviders)
+  const loadPlatform = useAppStore((s) => s.loadPlatform)
   const applyEvent = useAppStore((s) => s.applyEvent)
   const theme = useAppStore((s) => s.theme)
+  const setTheme = useAppStore((s) => s.setTheme)
 
   const sessions = useAppStore((s) => s.sessions)
   const activeSessionId = useAppStore((s) => s.activeSessionId)
@@ -22,42 +25,65 @@ export function App(): React.JSX.Element {
   const providerId = useAppStore((s) => s.providerId)
   const providers = useAppStore((s) => s.providers)
   const openSettings = useAppStore((s) => s.openSettings)
+  const newSession = useAppStore((s) => s.newSession)
 
   useEffect(() => { void loadSessions() }, [loadSessions])
   useEffect(() => { void loadProviders() }, [loadProviders])
+  useEffect(() => { void loadPlatform() }, [loadPlatform])
   useEffect(() => window.openCoder.chat.onEvent(applyEvent), [applyEvent])
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme
   }, [theme])
 
+  // Keyboard accelerators forwarded from the (hidden) native menu, so shortcuts
+  // fire even though the OS menu strip is gone. The palette/search actions are
+  // wired in their own components; here we handle the two the shell owns.
+  useEffect(() => {
+    const offNew = window.openCoder.onMenu('new-chat', () => void newSession())
+    const offSettings = window.openCoder.onMenu('settings', () => openSettings())
+    return () => { offNew(); offSettings() }
+  }, [newSession, openSettings])
+
   const activeTitle = sessions.find((s) => s.id === activeSessionId)?.title ?? 'Open Coder'
   const providerLabel = providers.find((p) => p.id === providerId)?.label ?? providerId
   const modelLabel = model ? `${providerLabel} · ${model}` : 'Choose a model'
 
   return (
-    <div className="app" style={{ ['--sidebar-width' as string]: `${sidebarWidth}px` }}>
-      <Sidebar />
-      <Splitter width={sidebarWidth} onResize={setSidebarWidth} />
+    <div className="shell">
+      <TitleBar />
+      <div className="app" style={{ ['--sidebar-width' as string]: `${sidebarWidth}px` }}>
+        <Sidebar />
+        <Splitter width={sidebarWidth} onResize={setSidebarWidth} />
 
-      <main className="chat">
-        <header className="chat-head">
-          <span className="chat-title">{activeTitle}</span>
-          <button
-            className="pill-button"
-            data-testid="model-pill"
-            title="Change provider or model"
-            onClick={openSettings}
-          >
-            <span className="pill-dot" />
-            <span className="pill-label">{modelLabel}</span>
-            <IconChevronDown size={12} />
-          </button>
-        </header>
+        <main className="chat">
+          <header className="chat-head">
+            <span className="chat-title">{activeTitle}</span>
+            <button
+              className="icon-button"
+              data-testid="toggle-theme"
+              title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <IconSun size={16} /> : <IconMoon size={16} />}
+            </button>
+            <button
+              className="pill-button"
+              data-testid="model-pill"
+              title="Change provider or model"
+              onClick={openSettings}
+            >
+              <span className="pill-dot" />
+              <span className="pill-label">{modelLabel}</span>
+              <IconChevronDown size={12} />
+            </button>
+          </header>
 
-        {activeSessionId === null ? <FirstRun /> : <Transcript />}
-        <Composer />
-      </main>
+          {activeSessionId === null ? <FirstRun /> : <Transcript />}
+          <Composer />
+        </main>
+      </div>
 
       <SettingsDialog />
     </div>

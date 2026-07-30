@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
+import { AppMenu } from '../app/AppMenu.js'
 import {
   IconLock,
-  IconMoon,
   IconPencil,
   IconPlus,
   IconSearch,
   IconSliders,
-  IconSun,
   IconTrash,
 } from '../app/icons.js'
 
@@ -47,8 +46,6 @@ export function Sidebar(): React.JSX.Element {
   const setQuery = useAppStore((s) => s.setQuery)
   const rename = useAppStore((s) => s.renameSession)
   const remove = useAppStore((s) => s.deleteSession)
-  const theme = useAppStore((s) => s.theme)
-  const setTheme = useAppStore((s) => s.setTheme)
 
   const searchRef = useRef<HTMLInputElement | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -91,15 +88,7 @@ export function Sidebar(): React.JSX.Element {
     <aside data-testid="sidebar" className="sidebar">
       <div className="sidebar-head">
         <span className="wordmark">Open Coder</span>
-        <button
-          className="icon-button"
-          data-testid="toggle-theme"
-          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        >
-          {theme === 'dark' ? <IconSun size={17} /> : <IconMoon size={17} />}
-        </button>
+        <AppMenu />
       </div>
 
       <div className="sidebar-search">
