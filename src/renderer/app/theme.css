@@ -407,6 +407,35 @@ body.resizing {
   background: #fff;
 }
 
+.artifact-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.artifact-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-raised, var(--canvas));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.artifact-card:hover {
+  border-color: var(--accent, #494fdf);
+  background: var(--surface-hover, var(--canvas));
+}
+
+.artifact-card svg { color: var(--accent, #494fdf); }
+
 .canvas-error {
   flex: none;
   display: flex;

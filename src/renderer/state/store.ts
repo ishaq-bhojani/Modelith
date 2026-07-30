@@ -84,6 +84,12 @@ interface AppState {
   sideThreadSeed: string
   /** The element markup selected in the canvas for point-and-refine (Canvas 8). */
   canvasSelection: string | null
+  /**
+   * A request from the transcript to focus a given artifact language in the
+   * canvas ("Open in canvas"). A monotonically increasing token so repeated
+   * clicks on the same language re-focus even when the value is unchanged.
+   */
+  canvasFocus: { lang: string; token: number } | null
   /** Composer draft, held here so attachments and the secret guard can act on it. */
   draft: string
   /** Set when send is paused because the draft looks like it contains secrets. */
@@ -96,6 +102,8 @@ interface AppState {
   closeSideThread(): void
   setDraft(value: string): void
   setCanvasSelection(outerHTML: string | null): void
+  /** Focus the canvas on an artifact language (from a transcript card). */
+  focusCanvas(lang: string): void
   /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
   requestSend(): void
   confirmSecretSend(): void
@@ -163,6 +171,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sideThreadOpen: false,
   sideThreadSeed: '',
   canvasSelection: null,
+  canvasFocus: null,
   draft: '',
   pendingSecret: null,
 
@@ -173,6 +182,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
   setDraft(value) { set({ draft: value }) },
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
+  focusCanvas(lang) {
+    const token = (get().canvasFocus?.token ?? 0) + 1
+    set({ canvasFocus: { lang, token } })
+  },
 
   // Outbound secret guard (roadmap 28): scan before anything leaves the
   // machine. A match pauses the send and opens a confirm gate rather than

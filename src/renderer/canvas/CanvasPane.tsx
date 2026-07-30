@@ -43,6 +43,16 @@ export function CanvasPane(): React.JSX.Element | null {
     if (active && active.lang !== activeLang) setActiveLang(active.lang)
   }, [active, activeLang])
 
+  // A transcript "Open in canvas" card focuses a specific language. The token
+  // changes on every click so re-clicking the same card re-focuses it.
+  const canvasFocus = useAppStore((s) => s.canvasFocus)
+  useEffect(() => {
+    if (canvasFocus && artifacts.some((a) => a.lang === canvasFocus.lang)) {
+      setActiveLang(canvasFocus.lang)
+      setVersionOverride(null)
+    }
+  }, [canvasFocus, artifacts])
+
   // A newly-arrived version snaps to newest unless the user has stepped back.
   const versionCount = active?.versions.length ?? 0
   const versionIndex = versionOverride ?? (versionCount > 0 ? versionCount - 1 : 0)

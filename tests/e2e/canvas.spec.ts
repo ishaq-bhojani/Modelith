@@ -34,6 +34,18 @@ test('the harness renders the artifact content', async () => {
   await expect(frame.locator('#t')).toHaveText('Hello canvas', { timeout: 5000 })
 })
 
+test('an assistant artifact shows an "Open in canvas" card, code kept in transcript', async () => {
+  const page = await makeArtifact(app, 'make a canvas page')
+  const card = page.getByTestId('artifact-card').first()
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  await expect(card).toContainText('Open html in canvas')
+  // The card is additive — the fenced code is still shown in the transcript.
+  await expect(page.getByTestId('transcript')).toContainText('Hello canvas')
+  // Clicking it keeps the canvas up (focus is exercised with tabs in Canvas 7).
+  await card.click()
+  await expect(page.getByTestId('canvas-frame')).toBeVisible()
+})
+
 test('a mermaid diagram is compiled to SVG and rendered', async () => {
   const page = await makeArtifact(app, 'draw a mermaid diagram')
   const frame = page.frameLocator('[data-testid="canvas-frame"]')
