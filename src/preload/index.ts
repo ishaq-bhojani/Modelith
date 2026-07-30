@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { Attachment, ChatMessage, ContextPreview, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
+import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -75,6 +75,11 @@ export interface OpenCoderBridge {
     add(config: { id: string; name: string; command: string; args?: string[]; env?: Record<string, string>; enabled?: boolean }): Promise<McpServerStatus[]>
     remove(id: string): Promise<McpServerStatus[]>
     setEnabled(id: string, enabled: boolean): Promise<McpServerStatus[]>
+  }
+  /** View-only git state for the Git panel (terminal-git spec §2). */
+  git: {
+    status(): Promise<GitStatus>
+    diff(path?: string): Promise<string>
   }
 }
 
@@ -154,6 +159,10 @@ const bridge: OpenCoderBridge = {
     add: (config) => ipcRenderer.invoke(CHANNELS.mcpAdd, config),
     remove: (id) => ipcRenderer.invoke(CHANNELS.mcpRemove, { id }),
     setEnabled: (id, enabled) => ipcRenderer.invoke(CHANNELS.mcpSetEnabled, { id, enabled }),
+  },
+  git: {
+    status: () => ipcRenderer.invoke(CHANNELS.gitStatus),
+    diff: (path) => ipcRenderer.invoke(CHANNELS.gitDiff, { path }),
   },
 }
 

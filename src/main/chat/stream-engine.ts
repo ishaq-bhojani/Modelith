@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
-import { TOOL_SPECS, executeTool, type ApprovalDecision, type PendingEdit } from './tools.js'
+import { TOOL_SPECS, TERMINAL_TOOL_SPECS, executeTool, type ApprovalDecision, type PendingEdit } from './tools.js'
+import { runCommand } from '../terminal/runner.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
 import type { Workspace } from '../workspace/service.js'
@@ -155,9 +156,13 @@ export class StreamEngine {
     // Agentic edits are available only when explicitly requested AND a
     // workspace is wired; otherwise this stays a plain chat with no tools.
     const agent = input.agent === true && this.deps.workspace !== undefined
-    // In agent mode, offer the edit tools plus any connected MCP server tools.
+    // Terminal/git tools need a concrete root to run in; resolve it once.
+    const root = agent ? await this.deps.workspace!.current() : null
+    // In agent mode, offer edit tools, terminal/git tools (when a root exists),
+    // plus any connected MCP server tools.
     const mcpTools = agent ? (this.deps.mcp?.toolSpecs() ?? []) : []
-    const tools = agent ? [...TOOL_SPECS, ...mcpTools] : undefined
+    const terminalTools = agent && root ? TERMINAL_TOOL_SPECS : []
+    const tools = agent ? [...TOOL_SPECS, ...terminalTools, ...mcpTools] : undefined
     const turnId = streamId // one id for the whole user turn (checkpoints/revert)
 
     // The primary followed by any configured fallbacks. Failover only happens on
@@ -237,6 +242,10 @@ export class StreamEngine {
           requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller),
           requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller),
           ...(this.deps.mcp ? { mcpCall: (n, a) => this.deps.mcp!.call(n, a) } : {}),
+          ...(root ? { runShell: async (cmd: string) => {
+            const r = await runCommand(cmd, { cwd: root, signal: controller.signal })
+            return { output: r.output, exitCode: r.exitCode }
+          } } : {}),
         })
         this.send(streamId, sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: !outcome.isError, summary: outcome.result.slice(0, 200) })
         try {

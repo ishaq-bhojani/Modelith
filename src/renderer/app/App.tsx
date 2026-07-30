@@ -10,6 +10,7 @@ import { SettingsDialog } from '../settings/SettingsDialog.js'
 import { ContextInspector } from '../chat/ContextInspector.js'
 import { WorkspacePanel } from '../chat/WorkspacePanel.js'
 import { McpPanel } from '../chat/McpPanel.js'
+import { GitPanel } from '../chat/GitPanel.js'
 import { CanvasPane } from '../canvas/CanvasPane.js'
 import { SideThread } from '../chat/SideThread.js'
 import { SecretWarning } from '../chat/SecretWarning.js'
@@ -107,6 +108,7 @@ export function App(): React.JSX.Element {
         <ContextInspector />
         <WorkspacePanel />
         <McpPanel />
+        <GitPanel />
         <SideThread />
       </div>
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Attachment, ChatMessage, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
+import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { encodeSelection } from '../canvas/selection.js'
 
@@ -107,11 +107,17 @@ interface AppState {
   pendingConfirm: { callId: string; name: string; argsJson: string } | null
   /** Tool names the user chose to allow for the rest of the session. */
   allowedTools: string[]
+  /** Command prefixes the user chose to auto-run this session (terminal-git §1). */
+  allowedCommandPrefixes: string[]
   /** The most recent turn that applied edits, for a one-click revert affordance. */
   lastEditTurnId: string | null
   /** Configured MCP servers and their status (mcp-client spec §2). */
   mcpServers: McpServerStatus[]
   mcpOpen: boolean
+  /** Git panel state (terminal-git spec §2). */
+  gitOpen: boolean
+  gitStatus: GitStatus | null
+  gitDiff: string
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
 
@@ -133,9 +139,14 @@ interface AppState {
   resolveEdit(action: 'accept' | 'reject' | 'edited', content?: string): void
   /** Answer the generic tool-confirm gate; `allowSession` remembers the tool. */
   resolveConfirm(action: 'accept' | 'reject', allowSession?: boolean): void
+  /** Accept the pending command and auto-run this prefix for the session. */
+  allowCommandPrefix(prefix: string): void
   /** Revert every edit made in a turn (agentic-edits spec §5). */
   revertEdits(turnId: string): Promise<void>
   toggleMcp(): void
+  toggleGit(): void
+  refreshGit(): Promise<void>
+  showGitDiff(path?: string): Promise<void>
   loadMcpServers(): Promise<void>
   addMcpServer(config: { id: string; name: string; command: string; args?: string[] }): Promise<void>
   removeMcpServer(id: string): Promise<void>
@@ -220,9 +231,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingEdit: null,
   pendingConfirm: null,
   allowedTools: [],
+  allowedCommandPrefixes: [],
   lastEditTurnId: null,
   mcpServers: [],
   mcpOpen: false,
+  gitOpen: false,
+  gitStatus: null,
+  gitDiff: '',
   pendingSecret: null,
 
   openSettings() { set({ settingsOpen: true }) },
@@ -272,6 +287,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
     void window.openCoder.chat.toolDecision(confirm.callId, action)
   },
+  allowCommandPrefix(prefix) {
+    const confirm = get().pendingConfirm
+    if (!confirm) return
+    set((s) => ({
+      pendingConfirm: null,
+      allowedCommandPrefixes: [...new Set([...s.allowedCommandPrefixes, prefix])],
+    }))
+    void window.openCoder.chat.toolDecision(confirm.callId, 'accept')
+  },
   async revertEdits(turnId) {
     try {
       await window.openCoder.workspace.revert(turnId)
@@ -281,6 +305,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   toggleMcp() { set((s) => ({ mcpOpen: !s.mcpOpen })) },
+  toggleGit() {
+    const next = !get().gitOpen
+    set({ gitOpen: next })
+    if (next) void get().refreshGit()
+  },
+  async refreshGit() {
+    try { set({ gitStatus: await window.openCoder.git.status(), gitDiff: '' }) }
+    catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async showGitDiff(path) {
+    try { set({ gitDiff: await window.openCoder.git.diff(path) }) }
+    catch (err) { set({ error: toProviderError(err) }) }
+  },
   async loadMcpServers() {
     try { set({ mcpServers: await window.openCoder.mcp.list() }) }
     catch (err) { set({ error: toProviderError(err) }) }
@@ -707,11 +744,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       return
     }
     if (event.type === 'tool_confirm') {
-      // A generic tool call (MCP) awaiting yes/no. If the user allowed this tool
-      // for the session, answer immediately; otherwise raise the confirm gate.
-      if (get().allowedTools.includes(event.name)) {
+      // A tool call awaiting yes/no. A command (run_command/git_commit) can be
+      // auto-run if it matches a user-allowed prefix; an MCP tool if the user
+      // allowed that tool. Otherwise raise the confirm gate.
+      const isCommand = event.name === 'run_command' || event.name === 'git_commit'
+      if (isCommand) {
+        let command = ''
+        try { command = String((JSON.parse(event.argsJson) as { command?: string }).command ?? '') } catch { /* keep '' */ }
+        if (get().allowedCommandPrefixes.some((p) => command.startsWith(p))) {
+          void window.openCoder.chat.toolDecision(event.callId, 'accept')
+          return
+        }
+      } else if (get().allowedTools.includes(event.name)) {
         void window.openCoder.chat.toolDecision(event.callId, 'accept')
-      } else if (sessionId === get().activeSessionId) {
+        return
+      }
+      if (sessionId === get().activeSessionId) {
         set({ pendingConfirm: { callId: event.callId, name: event.name, argsJson: event.argsJson } })
       }
       return
