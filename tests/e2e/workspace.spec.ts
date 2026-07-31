@@ -28,10 +28,9 @@ test('open a folder, browse its tree, add a file to the composer', async () => {
   const openBtn = page.getByTestId('workspace-open')
   if (await openBtn.isVisible().catch(() => false)) await openBtn.click()
 
-  const file = page.getByTestId('workspace-file').first()
-  await expect(file).toBeVisible({ timeout: 8000 })
-  await file.check()
-  await page.getByTestId('workspace-add').click()
+  const addBtn = page.getByTestId('tree-add').first()
+  await expect(addBtn).toBeVisible({ timeout: 8000 })
+  await addBtn.click()
 
   // The file's content lands in the composer as a fenced code block.
   await expect(page.getByTestId('composer-input')).toHaveValue(/hello\.ts/, { timeout: 8000 })

@@ -83,6 +83,17 @@ const fakeProvider: Provider = {
         yield { type: 'done' as const }
         return
       }
+      if (/agent multiwrite/i.test(lastUser)) {
+        yield { type: 'tool_call' as const, id: `${callId}-a`, name: 'write_file', arguments: JSON.stringify({ path: 'one.txt', content: 'one\n' }) }
+        yield { type: 'tool_call' as const, id: `${callId}-b`, name: 'write_file', arguments: JSON.stringify({ path: 'two.txt', content: 'two\n' }) }
+        yield { type: 'done' as const }
+        return
+      }
+      if (/agent search/i.test(lastUser)) {
+        yield { type: 'tool_call' as const, id: callId, name: 'search_files', arguments: JSON.stringify({ query: 'seed' }) }
+        yield { type: 'done' as const }
+        return
+      }
       if (/agent write|create file/i.test(lastUser)) {
         yield { type: 'tool_call' as const, id: callId, name: 'write_file', arguments: JSON.stringify({ path: 'notes.txt', content: 'hello from the agent\n' }) }
         yield { type: 'done' as const }
