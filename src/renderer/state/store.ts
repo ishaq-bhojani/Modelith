@@ -24,8 +24,16 @@ export interface Fallback { providerId: string; model: string }
 export const SIDEBAR_MIN_WIDTH = 180
 export const SIDEBAR_MAX_WIDTH = 480
 
+/** Electron wraps a rejected ipcMain.handle as "Error invoking remote method
+ *  'chan': <message>". Strip that envelope so the UI shows the clean message. */
+export function unwrapIpcMessage(message: string): string {
+  const m = /^Error invoking remote method '[^']*':\s*(.*)$/s.exec(message)
+  return m ? m[1]! : message
+}
+
 function toProviderError(err: unknown): ProviderError {
-  return { kind: 'unknown', message: err instanceof Error ? err.message : String(err) }
+  const raw = err instanceof Error ? err.message : String(err)
+  return { kind: 'unknown', message: unwrapIpcMessage(raw) }
 }
 
 interface AppState {
@@ -906,15 +914,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       // `incomplete`) or was never worth showing, and leaving it in the
       // buffer would otherwise render a raw, unlabeled streaming bubble
       // alongside the error notice.
-      set((s) => ({
-        error: sessionId === s.activeSessionId ? event.error : s.error,
-        streamId: null,
-        streamingText: '',
-        streamNotice: null,
-      }))
+      set((s) => {
+        // Symmetric with stop(): append whatever streamed so far as an
+        // incomplete bubble so it doesn't vanish until a reload. Only for the
+        // session on screen; main has persisted it marked incomplete.
+        const keepPartial = s.streamingText !== '' && sessionId === s.activeSessionId
+        return {
+          error: sessionId === s.activeSessionId ? event.error : s.error,
+          streamId: null,
+          streamingText: '',
+          streamNotice: null,
+          messages: keepPartial
+            ? [...s.messages, { id: `local-a-${Date.now()}`, role: 'assistant' as const, content: s.streamingText, createdAt: Date.now(), incomplete: true }]
+            : s.messages,
+        }
+      })
       return
     }
     if (event.type === 'done') {
+      // Symmetry with the `text` branch: a `done` racing in after stop() (which
+      // already cleared streamId and locally persisted the partial) must not
+      // append a second, empty bubble.
+      if (get().streamId === null) return
       set((s) => {
         // Only append the assistant message when the user is currently
         // looking at the session the stream belongs to. If they've
