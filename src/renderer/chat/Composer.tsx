@@ -60,6 +60,7 @@ export function Composer(): React.JSX.Element {
   const toggleAgentMode = useAppStore((s) => s.toggleAgentMode)
   const workspaceRoot = useAppStore((s) => s.workspaceRoot)
   const lastEditTurnId = useAppStore((s) => s.lastEditTurnId)
+  const trustedTurn = useAppStore((s) => s.trustedTurn)
   const revertEdits = useAppStore((s) => s.revertEdits)
   const reportError = useAppStore((s) => s.reportError)
 
@@ -173,6 +174,7 @@ export function Composer(): React.JSX.Element {
             </button>
           </div>
         ) : null}
+        {trustedTurn ? <div className="trust-banner" data-testid="trust-banner">Auto-applying edits this turn</div> : null}
         {lastEditTurnId ? (
           <div className="revert-bar" data-testid="revert-bar">
             <span>Edits applied to your files.</span>

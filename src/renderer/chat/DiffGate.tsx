@@ -15,7 +15,6 @@ export function DiffGate(): React.JSX.Element | null {
   const resolveEdit = useAppStore((s) => s.resolveEdit)
   const resolveConfirm = useAppStore((s) => s.resolveConfirm)
   const allowCommandPrefix = useAppStore((s) => s.allowCommandPrefix)
-  const trustedTurn = useAppStore((s) => s.trustedTurn)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -42,9 +41,6 @@ export function DiffGate(): React.JSX.Element | null {
     return (
       <div className="modal-scrim" data-testid="tool-confirm" onClick={dismiss}>
         <div className="diff-gate" onClick={(e) => e.stopPropagation()}>
-          {trustedTurn ? (
-            <div className="trust-banner" data-testid="trust-banner">Auto-applying edits this turn</div>
-          ) : null}
           <div className="diff-gate-head">
             <span className="diff-gate-title">
               {isCommand ? 'Run command' : <>Run tool <code>{confirm.name}</code></>}?
@@ -79,9 +75,6 @@ export function DiffGate(): React.JSX.Element | null {
   return (
     <div className="modal-scrim" data-testid="diff-gate" onClick={dismiss}>
       <div className="diff-gate" onClick={(e) => e.stopPropagation()}>
-        {trustedTurn ? (
-          <div className="trust-banner" data-testid="trust-banner">Auto-applying edits this turn</div>
-        ) : null}
         <div className="diff-gate-head">
           <span className="diff-gate-title">
             {pending.previous === null ? 'Create' : 'Edit'} <code>{pending.relPath}</code>
