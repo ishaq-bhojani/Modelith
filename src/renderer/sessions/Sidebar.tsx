@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import { AppMenu } from '../app/AppMenu.js'
+import { modKey } from '../app/shortcut.js'
 import {
   IconArchive,
   IconLock,
@@ -49,6 +50,7 @@ export function Sidebar(): React.JSX.Element {
   const openSettings = useAppStore((s) => s.openSettings)
   const query = useAppStore((s) => s.query)
   const setQuery = useAppStore((s) => s.setQuery)
+  const mod = modKey(useAppStore((s) => s.platform))
   const rename = useAppStore((s) => s.renameSession)
   const remove = useAppStore((s) => s.deleteSession)
   const togglePin = useAppStore((s) => s.togglePin)
@@ -117,7 +119,7 @@ export function Sidebar(): React.JSX.Element {
             aria-label="Search chats"
             onChange={(e) => setQuery(e.target.value)}
           />
-          <kbd>⌘F</kbd>
+          <kbd>{mod}F</kbd>
         </div>
       </div>
 

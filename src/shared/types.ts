@@ -183,7 +183,9 @@ export type StreamEvent =
   // approval (mcp-client spec §3). `argsJson` is the pretty-printed arguments.
   | { type: 'tool_confirm'; callId: string; name: string; argsJson: string }
   // Engine-originated: a tool call finished (activity line in the transcript).
-  | { type: 'tool_result'; callId: string; name: string; ok: boolean; summary: string }
+  // `applied` is true only when a write actually landed on disk (not on a
+  // rejected write), so the renderer's revert affordance is accurate.
+  | { type: 'tool_result'; callId: string; name: string; ok: boolean; summary: string; applied?: boolean }
 
 /** One chat-stream event, tagged with the stream and session it belongs to.
  *  For a Model Race, `streamId` is the raceId and `columnId` identifies which

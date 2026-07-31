@@ -375,7 +375,7 @@ export class StreamEngine {
             return { output: r.output, exitCode: r.exitCode }
           } } : {}),
         })
-        this.send(streamId, sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: !outcome.isError, summary: outcome.result.slice(0, 200) })
+        this.send(streamId, sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: !outcome.isError, summary: outcome.result.slice(0, 200), applied: outcome.applied === true })
         try {
           await store.append(sessionId, {
             id: randomUUID(), role: 'tool', content: outcome.result, toolCallId: call.id, createdAt: Date.now(),

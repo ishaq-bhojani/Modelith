@@ -95,6 +95,8 @@ interface AppState {
    * clicks on the same language re-focus even when the value is unchanged.
    */
   canvasFocus: { lang: string; token: number } | null
+  /** User-collapsed the canvas pane; reopened by an "Open in canvas" card. */
+  canvasCollapsed: boolean
   /** Composer draft, held here so attachments and the secret guard can act on it. */
   draft: string
   /** Image attachments staged in the composer, sent with the next turn (spec §B). */
@@ -167,6 +169,7 @@ interface AppState {
   setCanvasSelection(outerHTML: string | null): void
   /** Focus the canvas on an artifact language (from a transcript card). */
   focusCanvas(lang: string): void
+  setCanvasCollapsed(collapsed: boolean): void
   /** Scans the draft; sends if clean, otherwise opens the secret-warning gate. */
   requestSend(): void
   confirmSecretSend(): void
@@ -238,6 +241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sideThreadSeed: '',
   canvasSelection: null,
   canvasFocus: null,
+  canvasCollapsed: false,
   draft: '',
   pendingAttachments: [],
   agentMode: false,
@@ -404,8 +408,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
   focusCanvas(lang) {
     const token = (get().canvasFocus?.token ?? 0) + 1
-    set({ canvasFocus: { lang, token } })
+    // Focusing from a transcript card also re-opens a collapsed canvas.
+    set({ canvasFocus: { lang, token }, canvasCollapsed: false })
   },
+  setCanvasCollapsed(collapsed) { set({ canvasCollapsed: collapsed }) },
 
   // Outbound secret guard (roadmap 28): scan before anything leaves the
   // machine. A match pauses the send and opens a confirm gate rather than
@@ -648,7 +654,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   async selectSession(id) {
     try {
       const messages = await window.openCoder.sessions.load(id)
-      set({ activeSessionId: id, messages, error: null })
+      // Per-turn/per-session UI state must not bleed into the newly-opened
+      // session: the revert affordance and any canvas selection belong to the
+      // session that produced them.
+      set({ activeSessionId: id, messages, error: null, lastEditTurnId: null, canvasSelection: null })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -686,6 +695,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     // Staged images ride with this turn, then the composer is cleared.
     const attachments = get().pendingAttachments
+    // First user message auto-titles the chat (it starts life as "New chat").
+    const isFirstTurn = get().messages.length === 0
     // A new turn genuinely starts a new buffer, so resetting streamingText
     // and (re)pointing streamingSessionId at the target session here is
     // correct even though selectSession must never do the equivalent.
@@ -719,6 +730,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(mode?.temperature !== undefined ? { temperature: mode.temperature } : {}),
       })
       set({ streamId, lastStreamId: streamId })
+      if (isFirstTurn) {
+        const title = content.replace(/\s+/g, ' ').trim().slice(0, 48) || 'New chat'
+        void get().renameSession(sessionId, title)
+      }
     } catch (err) {
       set({ error: toProviderError(err), streamId: null })
     }
@@ -852,10 +867,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     if (event.type === 'tool_result') {
       if (sessionId === get().activeSessionId) {
-        const isWrite = event.name === 'write_file' || event.name === 'apply_edit'
         set({
           streamNotice: `${event.ok ? '✓' : '✗'} ${event.name}`,
-          ...(event.ok && isWrite ? { lastEditTurnId: streamId } : {}),
+          // Only surface the revert affordance when a write actually landed
+          // (not on a rejected write, whose result is still "ok").
+          ...(event.applied ? { lastEditTurnId: streamId } : {}),
         })
       }
       // A tool round-trip means more messages landed on disk; refresh so the

@@ -1,5 +1,6 @@
 import { useAppStore } from '../state/store.js'
 import { IconWarning } from '../app/icons.js'
+import { useEscapeToClose } from '../app/useEscapeToClose.js'
 import type { SecretCategory } from '@shared/secret-scan'
 
 const LABEL: Record<SecretCategory, string> = {
@@ -19,11 +20,14 @@ export function SecretWarning(): React.JSX.Element | null {
   const confirm = useAppStore((s) => s.confirmSecretSend)
   const cancel = useAppStore((s) => s.cancelSecretSend)
 
+  // Escape / clicking outside is the safe default here: cancel, never send.
+  useEscapeToClose(categories !== null, cancel)
+
   if (!categories) return null
 
   return (
-    <div className="dialog-backdrop" role="dialog" aria-label="Possible secret" aria-modal="true">
-      <div className="dialog secret-dialog">
+    <div className="dialog-backdrop" role="dialog" aria-label="Possible secret" aria-modal="true" onClick={cancel}>
+      <div className="dialog secret-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="secret-head">
           <span className="secret-icon"><IconWarning size={18} /></span>
           <h2>This message may contain a secret</h2>

@@ -117,7 +117,7 @@ export function WorkspacePanel(): React.JSX.Element | null {
 
           <div className="workspace-actions">
             <button
-              className="send-button workspace-add"
+              className="action-primary workspace-add"
               data-testid="workspace-add"
               disabled={selected.size === 0 || busy}
               onClick={() => void addSelected()}

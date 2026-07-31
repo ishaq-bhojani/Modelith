@@ -13,6 +13,11 @@ import { formatCost } from './cost.js'
  * (mmd → mermaid), in first-seen order. Drives the "Open in canvas" cards.
  * Only complete blocks count, so a card never appears for a half-streamed one.
  */
+/** Display label for an artifact language — HTML/SVG upper-cased, mermaid as-is. */
+function labelForLang(lang: string): string {
+  return lang === 'html' || lang === 'svg' ? lang.toUpperCase() : lang
+}
+
 function canvasLangsIn(source: string): string[] {
   const seen: string[] = []
   for (const b of scanBlocks(source)) {
@@ -120,6 +125,17 @@ export const MessageView = memo(function MessageView({
     )
   }
 
+  if (message.role === 'tool') {
+    // A tool result is context, not conversation — render it as a quiet,
+    // collapsed activity line rather than an assistant bubble.
+    return (
+      <div className="msg-tool" data-testid="msg-tool">
+        <span className="msg-tool-label">tool result</span>
+        <span className="msg-tool-body">{message.content.replace(/\s+/g, ' ').trim().slice(0, 300)}</span>
+      </div>
+    )
+  }
+
   if (message.role === 'user') {
     // A point-and-refine message carries a <selected-element> block in its
     // persisted content; collapse it into a chip so the transcript shows what
@@ -191,7 +207,7 @@ export const MessageView = memo(function MessageView({
               onClick={() => focusCanvas(lang)}
             >
               <IconPanel size={13} />
-              <span>Open {lang} in canvas</span>
+              <span>Open {labelForLang(lang)} in canvas</span>
             </button>
           ))}
         </div>

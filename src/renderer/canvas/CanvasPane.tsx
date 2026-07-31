@@ -30,6 +30,9 @@ export function CanvasPane(): React.JSX.Element | null {
   const streamingSessionId = useAppStore((s) => s.streamingSessionId)
   const activeSessionId = useAppStore((s) => s.activeSessionId)
 
+  const collapsed = useAppStore((s) => s.canvasCollapsed)
+  const setCollapsed = useAppStore((s) => s.setCanvasCollapsed)
+
   const streamHere = streamingSessionId === activeSessionId ? streamingText : ''
   const artifacts = useMemo(
     () => deriveArtifacts(messages, streamHere),
@@ -113,7 +116,7 @@ export function CanvasPane(): React.JSX.Element | null {
 
   useEffect(() => { sendSelectMode(selectMode) }, [selectMode, sendSelectMode])
 
-  if (tabs.length === 0 || !active) return null
+  if (tabs.length === 0 || !active || collapsed) return null
 
   const branchHere = () => {
     const n = branches.filter((b) => b.lang === active.lang).length + 2 // #1 is the derived tab
@@ -175,6 +178,15 @@ export function CanvasPane(): React.JSX.Element | null {
           onClick={() => setSelectMode((v) => !v)}
         >
           {selectMode ? 'Click an element…' : 'Select'}
+        </button>
+        <button
+          className="icon-button"
+          data-testid="canvas-close"
+          title="Hide the canvas (reopen from a message's ‘Open in canvas’)"
+          aria-label="Hide canvas"
+          onClick={() => setCollapsed(true)}
+        >
+          ✕
         </button>
       </div>
 

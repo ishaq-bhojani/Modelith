@@ -164,7 +164,7 @@ export function Composer(): React.JSX.Element {
               ))}
             </div>
             <button
-              className="send-button race-go"
+              className="action-primary race-go"
               data-testid="race-start"
               disabled={raceTargets.length < 2 || draft.trim() === ''}
               onClick={() => void startRace()}

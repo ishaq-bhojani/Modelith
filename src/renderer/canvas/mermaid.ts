@@ -11,20 +11,30 @@
 
 let initialized = false
 let mermaidMod: typeof import('mermaid').default | null = null
+let initializedTheme: 'default' | 'dark' | null = null
+
+/** The app's current theme, read from the root the renderer stamps in App.tsx. */
+function appMermaidTheme(): 'default' | 'dark' {
+  return document.documentElement.dataset['theme'] === 'dark' ? 'dark' : 'default'
+}
 
 async function getMermaid(): Promise<typeof import('mermaid').default> {
   if (!mermaidMod) {
     mermaidMod = (await import('mermaid')).default
   }
-  if (!initialized) {
+  // Re-initialise when the app theme changed so the diagram matches light/dark
+  // instead of always rendering light nodes on a dark canvas.
+  const theme = appMermaidTheme()
+  if (!initialized || initializedTheme !== theme) {
     mermaidMod.initialize({
       startOnLoad: false,
       // Strict sanitises diagram-authored labels/links before they reach SVG,
       // a defence-in-depth layer on top of the harness's own isolation.
       securityLevel: 'strict',
-      theme: 'default',
+      theme,
     })
     initialized = true
+    initializedTheme = theme
   }
   return mermaidMod
 }
