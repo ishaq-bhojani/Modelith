@@ -8,6 +8,9 @@ import type { Workspace } from '../workspace/service.js'
 import type { McpManager } from '../mcp/manager.js'
 import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
 
+const PROJECT_HINT =
+  'A project folder is open. Use list_dir, search_files, and read_file to explore it yourself before proposing edits; do not ask the user to paste files.'
+
 export interface Fallback {
   providerId: string
   model: string
@@ -319,8 +322,10 @@ export class StreamEngine {
       if (controller.signal.aborted) break
 
       const history = await store.load(sessionId)
-      const withSystem: ChatMessage[] = input.systemPrompt
-        ? [{ id: randomUUID(), role: 'system', content: input.systemPrompt, createdAt: Date.now() }, ...history]
+      const systemText = [input.systemPrompt, agent && root ? PROJECT_HINT : '']
+        .filter(Boolean).join('\n\n')
+      const withSystem: ChatMessage[] = systemText
+        ? [{ id: randomUUID(), role: 'system', content: systemText, createdAt: Date.now() }, ...history]
         : history
       const budgeted = applyContextBudget(withSystem, this.deps.maxContextTokens ?? 96_000)
 
