@@ -157,13 +157,19 @@ describe('StreamEngine', () => {
     const { streamId } = await engine.start({
       sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi',
     })
-    await new Promise((r) => setTimeout(r, 20))
+    // Wait until the stream is genuinely mid-flight (not a fixed sleep, which
+    // races a loaded CI runner), then abort.
+    await waitFor(() => emitted.some((e) => e.event.type === 'text'))
     engine.abort(streamId)
     const countAtAbort = emitted.length
-    await new Promise((r) => setTimeout(r, 300))
+    // Wait for the aborted turn to settle — its incomplete reply persisted —
+    // rather than sleeping a fixed interval.
+    await waitFor(async () => {
+      const m = await store.load(s.id)
+      return m.length === 2 && m.at(-1)?.incomplete === true
+    })
+    // Once settled, no further events beyond one possible in-flight chunk.
     expect(emitted.length).toBeLessThanOrEqual(countAtAbort + 1)
-    const saved = await store.load(s.id)
-    expect(saved.at(-1)?.incomplete).toBe(true)
     // Note 3: the renderer initiated the abort and already knows; the engine
     // must not additionally emit an 'aborted' (or any) error event for it.
     expect(emitted.some((e) => e.event.type === 'error')).toBe(false)
@@ -356,7 +362,10 @@ describe('StreamEngine failover', () => {
       sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
       fallbacks: [{ providerId: 'backup', model: 'm2' }],
     })
-    await waitFor(async () => (await store.load(s.id)).length === 2)
+    // Wait on the terminal event itself — the engine persists the assistant
+    // message BEFORE emitting `done`, so waiting on message count alone races
+    // the emit (and message count is implied: persistence precedes the emit).
+    await waitFor(() => terminalTypes().length > 0)
 
     // A visible failover notice was emitted.
     expect(emitted.some((e) => e.event.type === 'notice')).toBe(true)
@@ -385,7 +394,7 @@ describe('StreamEngine failover', () => {
       sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
       fallbacks: [{ providerId: 'backup', model: 'm2' }],
     })
-    await waitFor(async () => (await store.load(s.id)).length === 2)
+    await waitFor(() => terminalTypes().length > 0)
     // The error is terminal; the backup was never invoked.
     expect(terminalTypes()).toEqual(['error'])
     expect(emitted.some((e) => e.event.type === 'text' && e.event.delta === 'SHOULD NOT APPEAR')).toBe(false)
@@ -423,7 +432,7 @@ describe('StreamEngine failover', () => {
       sessionId: s.id, providerId: 'primary', model: 'm', content: 'hi',
       fallbacks: [{ providerId: 'needsKey', model: 'x' }, { providerId: 'backup', model: 'm3' }],
     })
-    await waitFor(async () => (await store.load(s.id)).length === 2)
+    await waitFor(() => terminalTypes().length > 0)
     const reply = (await store.load(s.id))[1]
     expect(reply?.content).toBe('reached backup')
     expect(reply?.provider).toBe('backup')
