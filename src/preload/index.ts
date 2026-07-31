@@ -28,7 +28,7 @@ export interface ModelithBridge {
     onEvent(handler: (envelope: StreamEnvelope) => void): () => void
     preview(sessionId: string): Promise<ContextPreview>
     /** Deliver a diff-gate decision (agentic-edits spec §4). */
-    toolDecision(callId: string, action: 'accept' | 'reject' | 'edited', content?: string): Promise<void>
+    toolDecision(callId: string, action: 'accept' | 'reject' | 'edited', content?: string, trustTurn?: boolean): Promise<void>
     /** Start a Model Race across 2–4 targets (model-race spec §2). */
     startRace(input: { sessionId: string; content: string; systemPrompt?: string; temperature?: number; entries: { providerId: string; model: string }[] }): Promise<{ raceId: string }>
     /** Persist the chosen race column as the turn's reply. */
@@ -107,7 +107,7 @@ const bridge: ModelithBridge = {
       return () => { ipcRenderer.off(CHANNELS.chatEvent, listener) }
     },
     preview: (sessionId) => ipcRenderer.invoke(CHANNELS.chatPreview, { id: sessionId }),
-    toolDecision: (callId, action, content) => ipcRenderer.invoke(CHANNELS.chatToolDecision, { callId, action, content }),
+    toolDecision: (callId, action, content, trustTurn) => ipcRenderer.invoke(CHANNELS.chatToolDecision, { callId, action, content, trustTurn }),
     startRace: (input) => ipcRenderer.invoke(CHANNELS.chatRace, input),
     chooseWinner: (raceId, columnId) => ipcRenderer.invoke(CHANNELS.chatChooseWinner, { raceId, columnId }),
   },

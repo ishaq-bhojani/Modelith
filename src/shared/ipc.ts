@@ -127,6 +127,7 @@ export const ToolDecisionSchema = z.object({
   callId: z.string().min(1),
   action: z.enum(['accept', 'reject', 'edited']),
   content: z.string().optional(),
+  trustTurn: z.boolean().optional(),
 })
 
 // MCP server management (mcp-client spec §2). The renderer supplies the config;

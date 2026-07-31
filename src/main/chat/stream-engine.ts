@@ -69,6 +69,10 @@ export class StreamEngine {
   private readonly activeSessions = new Set<string>()
   // Writes awaiting a user decision at the diff gate, keyed by tool-call id.
   private readonly pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
+  /** Turns the user has elected to auto-apply for (keyed by turnId === streamId). */
+  private readonly trustedTurns = new Set<string>()
+  /** callId → turnId, so a trusting decision can mark the right turn. */
+  private readonly pendingTurns = new Map<string, string>()
 
   constructor(private readonly deps: StreamEngineDeps) {}
 
@@ -83,13 +87,18 @@ export class StreamEngine {
   abort(streamId: string): void {
     this.active.get(streamId)?.abort()
     this.active.delete(streamId)
+    this.trustedTurns.delete(streamId)
     // Aborting a race also discards it and frees the session (no winner).
     const race = this.races.get(streamId)
     if (race) { this.activeSessions.delete(race.sessionId); this.races.delete(streamId) }
   }
 
   /** Deliver a diff-gate decision from the renderer (agentic-edits spec §4). */
-  resolveApproval(callId: string, decision: ApprovalDecision): void {
+  resolveApproval(callId: string, decision: ApprovalDecision, trustTurn = false): void {
+    if (trustTurn && decision.action === 'accept') {
+      const turnId = this.pendingTurns.get(callId)
+      if (turnId) this.trustedTurns.add(turnId)
+    }
     const resolve = this.pendingApprovals.get(callId)
     if (resolve) { this.pendingApprovals.delete(callId); resolve(decision) }
   }
@@ -131,6 +140,7 @@ export class StreamEngine {
         // session wedged as permanently "busy".
         this.activeSessions.delete(sessionId)
         this.active.delete(streamId)
+        this.trustedTurns.delete(streamId)
       })
     return { streamId }
   }
@@ -367,8 +377,8 @@ export class StreamEngine {
         const outcome = await executeTool(call.name, call.arguments, call.id, {
           workspace: this.deps.workspace!,
           turnId,
-          requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller),
-          requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller),
+          requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller, turnId),
+          requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller, turnId),
           ...(this.deps.mcp ? { mcpCall: (n, a) => this.deps.mcp!.call(n, a) } : {}),
           ...(root ? { runShell: async (cmd: string) => {
             const r = await runCommand(cmd, { cwd: root, signal: controller.signal })
@@ -402,16 +412,20 @@ export class StreamEngine {
     sessionId: string,
     edit: PendingEdit,
     controller: AbortController,
+    turnId: string,
   ): Promise<ApprovalDecision> {
+    if (this.trustedTurns.has(turnId)) return Promise.resolve({ action: 'accept' })
     return new Promise<ApprovalDecision>((resolve) => {
       if (controller.signal.aborted) { resolve({ action: 'reject' }); return }
       const settle = (decision: ApprovalDecision) => {
+        this.pendingTurns.delete(edit.callId)
         controller.signal.removeEventListener('abort', onAbort)
         resolve(decision)
       }
       const onAbort = () => { this.pendingApprovals.delete(edit.callId); settle({ action: 'reject' }) }
       controller.signal.addEventListener('abort', onAbort, { once: true })
       this.pendingApprovals.set(edit.callId, settle)
+      this.pendingTurns.set(edit.callId, turnId)
       this.send(streamId, sessionId, {
         type: 'tool_pending', callId: edit.callId, tool: edit.tool, relPath: edit.relPath, previous: edit.previous, proposed: edit.proposed,
       })
@@ -424,16 +438,20 @@ export class StreamEngine {
     sessionId: string,
     confirm: { callId: string; name: string; argsJson: string },
     controller: AbortController,
+    turnId: string,
   ): Promise<'accept' | 'reject'> {
+    if (this.trustedTurns.has(turnId)) return Promise.resolve('accept')
     return new Promise<'accept' | 'reject'>((resolve) => {
       if (controller.signal.aborted) { resolve('reject'); return }
       const settle = (decision: ApprovalDecision) => {
+        this.pendingTurns.delete(confirm.callId)
         controller.signal.removeEventListener('abort', onAbort)
         resolve(decision.action === 'reject' ? 'reject' : 'accept')
       }
       const onAbort = () => { this.pendingApprovals.delete(confirm.callId); settle({ action: 'reject' }) }
       controller.signal.addEventListener('abort', onAbort, { once: true })
       this.pendingApprovals.set(confirm.callId, settle)
+      this.pendingTurns.set(confirm.callId, turnId)
       this.send(streamId, sessionId, { type: 'tool_confirm', callId: confirm.callId, name: confirm.name, argsJson: confirm.argsJson })
     })
   }
