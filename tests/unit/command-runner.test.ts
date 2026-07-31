@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { runCommand, MAX_OUTPUT_BYTES } from '../../src/main/terminal/runner.js'
+import { runCommand, runFile, MAX_OUTPUT_BYTES } from '../../src/main/terminal/runner.js'
 
 // A cross-platform node one-liner shell used for deterministic tests, so we do
 // not depend on sh vs cmd builtins.
@@ -44,5 +44,21 @@ describe('runCommand', () => {
     setTimeout(() => controller.abort(), 100)
     const r = await p
     expect(r.aborted).toBe(true)
+  })
+})
+
+describe('runFile (no shell — injection-safe)', () => {
+  it('passes arguments literally, with no shell expansion', async () => {
+    // If a shell were involved, "$(echo pwned)" / "; echo hi" would be expanded
+    // or chained. With runFile they arrive as literal argv entries.
+    const r = await runFile(
+      process.execPath,
+      ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', '$(echo pwned)', '; echo hi'],
+      { cwd: tmpdir() },
+    )
+    const argv = JSON.parse(r.output) as string[]
+    expect(argv).toContain('$(echo pwned)')
+    expect(argv).toContain('; echo hi')
+    expect(r.output).not.toContain('pwned\n')
   })
 })

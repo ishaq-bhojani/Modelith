@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { applyContextBudget } from './context-budget.js'
 import { TOOL_SPECS, TERMINAL_TOOL_SPECS, executeTool, type ApprovalDecision, type PendingEdit } from './tools.js'
-import { runCommand } from '../terminal/runner.js'
+import { runCommand, runFile } from '../terminal/runner.js'
 import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
 import type { Workspace } from '../workspace/service.js'
@@ -372,6 +372,10 @@ export class StreamEngine {
           ...(this.deps.mcp ? { mcpCall: (n, a) => this.deps.mcp!.call(n, a) } : {}),
           ...(root ? { runShell: async (cmd: string) => {
             const r = await runCommand(cmd, { cwd: root, signal: controller.signal })
+            return { output: r.output, exitCode: r.exitCode }
+          } } : {}),
+          ...(root ? { runGit: async (gitArgs: string[]) => {
+            const r = await runFile('git', gitArgs, { cwd: root, signal: controller.signal })
             return { output: r.output, exitCode: r.exitCode }
           } } : {}),
         })

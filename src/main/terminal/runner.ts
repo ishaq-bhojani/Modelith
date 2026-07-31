@@ -30,18 +30,34 @@ function platformShell(): { command: string; args: (cmd: string) => string[] } {
  * (terminal-git spec §1). A real shell (so pipelines/globs work) — approval is
  * the guard, not a sandbox. Bounded by an output cap, a wall-clock timeout, and
  * kill-on-abort; no process survives the call.
+ *
+ * Only for USER-APPROVED commands (`run_command`). For anything the model can
+ * trigger without a gate (git status/diff), use `runFile` — a shell string with
+ * an interpolated argument is a command-injection vector (`$(…)`/backticks).
  */
 export function runCommand(command: string, opts: RunOptions): Promise<CommandResult> {
   const shell = opts.shell ?? platformShell()
+  const child = spawn(shell.command, shell.args(command), {
+    cwd: opts.cwd, env: process.env, windowsHide: true,
+  })
+  return capture(child, opts)
+}
+
+/**
+ * Run a binary with an explicit argument vector and **no shell** — arguments are
+ * passed as-is, so nothing in them is ever interpreted by a shell. This is how
+ * git is run: a path or commit message from the model (or a hostile repo's own
+ * filenames) can never inject a command.
+ */
+export function runFile(file: string, args: string[], opts: RunOptions): Promise<CommandResult> {
+  const child = spawn(file, args, { cwd: opts.cwd, env: process.env, windowsHide: true })
+  return capture(child, opts)
+}
+
+/** Shared output capture + bounds (cap, timeout, kill-on-abort) for a child. */
+function capture(child: ReturnType<typeof spawn>, opts: RunOptions): Promise<CommandResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
-
   return new Promise<CommandResult>((resolve) => {
-    const child = spawn(shell.command, shell.args(command), {
-      cwd: opts.cwd,
-      env: process.env,
-      windowsHide: true,
-    })
-
     let output = ''
     let truncated = false
     let timedOut = false
@@ -56,11 +72,10 @@ export function runCommand(command: string, opts: RunOptions): Promise<CommandRe
       if (Buffer.byteLength(text) > room) { output += text.slice(0, room); truncated = true }
       else output += text
     }
-    child.stdout.on('data', append)
-    child.stderr.on('data', append)
+    child.stdout?.on('data', append)
+    child.stderr?.on('data', append)
 
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, timeoutMs)
-
     const onAbort = () => { aborted = true; child.kill('SIGKILL') }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -71,7 +86,6 @@ export function runCommand(command: string, opts: RunOptions): Promise<CommandRe
       opts.signal?.removeEventListener('abort', onAbort)
       resolve({ output, exitCode, truncated, timedOut, aborted })
     }
-
     child.on('error', (err) => { output += `\n[failed to start: ${err.message}]`; finish(null) })
     child.on('close', (code) => finish(code))
   })

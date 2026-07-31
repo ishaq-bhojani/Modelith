@@ -1,4 +1,4 @@
-import { runCommand } from './runner.js'
+import { runFile } from './runner.js'
 import type { Workspace } from '../workspace/service.js'
 import type { GitFile, GitStatus } from '../../shared/types.js'
 
@@ -16,8 +16,8 @@ export class GitService {
     const root = await this.root()
     if (!root) return { isRepo: false, branch: null, files: [] }
     // -uall lists untracked FILES individually instead of collapsing them into a
-    // bare "dir/" entry that has no useful diff.
-    const r = await runCommand('git status --porcelain=v1 -uall --branch', { cwd: root, timeoutMs: 15_000 })
+    // bare "dir/" entry that has no useful diff. Run via arg-vector (no shell).
+    const r = await runFile('git', ['status', '--porcelain=v1', '-uall', '--branch'], { cwd: root, timeoutMs: 15_000 })
     if (r.exitCode !== 0) return { isRepo: false, branch: null, files: [] }
     return parseStatus(r.output)
   }
@@ -25,13 +25,14 @@ export class GitService {
   async diff(path?: string): Promise<string> {
     const root = await this.root()
     if (!root) return ''
-    const cmd = path ? `git diff -- ${JSON.stringify(path)}` : 'git diff'
-    const r = await runCommand(cmd, { cwd: root, timeoutMs: 15_000 })
+    // Arg-vector: `path` (a repo filename, which a hostile repo controls) is
+    // passed to git verbatim and can never reach a shell.
+    const r = await runFile('git', path ? ['diff', '--', path] : ['diff'], { cwd: root, timeoutMs: 15_000 })
     if (r.output.trim() !== '' || !path) return r.output
     // An untracked file produces no `git diff`; show it as an all-added diff so a
     // new file still has something to look at.
     const nul = process.platform === 'win32' ? 'NUL' : '/dev/null'
-    const untracked = await runCommand(`git diff --no-index -- ${nul} ${JSON.stringify(path)}`, { cwd: root, timeoutMs: 15_000 })
+    const untracked = await runFile('git', ['diff', '--no-index', '--', nul, path], { cwd: root, timeoutMs: 15_000 })
     return untracked.output
   }
 }
