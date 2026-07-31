@@ -288,7 +288,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const root = await window.modelith.workspace.current()
       if (!root) return
       const tree = await window.modelith.workspace.tree()
-      set({ workspaceRoot: root, workspaceTree: tree })
+      set({ workspaceRoot: root, workspaceTree: tree, workspaceOpen: true })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
