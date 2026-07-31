@@ -25,6 +25,15 @@ export const TOOL_SPECS: ToolSpec[] = [
     parameters: { type: 'object', properties: {} },
   },
   {
+    name: 'search_files',
+    description: 'Search file CONTENTS across the workspace (case-insensitive substring). Returns "relPath:line: text" lines. Use this to find where something lives before reading whole files.',
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Text to search for' } },
+      required: ['query'],
+    },
+  },
+  {
     name: 'write_file',
     description: 'Create or overwrite a text file. The change is shown to the user for approval before it is applied.',
     parameters: {
@@ -51,7 +60,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
 ]
 
-const READ_ONLY = new Set(['read_file', 'list_dir'])
+const READ_ONLY = new Set(['read_file', 'list_dir', 'search_files'])
 const WRITE = new Set(['write_file', 'apply_edit'])
 export const isKnownTool = (name: string): boolean => READ_ONLY.has(name) || WRITE.has(name)
 
@@ -201,6 +210,13 @@ export async function executeTool(
     if (name === 'list_dir') {
       const tree = await workspace.tree()
       return { result: tree.map((e) => `${e.kind === 'dir' ? '[dir] ' : ''}${e.relPath}`).join('\n'), isError: false }
+    }
+    if (name === 'search_files') {
+      const res = await workspace.search(String(args['query'] ?? ''))
+      if (res.hits.length === 0) return { result: 'No matches found.', isError: false }
+      const body = res.hits.map((h) => `${h.relPath}:${h.line}: ${h.text}`).join('\n')
+      const note = res.truncated ? `\n[results truncated at ${res.hits.length} matches — narrow the query]` : ''
+      return { result: body + note, isError: false }
     }
     if (name === 'write_file' || name === 'apply_edit') {
       const relPath = String(args['path'] ?? '')
