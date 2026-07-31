@@ -16,6 +16,10 @@ Modelith is a provider-agnostic agent desktop. Beyond streaming chat it ships:
   gate with one-click revert; connect **MCP** servers; run **commands** behind an
   approval allow-list; a **git** panel; and **Model Race** (one prompt, 2–4
   models, pick the winner).
+- **Project Mode** — a persistent, collapsible project tree with an "Open
+  Folder" entry point and auto-restore of the last folder; the agent can
+  search file contents (`search_files`) and, with trust-for-this-turn, apply
+  a turn's remaining edits from one approval (still one-revert-undoes-it-all).
 
 Every privileged action is approved by you, and the security invariants (no key
 to the renderer, no unapproved disk write, confined reads/writes) are covered by

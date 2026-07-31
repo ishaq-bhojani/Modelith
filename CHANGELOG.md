@@ -2,6 +2,15 @@
 
 All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
+## Unreleased
+
+### Project Mode
+- `search_files` tool: the agent can search file contents across the project.
+- Trust-for-this-turn: one approval can auto-apply the rest of a turn's edits
+  (still checkpointed — one revert undoes the whole turn).
+- Persistent collapsible project tree with a prominent "Open Folder" entry point,
+  a project header, and auto-restore of the last folder on launch.
+
 ## 0.1.0 — 2026-07-31 (first public build)
 
 The first release with installers. A provider-agnostic agent desktop:
