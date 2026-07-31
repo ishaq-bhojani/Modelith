@@ -11,8 +11,14 @@ import type { CheckpointStore } from './checkpoints.js'
 const MAX_BYTES = 256 * 1024
 /** Guard against a pathological tree; the UI lists at most this many entries. */
 const MAX_ENTRIES = 5000
+/** Default ceiling on returned search hits, and per-line text length. */
+const MAX_SEARCH_HITS = 200
+const MAX_HIT_TEXT = 200
 
 export type { TreeEntry }
+
+export interface SearchHit { relPath: string; line: number; text: string }
+export interface SearchResult { hits: SearchHit[]; truncated: boolean; filesScanned: number }
 
 /** A typed workspace error whose `code` the renderer maps to a message. */
 export class WorkspaceError extends Error {
@@ -68,6 +74,39 @@ export class Workspace {
     const entries: TreeEntry[] = []
     await this.walk(root, root, entries)
     return entries
+  }
+
+  /**
+   * Case-insensitive substring search over file CONTENTS under the root. Reuses
+   * `tree()` (already confined + ignore-pruned + capped) for the file list and
+   * `read()` (confined + binary/size-guarded) for contents, so it inherits every
+   * confinement guarantee and never scans outside the root.
+   */
+  async search(query: string, opts?: { maxHits?: number }): Promise<SearchResult> {
+    const needle = query.toLowerCase()
+    if (!needle) return { hits: [], truncated: false, filesScanned: 0 }
+    const maxHits = opts?.maxHits ?? MAX_SEARCH_HITS
+    const files = (await this.tree()).filter((e) => e.kind === 'file' && e.readable)
+    const hits: SearchHit[] = []
+    let filesScanned = 0
+    for (const f of files) {
+      if (hits.length >= maxHits) return { hits, truncated: true, filesScanned }
+      let text: string
+      try {
+        ({ text } = await this.read(f.relPath))
+      } catch {
+        continue // binary/too-large/unreadable — skip, never fail the whole search
+      }
+      filesScanned++
+      const lines = text.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]!.toLowerCase().includes(needle)) {
+          hits.push({ relPath: f.relPath, line: i + 1, text: lines[i]!.trim().slice(0, MAX_HIT_TEXT) })
+          if (hits.length >= maxHits) return { hits, truncated: true, filesScanned }
+        }
+      }
+    }
+    return { hits, truncated: false, filesScanned }
   }
 
   private async walk(root: string, dir: string, out: TreeEntry[]): Promise<void> {
