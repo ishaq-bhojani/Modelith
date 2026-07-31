@@ -4,9 +4,22 @@
 
 A desktop-native, provider-agnostic, agent-first workspace. Not a VS Code extension, not a terminal tool, not a chat-only app — the space between.
 
-## Status: v0
+## Status: 0.1.0 (first public build)
 
-v0 ships **streaming chat against multiple providers** — one file per provider, hardened Electron shell, encrypted local key storage, session persistence. It does not yet ship the artifact canvas (a sandboxed live-render pane for model-generated HTML/SVG/Mermaid/JSX): that is a separate, in-progress plan built on top of this foundation. If you're looking for "paste an HTML block and watch it render," that piece isn't here yet — this repo is the chat/provider/security substrate it will sit on.
+Open Coder is a provider-agnostic agent desktop. Beyond streaming chat it ships:
+
+- **Artifact canvas** — model-generated HTML/SVG/Mermaid render live in a
+  sandboxed, no-egress pane; multi-artifact tabs, versions, point-and-refine.
+- **Workspace + vision** — open a folder and pull files into context (read-only,
+  confined to the folder); attach images to vision-capable models.
+- **Agent (opt-in, every action gated)** — edit files behind a diff-approval
+  gate with one-click revert; connect **MCP** servers; run **commands** behind an
+  approval allow-list; a **git** panel; and **Model Race** (one prompt, 2–4
+  models, pick the winner).
+
+Every privileged action is approved by you, and the security invariants (no key
+to the renderer, no unapproved disk write, confined reads/writes) are covered by
+tests. See [CHANGELOG.md](./CHANGELOG.md) for the full list.
 
 ## Supported providers
 
@@ -16,16 +29,30 @@ v0 ships **streaming chat against multiple providers** — one file per provider
 
 Adding another provider is a documented, test-verified path — see [CONTRIBUTING.md](./CONTRIBUTING.md#add-a-provider-in-20-minutes).
 
-## Quick start
+## Install
+
+Download an installer for your OS from the [Releases](../../releases) page:
+Windows (`.exe`), macOS (`.dmg`), Linux (`.AppImage`). Builds are currently
+**unsigned**, so Windows SmartScreen and macOS Gatekeeper will warn on first
+launch — allow it through (Windows: *More info → Run anyway*; macOS: right-click →
+*Open*). Signed builds are on the roadmap.
+
+Then open Settings, pick a provider, and paste an API key (Ollama needs none).
+
+## Run / build from source
 
 Requires Node **>= 22.19.0**.
 
 ```bash
 npm ci
-npm run dev
+npm run dev          # run in development
+npm run dist         # build installers for the current OS (output in release/)
+npm run dist:dir     # unpacked build, no installer (faster; for smoke-testing)
 ```
 
-Open Settings in the app, pick a provider, and paste an API key (skip this step for Ollama — it needs none). Start chatting.
+Before a release, run the automated suite (`npm test && npm run test:e2e`) and
+the [real-provider smoke test](./docs/qa/real-provider-smoke-test.md) — the
+automated tests use a fake provider, so a live-API pass is required.
 
 ## Security model
 

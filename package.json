@@ -1,6 +1,6 @@
 {
   "name": "open-coder",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Provider-agnostic agent desktop",
   "productName": "Open Coder",
   "author": "Open Coder contributors",
