@@ -2,7 +2,7 @@
 
 ## Context
 
-Open Coder is an OSS side project, so contributor pool size is the dominant factor in whether it receives community PRs at all — it is not competing for engineering resources against a company's own roadmap the way a product team's frontend choice might. The renderer also has to communicate cleanly with the main process over IPC (`src/shared/ipc.ts`, `src/preload/index.ts`), and needs to keep up with tokens streaming in from a live chat without becoming the bottleneck.
+Modelith is an OSS side project, so contributor pool size is the dominant factor in whether it receives community PRs at all — it is not competing for engineering resources against a company's own roadmap the way a product team's frontend choice might. The renderer also has to communicate cleanly with the main process over IPC (`src/shared/ipc.ts`, `src/preload/index.ts`), and needs to keep up with tokens streaming in from a live chat without becoming the bottleneck.
 
 The realistic alternative considered was a hand-rolled DOM rendering layer: direct `document` manipulation or a small bespoke component abstraction, avoiding a framework dependency entirely.
 

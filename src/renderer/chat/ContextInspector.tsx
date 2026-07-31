@@ -17,7 +17,7 @@ export function ContextInspector(): React.JSX.Element | null {
   useEffect(() => {
     if (!open || !sessionId) { setPreview(null); return }
     let cancelled = false
-    void window.openCoder.chat.preview(sessionId)
+    void window.modelith.chat.preview(sessionId)
       .then((p) => { if (!cancelled) setPreview(p) })
       .catch(() => { if (!cancelled) setPreview(null) })
     return () => { cancelled = true }

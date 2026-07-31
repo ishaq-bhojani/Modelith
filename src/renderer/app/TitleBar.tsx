@@ -22,8 +22,8 @@ export function TitleBar(): React.JSX.Element {
 
   useEffect(() => {
     if (isMac) return
-    void window.openCoder.window.isMaximized().then(setMaximized)
-    return window.openCoder.window.onMaximizedChange(setMaximized)
+    void window.modelith.window.isMaximized().then(setMaximized)
+    return window.modelith.window.onMaximizedChange(setMaximized)
   }, [isMac])
 
   if (isMac) {
@@ -38,7 +38,7 @@ export function TitleBar(): React.JSX.Element {
         <span className="titlebar-logo">
           <IconBrand size={10} />
         </span>
-        <span className="titlebar-name">Open Coder</span>
+        <span className="titlebar-name">Modelith</span>
       </div>
       <div className="titlebar-controls">
         <button
@@ -46,7 +46,7 @@ export function TitleBar(): React.JSX.Element {
           data-testid="win-minimize"
           title="Minimize"
           aria-label="Minimize"
-          onClick={() => void window.openCoder.window.minimize()}
+          onClick={() => void window.modelith.window.minimize()}
         >
           <WinMinimize />
         </button>
@@ -55,7 +55,7 @@ export function TitleBar(): React.JSX.Element {
           data-testid="win-maximize"
           title={maximized ? 'Restore' : 'Maximize'}
           aria-label={maximized ? 'Restore' : 'Maximize'}
-          onClick={() => void window.openCoder.window.maximizeToggle()}
+          onClick={() => void window.modelith.window.maximizeToggle()}
         >
           {maximized ? <WinRestore /> : <WinMaximize />}
         </button>
@@ -64,7 +64,7 @@ export function TitleBar(): React.JSX.Element {
           data-testid="win-close"
           title="Close"
           aria-label="Close"
-          onClick={() => void window.openCoder.window.close()}
+          onClick={() => void window.modelith.window.close()}
         >
           <WinClose />
         </button>

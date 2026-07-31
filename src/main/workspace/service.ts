@@ -40,7 +40,7 @@ export class Workspace {
     // Test seam: the native dialog cannot be driven in E2E, so when this env var
     // is set (only in tests) the picker resolves to it directly. It never
     // changes the security model — main still holds the root and confines reads.
-    const testRoot = process.env['OPEN_CODER_WORKSPACE_ROOT']
+    const testRoot = process.env['MODELITH_WORKSPACE_ROOT']
     if (testRoot) {
       await this.settings.set({ workspaceRoot: testRoot })
       return testRoot

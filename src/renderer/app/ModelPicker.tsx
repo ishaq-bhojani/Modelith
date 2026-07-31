@@ -29,7 +29,7 @@ export function ModelPicker(): React.JSX.Element {
     if (!open) return
     setLoading(true)
     let cancelled = false
-    void window.openCoder.providers
+    void window.modelith.providers
       .models(providerId)
       .then((list) => { if (!cancelled) setModels(list) })
       .catch(() => { if (!cancelled) setModels([]) })

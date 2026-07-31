@@ -3,7 +3,7 @@ import type { ElectronApplication } from '@playwright/test'
 import { launchApp } from './launch.js'
 
 let app: ElectronApplication
-test.beforeAll(async () => { app = await launchApp({ OPEN_CODER_FAKE_PROVIDER: '1' }) })
+test.beforeAll(async () => { app = await launchApp({ MODELITH_FAKE_PROVIDER: '1' }) })
 test.afterAll(async () => { await app.close() })
 
 // A 1x1 transparent PNG.

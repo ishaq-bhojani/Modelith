@@ -13,7 +13,7 @@ let root: string
 test.beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'oc-mcp-'))
   writeFileSync(join(root, 'seed.txt'), 'seed')
-  app = await launchApp({ OPEN_CODER_FAKE_PROVIDER: '1', OPEN_CODER_WORKSPACE_ROOT: root })
+  app = await launchApp({ MODELITH_FAKE_PROVIDER: '1', MODELITH_WORKSPACE_ROOT: root })
 })
 test.afterEach(async () => { await app.close() })
 

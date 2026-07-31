@@ -55,7 +55,7 @@ export function WorkspacePanel(): React.JSX.Element | null {
     const blocks: string[] = []
     for (const relPath of selected) {
       try {
-        const { text } = await window.openCoder.workspace.read(relPath)
+        const { text } = await window.modelith.workspace.read(relPath)
         blocks.push(fencedAttachment(baseName(relPath), text))
       } catch (err) {
         reportError(err instanceof Error ? err : new Error(`${relPath} could not be read.`))

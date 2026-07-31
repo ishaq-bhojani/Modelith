@@ -38,17 +38,17 @@ export function SideThread(): React.JSX.Element | null {
     let created: string | null = null
     let cancelled = false
     void (async () => {
-      const { id } = await window.openCoder.sessions.create('Side thread')
-      if (cancelled) { void window.openCoder.sessions.delete(id); return }
+      const { id } = await window.modelith.sessions.create('Side thread')
+      if (cancelled) { void window.modelith.sessions.delete(id); return }
       created = id
       sessionRef.current = id
       setSessionId(id)
-      void window.openCoder.sessions.setArchived(id, true)
+      void window.modelith.sessions.setArchived(id, true)
     })()
     return () => {
       cancelled = true
       const id = created ?? sessionRef.current
-      if (id) void window.openCoder.sessions.delete(id)
+      if (id) void window.modelith.sessions.delete(id)
       sessionRef.current = null
       setSessionId(null)
       setMessages([])
@@ -68,7 +68,7 @@ export function SideThread(): React.JSX.Element | null {
   // Own event subscription, filtered to this side session so main-thread events
   // (which carry a different session id) are ignored.
   useEffect(() => {
-    return window.openCoder.chat.onEvent((env: StreamEnvelope) => {
+    return window.modelith.chat.onEvent((env: StreamEnvelope) => {
       if (env.sessionId !== sessionRef.current) return
       const e = env.event
       if (e.type === 'text') setStreamingText((t) => t + e.delta)
@@ -96,7 +96,7 @@ export function SideThread(): React.JSX.Element | null {
     setMessages((m) => [...m, { id: `su-${Date.now()}`, role: 'user', content, createdAt: Date.now() }])
     setStreamingText('')
     setStreaming(true)
-    void window.openCoder.chat.send({ sessionId: id, providerId, model, content })
+    void window.modelith.chat.send({ sessionId: id, providerId, model, content })
       .catch(() => setStreaming(false))
   }
 

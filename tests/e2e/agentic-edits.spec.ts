@@ -12,7 +12,7 @@ test.beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'oc-agent-'))
   mkdirSync(root, { recursive: true })
   writeFileSync(join(root, 'seed.txt'), 'seed') // ensure the root is non-empty
-  app = await launchApp({ OPEN_CODER_FAKE_PROVIDER: '1', OPEN_CODER_WORKSPACE_ROOT: root })
+  app = await launchApp({ MODELITH_FAKE_PROVIDER: '1', MODELITH_WORKSPACE_ROOT: root })
 })
 test.afterEach(async () => { await app.close() })
 

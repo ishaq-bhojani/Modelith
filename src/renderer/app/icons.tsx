@@ -1,5 +1,5 @@
 /**
- * Icon set transcribed from the Claude Design project "Open Coder Desktop
+ * Icon set transcribed from the Claude Design project "Modelith Desktop
  * Redesign". All icons are 24×24 line icons drawn with `currentColor`, so they
  * inherit the surrounding text colour and need no per-theme variants.
  */

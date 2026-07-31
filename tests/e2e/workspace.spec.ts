@@ -13,7 +13,7 @@ test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'oc-ws-e2e-'))
   mkdirSync(join(root, 'src'), { recursive: true })
   writeFileSync(join(root, 'src', 'hello.ts'), 'export const hi = 1')
-  app = await launchApp({ OPEN_CODER_WORKSPACE_ROOT: root })
+  app = await launchApp({ MODELITH_WORKSPACE_ROOT: root })
 })
 test.afterAll(async () => { await app.close() })
 
@@ -43,7 +43,7 @@ test('a traversal read outside the root is rejected', async () => {
   // Drive the bridge directly: a ../ path must be refused by main's confinement.
   const rejected = await page.evaluate(async () => {
     try {
-      await window.openCoder.workspace.read('../../etc/passwd')
+      await window.modelith.workspace.read('../../etc/passwd')
       return false
     } catch {
       return true

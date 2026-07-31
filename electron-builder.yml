@@ -1,11 +1,11 @@
-# Packaging config for Open Coder (electron-builder).
+# Packaging config for Modelith (electron-builder).
 # Produces installers from the electron-vite output in out/.
 # `npm run dist` builds + packages for the current OS; the release workflow
 # runs it on Windows/macOS/Linux. Unsigned for now — code-signing (Windows
 # cert, Apple notarization) is a later step; see docs/qa launch checklist.
-appId: dev.opencoder.app
-productName: Open Coder
-copyright: Open Coder contributors
+appId: dev.modelith.app
+productName: Modelith
+copyright: Modelith contributors
 
 # The renderer/main/preload are already compiled by electron-vite into out/.
 # Package that plus the manifest; nothing else needs to ship.

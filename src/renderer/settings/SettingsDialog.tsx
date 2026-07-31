@@ -34,13 +34,13 @@ export function SettingsDialog(): React.JSX.Element | null {
   // be paired with it (the engine needs both).
   useEffect(() => {
     if (!open || !fallback) { setFallbackModels([]); return }
-    void window.openCoder.providers.models(fallback.providerId)
+    void window.modelith.providers.models(fallback.providerId)
       .then(setFallbackModels)
       .catch(() => setFallbackModels([]))
   }, [open, fallback?.providerId, fallback])
 
   useEffect(() => {
-    if (open) void window.openCoder.providers.list().then(setProviders).catch(reportError)
+    if (open) void window.modelith.providers.list().then(setProviders).catch(reportError)
   }, [open, reportError])
 
   // Re-queries key status and the model list whenever the selected provider
@@ -49,8 +49,8 @@ export function SettingsDialog(): React.JSX.Element | null {
   // previous provider's stale values.
   useEffect(() => {
     if (!open) return
-    void window.openCoder.keys.has(providerId).then(setConfigured).catch(reportError)
-    void window.openCoder.providers.models(providerId).then((list) => {
+    void window.modelith.keys.has(providerId).then(setConfigured).catch(reportError)
+    void window.modelith.providers.models(providerId).then((list) => {
       setModels(list)
       // `setProvider` resets `model` to '' (store.ts). Auto-selecting the
       // first available model on the happy path (a keyless provider, or one
@@ -72,10 +72,10 @@ export function SettingsDialog(): React.JSX.Element | null {
 
   const save = async () => {
     try {
-      await window.openCoder.keys.set(providerId, draftKey)
+      await window.modelith.keys.set(providerId, draftKey)
       setDraftKey('')
-      setConfigured(await window.openCoder.keys.has(providerId))
-      setModels(await window.openCoder.providers.models(providerId).catch(() => []))
+      setConfigured(await window.modelith.keys.has(providerId))
+      setModels(await window.modelith.providers.models(providerId).catch(() => []))
     } catch (err) {
       // `Keystore.set` genuinely throws when the OS keychain is unavailable
       // (e.g. Electron's `safeStorage.isEncryptionAvailable()` is false, as
@@ -140,7 +140,7 @@ export function SettingsDialog(): React.JSX.Element | null {
               className="button-secondary"
               data-testid="api-key-delete"
               disabled={!configured}
-              onClick={() => void window.openCoder.keys.delete(providerId)
+              onClick={() => void window.modelith.keys.delete(providerId)
                 .then(() => setConfigured(false))
                 .catch(reportError)}
             >Remove key</button>

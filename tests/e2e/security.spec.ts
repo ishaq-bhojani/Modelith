@@ -63,8 +63,8 @@ test('the CSP actually blocks an injected inline script', async () => {
 test('the bridge exposes no way to read a stored key', async () => {
   const page = await app.firstWindow()
   const shape = await page.evaluate(() => ({
-    keyFns: Object.keys(window.openCoder.keys),
-    topLevel: Object.keys(window.openCoder),
+    keyFns: Object.keys(window.modelith.keys),
+    topLevel: Object.keys(window.modelith),
   }))
   expect(shape.keyFns.sort()).toEqual(['delete', 'has', 'set'])
   expect(shape.topLevel).not.toContain('keystore')
@@ -104,8 +104,8 @@ test('the renderer bridge exposes no way to influence the provider endpoint', as
   // not appear anywhere in the resolved bridge surface.
   const page = await app.firstWindow()
   const result = await page.evaluate(async () => {
-    const session = await window.openCoder.sessions.create('security-test')
-    const sendResult = await window.openCoder.chat.send({
+    const session = await window.modelith.sessions.create('security-test')
+    const sendResult = await window.modelith.chat.send({
       sessionId: session.id,
       providerId: 'does-not-exist',
       model: 'm',

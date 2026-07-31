@@ -2,7 +2,7 @@
 
 ## Context
 
-Open Coder's differentiator is a live artifact canvas: when the model emits HTML, SVG, Mermaid, or JSX, it renders in a sandboxed pane beside the chat, identically, on Windows, macOS, and Linux. The shell choice therefore had to be evaluated primarily on rendering-engine consistency, not on binary size or memory footprint, since those are the usual reasons to prefer a lighter alternative.
+Modelith's differentiator is a live artifact canvas: when the model emits HTML, SVG, Mermaid, or JSX, it renders in a sandboxed pane beside the chat, identically, on Windows, macOS, and Linux. The shell choice therefore had to be evaluated primarily on rendering-engine consistency, not on binary size or memory footprint, since those are the usual reasons to prefer a lighter alternative.
 
 Tauri was the leading alternative: it ships no bundled browser engine and produces installers an order of magnitude smaller than Electron's.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Open Coder are recorded here. Dates are ISO (UTC).
+All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## 0.1.0 — 2026-07-31 (first public build)
 

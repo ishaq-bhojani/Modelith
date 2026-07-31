@@ -5,7 +5,7 @@ import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatu
 
 export type { StreamEnvelope } from '../shared/types.js'
 
-export interface OpenCoderBridge {
+export interface ModelithBridge {
   appInfo(): Promise<AppInfo>
   keys: {
     set(providerId: string, apiKey: string): Promise<void>
@@ -87,7 +87,7 @@ export interface OpenCoderBridge {
   }
 }
 
-const bridge: OpenCoderBridge = {
+const bridge: ModelithBridge = {
   appInfo: () => ipcRenderer.invoke(CHANNELS.appInfo),
   keys: {
     set: (providerId, apiKey) => ipcRenderer.invoke(CHANNELS.keySet, { providerId, apiKey }),
@@ -172,4 +172,4 @@ const bridge: OpenCoderBridge = {
   },
 }
 
-contextBridge.exposeInMainWorld('openCoder', bridge)
+contextBridge.exposeInMainWorld('modelith', bridge)

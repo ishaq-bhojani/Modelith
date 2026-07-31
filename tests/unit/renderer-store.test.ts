@@ -4,7 +4,7 @@ import { useAppStore } from '../../src/renderer/state/store.js'
 describe('stop()', () => {
   it('clears streamingText and locally appends an incomplete assistant message', async () => {
     const abort = vi.fn().mockResolvedValue(undefined)
-    ;(globalThis as unknown as { window: unknown }).window = { openCoder: { chat: { abort } } }
+    ;(globalThis as unknown as { window: unknown }).window = { modelith: { chat: { abort } } }
     useAppStore.setState({
       streamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
       streamingText: 'partial reply', messages: [],
@@ -24,7 +24,7 @@ describe('stop()', () => {
 
   it('does not append when there is nothing streamed yet', async () => {
     const abort = vi.fn().mockResolvedValue(undefined)
-    ;(globalThis as unknown as { window: unknown }).window = { openCoder: { chat: { abort } } }
+    ;(globalThis as unknown as { window: unknown }).window = { modelith: { chat: { abort } } }
     useAppStore.setState({
       streamId: 'abc', streamingSessionId: 's1', activeSessionId: 's1',
       streamingText: '', messages: [],

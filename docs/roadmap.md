@@ -2,7 +2,7 @@
 
 ## What we're building toward
 
-Open Coder is the only agent desktop that is **provider-agnostic by construction** and
+Modelith is the only agent desktop that is **provider-agnostic by construction** and
 **renders what it builds**. That combination is the whole strategy:
 
 - Tools built around a single vendor relationship cannot do multi-model well, because

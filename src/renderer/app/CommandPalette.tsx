@@ -40,7 +40,7 @@ export function CommandPalette(): React.JSX.Element | null {
       }
     }
     window.addEventListener('keydown', onKey)
-    const offMenu = window.openCoder.onMenu('command-palette', () => setOpen(true))
+    const offMenu = window.modelith.onMenu('command-palette', () => setOpen(true))
     return () => { window.removeEventListener('keydown', onKey); offMenu() }
   }, [])
 

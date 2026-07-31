@@ -8,7 +8,7 @@ import { CHANNELS } from '../shared/ipc.js'
 
 // Portable-mode override. Keeps E2E runs out of the developer's real app data,
 // and lets users run from a USB stick. Must be set before anything reads the path.
-const portableDir = process.env['OPEN_CODER_USER_DATA']
+const portableDir = process.env['MODELITH_USER_DATA']
 if (portableDir) app.setPath('userData', portableDir)
 
 // Tracks the current main window so the chat IPC handlers (registered once,

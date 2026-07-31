@@ -1,9 +1,9 @@
 {
-  "name": "open-coder",
+  "name": "modelith",
   "version": "0.1.0",
   "description": "Provider-agnostic agent desktop",
-  "productName": "Open Coder",
-  "author": "Open Coder contributors",
+  "productName": "Modelith",
+  "author": "Modelith contributors",
   "license": "Apache-2.0",
   "main": "./out/main/index.js",
   "type": "module",

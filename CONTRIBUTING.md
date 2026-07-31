@@ -1,4 +1,4 @@
-# Contributing to Open Coder
+# Contributing to Modelith
 
 Thanks for considering it. The single best way in is adding a provider — the interface was designed for exactly this, and the shared test suite verifies your work without a maintainer having to hand-audit streaming internals.
 

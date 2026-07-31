@@ -46,7 +46,7 @@ export function App(): React.JSX.Element {
   useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => { void initWorkspace() }, [initWorkspace])
   useEffect(() => { void loadMcpServers() }, [loadMcpServers])
-  useEffect(() => window.openCoder.chat.onEvent(applyEvent), [applyEvent])
+  useEffect(() => window.modelith.chat.onEvent(applyEvent), [applyEvent])
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme
@@ -56,12 +56,12 @@ export function App(): React.JSX.Element {
   // fire even though the OS menu strip is gone. The palette/search actions are
   // wired in their own components; here we handle the two the shell owns.
   useEffect(() => {
-    const offNew = window.openCoder.onMenu('new-chat', () => void newSession())
-    const offSettings = window.openCoder.onMenu('settings', () => openSettings())
+    const offNew = window.modelith.onMenu('new-chat', () => void newSession())
+    const offSettings = window.modelith.onMenu('settings', () => openSettings())
     return () => { offNew(); offSettings() }
   }, [newSession, openSettings])
 
-  const activeTitle = sessions.find((s) => s.id === activeSessionId)?.title ?? 'Open Coder'
+  const activeTitle = sessions.find((s) => s.id === activeSessionId)?.title ?? 'Modelith'
   const costTotal = formatTotal(sessionCost(messages))
 
   return (

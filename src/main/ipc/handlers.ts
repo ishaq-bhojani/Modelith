@@ -46,7 +46,7 @@ import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
 const MAX_CONTEXT_TOKENS = 96_000
 
 // Lazy singletons: `app.getPath('userData')` must not be evaluated until after
-// index.ts has applied the OPEN_CODER_USER_DATA portable-mode override. Since
+// index.ts has applied the MODELITH_USER_DATA portable-mode override. Since
 // ES module imports are evaluated before any statement in the importing module,
 // constructing these at module scope would read the path too early and break
 // E2E isolation. Constructing on first use (from inside functions called

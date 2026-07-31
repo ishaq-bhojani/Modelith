@@ -68,7 +68,7 @@ export function AppMenu(): React.JSX.Element {
           <button
             className="app-menu-item"
             role="menuitem"
-            onClick={run(() => window.openCoder.window.openChatsFolder())}
+            onClick={run(() => window.modelith.window.openChatsFolder())}
           >
             <IconFolder size={15} />
             <span>Open chats folder…</span>
@@ -84,10 +84,10 @@ export function AppMenu(): React.JSX.Element {
           <button
             className="app-menu-item"
             role="menuitem"
-            onClick={run(() => window.openCoder.window.about())}
+            onClick={run(() => window.modelith.window.about())}
           >
             <IconInfo size={15} />
-            <span>About Open Coder</span>
+            <span>About Modelith</span>
           </button>
 
           <span className="app-menu-sep" />
@@ -95,10 +95,10 @@ export function AppMenu(): React.JSX.Element {
           <button
             className="app-menu-item app-menu-item-danger"
             role="menuitem"
-            onClick={run(() => window.openCoder.window.quit())}
+            onClick={run(() => window.modelith.window.quit())}
           >
             <IconLogout size={15} />
-            <span>Quit Open Coder</span>
+            <span>Quit Modelith</span>
             <kbd>{mod}Q</kbd>
           </button>
         </div>

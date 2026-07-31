@@ -9,7 +9,7 @@ export async function launchApp(extraEnv: Record<string, string> = {}): Promise<
     args: ['out/main/index.js'],
     env: {
       ...process.env,
-      OPEN_CODER_USER_DATA: mkdtempSync(join(tmpdir(), 'oc-e2e-')),
+      MODELITH_USER_DATA: mkdtempSync(join(tmpdir(), 'oc-e2e-')),
       ...extraEnv,
     },
   })

@@ -1,4 +1,4 @@
-# Open Coder
+# Modelith
 
 **Watch it build, see it render — against any model, without an IDE.**
 
@@ -6,7 +6,7 @@ A desktop-native, provider-agnostic, agent-first workspace. Not a VS Code extens
 
 ## Status: 0.1.0 (first public build)
 
-Open Coder is a provider-agnostic agent desktop. Beyond streaming chat it ships:
+Modelith is a provider-agnostic agent desktop. Beyond streaming chat it ships:
 
 - **Artifact canvas** — model-generated HTML/SVG/Mermaid render live in a
   sandboxed, no-egress pane; multi-artifact tabs, versions, point-and-refine.
@@ -80,4 +80,4 @@ The **preload bridge** (`src/preload/index.ts`) is the only channel between them
 
 ## License
 
-Apache License 2.0 — see [LICENSE](./LICENSE). Copyright 2026 Open Coder Contributors.
+Apache License 2.0 — see [LICENSE](./LICENSE). Copyright 2026 Modelith Contributors.

@@ -34,8 +34,8 @@ export function registerWindowHandlers(getWindow: () => BrowserWindow | undefine
   ipcMain.handle(CHANNELS.windowAbout, () => {
     const win = getWindow()
     const detail = `Version ${app.getVersion()}\n\nA provider-agnostic, agent-first desktop workspace.\nKeys stay in the OS keychain; conversations stay on this machine.`
-    if (win) void dialog.showMessageBox(win, { type: 'info', title: 'Open Coder', message: 'Open Coder', detail, buttons: ['OK'] })
-    else void dialog.showMessageBox({ type: 'info', title: 'Open Coder', message: 'Open Coder', detail, buttons: ['OK'] })
+    if (win) void dialog.showMessageBox(win, { type: 'info', title: 'Modelith', message: 'Modelith', detail, buttons: ['OK'] })
+    else void dialog.showMessageBox({ type: 'info', title: 'Modelith', message: 'Modelith', detail, buttons: ['OK'] })
   })
 
   ipcMain.handle(CHANNELS.appQuit, () => app.quit())

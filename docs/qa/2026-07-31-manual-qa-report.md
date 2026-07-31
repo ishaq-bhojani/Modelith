@@ -1,4 +1,4 @@
-# Manual QA Report — Open Coder
+# Manual QA Report — Modelith
 
 **Date:** 2026-07-31
 **Method:** Exploratory manual testing of the real Electron app (fake provider,

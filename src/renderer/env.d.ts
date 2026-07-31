@@ -1,5 +1,5 @@
-import type { OpenCoderBridge } from '../preload/index.js'
+import type { ModelithBridge } from '../preload/index.js'
 declare global {
-  interface Window { openCoder: OpenCoderBridge }
+  interface Window { modelith: ModelithBridge }
 }
 export {}

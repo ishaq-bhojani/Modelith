@@ -2,7 +2,7 @@
 
 ## Context
 
-Open Coder's stated on-ramp for outside contributors is "add a provider in 20 minutes." That promise is worthless if landing a provider PR still requires a maintainer to hand-audit the contributor's streaming/parsing code line by line — SSE framing, abort races, and error-status mapping are exactly the kind of logic that is easy to get subtly wrong and tedious to review by eye.
+Modelith's stated on-ramp for outside contributors is "add a provider in 20 minutes." That promise is worthless if landing a provider PR still requires a maintainer to hand-audit the contributor's streaming/parsing code line by line — SSE framing, abort races, and error-status mapping are exactly the kind of logic that is easy to get subtly wrong and tedious to review by eye.
 
 The alternative considered was per-provider ad hoc tests: each provider file ships whatever tests its author thought to write, reviewed case by case.
 

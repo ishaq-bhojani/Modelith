@@ -104,7 +104,7 @@ export function Sidebar(): React.JSX.Element {
   return (
     <aside data-testid="sidebar" className="sidebar">
       <div className="sidebar-head">
-        <span className="wordmark">Open Coder</span>
+        <span className="wordmark">Modelith</span>
         <AppMenu />
       </div>
 

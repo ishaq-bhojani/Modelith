@@ -49,7 +49,7 @@ export class McpClient {
     await this.request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'open-coder', version: '0.0.1' },
+      clientInfo: { name: 'modelith', version: '0.0.1' },
     })
     this.notify('notifications/initialized', {})
     this.connected = true

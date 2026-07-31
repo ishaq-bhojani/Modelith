@@ -6,11 +6,11 @@ import React from 'react'
 import { useAppStore } from '../../src/renderer/state/store.js'
 import { SettingsDialog } from '../../src/renderer/settings/SettingsDialog.js'
 
-// SettingsDialog reads `window.openCoder` directly (it is not written to go
+// SettingsDialog reads `window.modelith` directly (it is not written to go
 // through the store's own IPC-calling actions), so every bridge call must be
 // mocked here rather than assumed to exist under jsdom.
-function installBridge(overrides: Partial<typeof window.openCoder> = {}): void {
-  ;(window as unknown as { openCoder: unknown }).openCoder = {
+function installBridge(overrides: Partial<typeof window.modelith> = {}): void {
+  ;(window as unknown as { modelith: unknown }).modelith = {
     providers: { list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', dataPolicy: { trainsOnInput: false, local: false } }]) },
     keys: {
       has: vi.fn().mockResolvedValue(false),
@@ -47,7 +47,7 @@ describe('SettingsDialog error surfacing', () => {
       providers: {
         list: vi.fn().mockResolvedValue([{ id: 'anthropic', label: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', dataPolicy: { trainsOnInput: false, local: false } }]),
         models: vi.fn().mockResolvedValue([]),
-      } as unknown as typeof window.openCoder.providers,
+      } as unknown as typeof window.modelith.providers,
       keys: {
         has: vi.fn().mockResolvedValue(false),
         // Mirrors Keystore.set's real failure mode: it throws when the OS
