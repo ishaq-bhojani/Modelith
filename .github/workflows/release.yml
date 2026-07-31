@@ -1,0 +1,45 @@
+name: Release
+
+# Build installers for all three desktop OSes when a version tag is pushed
+# (e.g. `git tag v0.1.0 && git push --tags`), and attach them to a GitHub
+# Release. Installers are UNSIGNED for now — code-signing/notarization is a
+# later step (see the launch checklist).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      # Gate the release on the same checks CI runs, so a broken build never ships.
+      - run: npm run typecheck
+      - run: npm test
+      - name: Package installers
+        run: npm run dist
+        env:
+          # Never let electron-builder try to publish or sign without credentials.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            release/*.exe
+            release/*.zip
+            release/*.dmg
+            release/*.AppImage

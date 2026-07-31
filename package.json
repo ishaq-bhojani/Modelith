@@ -2,6 +2,8 @@
   "name": "open-coder",
   "version": "0.0.1",
   "description": "Provider-agnostic agent desktop",
+  "productName": "Open Coder",
+  "author": "Open Coder contributors",
   "license": "Apache-2.0",
   "main": "./out/main/index.js",
   "type": "module",
@@ -14,7 +16,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "dist": "electron-vite build && electron-builder",
+    "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -33,6 +37,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.4",
     "electron": "43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "5.0.0",
     "jsdom": "27.0.0",
     "typescript": "5.9.3",
