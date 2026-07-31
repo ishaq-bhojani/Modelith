@@ -15,7 +15,9 @@ export class GitService {
   async status(): Promise<GitStatus> {
     const root = await this.root()
     if (!root) return { isRepo: false, branch: null, files: [] }
-    const r = await runCommand('git status --porcelain=v1 --branch', { cwd: root, timeoutMs: 15_000 })
+    // -uall lists untracked FILES individually instead of collapsing them into a
+    // bare "dir/" entry that has no useful diff.
+    const r = await runCommand('git status --porcelain=v1 -uall --branch', { cwd: root, timeoutMs: 15_000 })
     if (r.exitCode !== 0) return { isRepo: false, branch: null, files: [] }
     return parseStatus(r.output)
   }
@@ -25,7 +27,12 @@ export class GitService {
     if (!root) return ''
     const cmd = path ? `git diff -- ${JSON.stringify(path)}` : 'git diff'
     const r = await runCommand(cmd, { cwd: root, timeoutMs: 15_000 })
-    return r.output
+    if (r.output.trim() !== '' || !path) return r.output
+    // An untracked file produces no `git diff`; show it as an all-added diff so a
+    // new file still has something to look at.
+    const nul = process.platform === 'win32' ? 'NUL' : '/dev/null'
+    const untracked = await runCommand(`git diff --no-index -- ${nul} ${JSON.stringify(path)}`, { cwd: root, timeoutMs: 15_000 })
+    return untracked.output
   }
 }
 

@@ -50,6 +50,8 @@ test('a rejected write is not applied', async () => {
   // Give the turn a moment to finish; nothing should have been written.
   await page.waitForTimeout(500)
   expect(existsSync(join(root, 'notes.txt'))).toBe(false)
+  // A rejected write must NOT surface the "edits applied" revert affordance.
+  await expect(page.getByTestId('revert-bar')).toHaveCount(0)
 })
 
 test('a write outside the workspace root is refused (no gate, no file)', async () => {
@@ -70,4 +72,14 @@ test('an applied change can be reverted', async () => {
   await page.getByTestId('revert-edits').click()
   // The created file is removed by the revert (its pre-image did not exist).
   await expect.poll(() => existsSync(join(root, 'notes.txt')), { timeout: 8000 }).toBe(false)
+})
+
+test('the revert bar does not leak into a new chat', async () => {
+  const page = await startAgentTurn('agent write the notes')
+  await expect(page.getByTestId('diff-gate')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('diff-accept').click()
+  await expect(page.getByTestId('revert-bar')).toBeVisible({ timeout: 8000 })
+  // Starting a new chat must not carry the previous chat's "edits applied" bar.
+  await page.getByTestId('new-session').click()
+  await expect(page.getByTestId('revert-bar')).toHaveCount(0)
 })

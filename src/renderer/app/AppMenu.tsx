@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
+import { modKey } from './shortcut.js'
 import {
   IconDotsVertical,
   IconFolder,
@@ -25,6 +26,7 @@ export function AppMenu(): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const newSession = useAppStore((s) => s.newSession)
   const openSettings = useAppStore((s) => s.openSettings)
+  const mod = modKey(useAppStore((s) => s.platform))
 
   useEffect(() => {
     if (!open) return
@@ -61,7 +63,7 @@ export function AppMenu(): React.JSX.Element {
           <button className="app-menu-item" role="menuitem" onClick={run(newSession)}>
             <IconPlus size={15} />
             <span>New chat</span>
-            <kbd>⌘N</kbd>
+            <kbd>{mod}N</kbd>
           </button>
           <button
             className="app-menu-item"
@@ -77,7 +79,7 @@ export function AppMenu(): React.JSX.Element {
           <button className="app-menu-item" role="menuitem" onClick={run(openSettings)}>
             <IconSliders size={15} />
             <span>Settings</span>
-            <kbd>⌘,</kbd>
+            <kbd>{mod},</kbd>
           </button>
           <button
             className="app-menu-item"
@@ -97,7 +99,7 @@ export function AppMenu(): React.JSX.Element {
           >
             <IconLogout size={15} />
             <span>Quit Open Coder</span>
-            <kbd>⌘Q</kbd>
+            <kbd>{mod}Q</kbd>
           </button>
         </div>
       ) : null}

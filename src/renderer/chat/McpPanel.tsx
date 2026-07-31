@@ -64,7 +64,7 @@ export function McpPanel(): React.JSX.Element | null {
         <input className="mcp-input" data-testid="mcp-name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="mcp-input" data-testid="mcp-command" placeholder="Command (e.g. node)" value={command} onChange={(e) => setCommand(e.target.value)} />
         <input className="mcp-input" data-testid="mcp-args" placeholder="Arguments (space-separated)" value={args} onChange={(e) => setArgs(e.target.value)} />
-        <button className="send-button mcp-add-btn" data-testid="mcp-add" disabled={!command.trim()} onClick={submit}>Add server</button>
+        <button className="action-primary mcp-add-btn" data-testid="mcp-add" disabled={!command.trim()} onClick={submit}>Add server</button>
       </div>
     </aside>
   )

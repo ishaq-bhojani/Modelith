@@ -20,6 +20,18 @@ test('stores a key and reports it as configured without revealing it', async () 
   await page.getByTestId('settings-close').click()
 })
 
+test('the settings modal closes on Escape and on a backdrop click', async () => {
+  const page = await app.firstWindow()
+  await page.getByTestId('open-settings').click()
+  await expect(page.getByTestId('provider-select')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('provider-select')).toHaveCount(0)
+  // And via the header ✕.
+  await page.getByTestId('open-settings').click()
+  await page.getByTestId('settings-close-x').click()
+  await expect(page.getByTestId('provider-select')).toHaveCount(0)
+})
+
 test('offers a recovery action when no model is selected', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('open-settings').click()

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import type { ModelInfo, ProviderSummary } from '@shared/types'
 import { IconCheck, IconLock } from '../app/icons.js'
+import { useEscapeToClose } from '../app/useEscapeToClose.js'
 import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
 
 export function SettingsDialog(): React.JSX.Element | null {
@@ -65,6 +66,8 @@ export function SettingsDialog(): React.JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerId, open])
 
+  useEscapeToClose(open, close)
+
   if (!open) return null
 
   const save = async () => {
@@ -84,14 +87,17 @@ export function SettingsDialog(): React.JSX.Element | null {
   }
 
   return (
-    <div className="dialog-backdrop" role="dialog" aria-label="Settings" aria-modal="true">
-      <div className="dialog">
-        <h2>Settings</h2>
+    <div className="dialog-backdrop" role="dialog" aria-labelledby="settings-title" aria-modal="true" onClick={close}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-head">
+          <h2 id="settings-title">Settings</h2>
+          <button className="icon-button" data-testid="settings-close-x" aria-label="Close settings" onClick={close}>✕</button>
+        </div>
 
         <div className="field">
           <label htmlFor="provider">Provider</label>
           <select
-            id="provider" data-testid="provider-select" value={providerId}
+            id="provider" data-testid="provider-select" value={providerId} autoFocus
             onChange={(e) => setProvider(e.target.value)}
           >
             {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}

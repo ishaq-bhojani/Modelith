@@ -117,6 +117,8 @@ export interface ToolOutcome {
   result: string
   /** True if the tool errored logically (still returned to the model, not thrown). */
   isError: boolean
+  /** True only when a write actually landed on disk (drives the revert UI). */
+  applied?: boolean
 }
 
 function parseArgs(raw: string): Record<string, unknown> {
@@ -218,7 +220,7 @@ export async function executeTool(
       }
       const finalContent = decision.action === 'edited' ? decision.content : proposed
       await workspace.applyWrite({ relPath, content: finalContent, turnId: deps.turnId, callId })
-      return { result: `Applied change to ${relPath}.`, isError: false }
+      return { result: `Applied change to ${relPath}.`, isError: false, applied: true }
     }
     return { result: `Unknown tool: ${name}`, isError: true }
   } catch (err) {

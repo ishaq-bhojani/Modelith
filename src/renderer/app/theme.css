@@ -679,6 +679,8 @@ body.resizing {
 
 .sidebar {
   width: var(--sidebar-width);
+  /* Never let the sidebar dominate a narrow window (min window is 720px). */
+  max-width: 40vw;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -1561,11 +1563,26 @@ body.resizing {
   gap: 10px;
 }
 .msg-model {
-  font: 600 10.5px/1 var(--font-body);
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
+  font: 600 11px/1 var(--font-body);
+  letter-spacing: 0.3px;
+  /* No uppercase: model ids like "claude-sonnet-5" should read verbatim, not
+     "CLAUDE-SONNET-5". */
   color: var(--text-meta);
 }
+.msg-tool {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 4px 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-raised, rgba(127, 127, 127, 0.06));
+  border-radius: 8px;
+}
+.msg-tool-label { flex: none; font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; opacity: 0.7; }
+.msg-tool-body { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); }
+
 .msg-dot {
   width: 3px;
   height: 3px;
@@ -1818,6 +1835,28 @@ body.resizing {
   opacity: 0.35;
   cursor: default;
 }
+
+/* Labelled primary action — like send-button's fill but sized to its text.
+   Use this (not .send-button) for buttons with a text label; .send-button is
+   a fixed 34px circle meant only for an icon. */
+.action-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--invert-bg);
+  color: var(--invert-fg);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.action-primary:hover { background: var(--invert-bg-hover); }
+.action-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .stop-button {
   background: var(--danger);
   color: #fff;
@@ -1984,6 +2023,12 @@ body.resizing {
   font: 500 22px/1.2 var(--font-display);
   letter-spacing: -0.22px;
   color: var(--text);
+}
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
 }
 .field {
   display: flex;

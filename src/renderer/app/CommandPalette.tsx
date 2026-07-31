@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../state/store.js'
+import { modKey } from './shortcut.js'
 
 interface Command {
   id: string
@@ -25,6 +26,11 @@ export function CommandPalette(): React.JSX.Element | null {
   const setTheme = useAppStore((s) => s.setTheme)
   const theme = useAppStore((s) => s.theme)
   const toggleInspector = useAppStore((s) => s.toggleInspector)
+  const toggleWorkspace = useAppStore((s) => s.toggleWorkspace)
+  const toggleMcp = useAppStore((s) => s.toggleMcp)
+  const toggleGit = useAppStore((s) => s.toggleGit)
+  const toggleRaceBar = useAppStore((s) => s.toggleRaceBar)
+  const mod = modKey(useAppStore((s) => s.platform))
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,10 +48,14 @@ export function CommandPalette(): React.JSX.Element | null {
 
   const commands = useMemo<Command[]>(() => {
     const actions: Command[] = [
-      { id: 'new', label: 'New chat', hint: '⌘N', run: () => void newSession() },
-      { id: 'settings', label: 'Open settings', hint: '⌘,', run: openSettings },
+      { id: 'new', label: 'New chat', hint: `${mod}N`, run: () => void newSession() },
+      { id: 'settings', label: 'Open settings', hint: `${mod},`, run: openSettings },
       { id: 'theme', label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`, run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
       { id: 'inspect', label: 'Toggle context inspector', run: toggleInspector },
+      { id: 'workspace', label: 'Toggle workspace panel', run: toggleWorkspace },
+      { id: 'mcp', label: 'Toggle MCP servers', run: toggleMcp },
+      { id: 'git', label: 'Toggle git panel', run: toggleGit },
+      { id: 'race', label: 'Toggle model race', run: toggleRaceBar },
     ]
     const chats: Command[] = sessions.map((s) => ({
       id: `session:${s.id}`,
@@ -54,7 +64,7 @@ export function CommandPalette(): React.JSX.Element | null {
       run: () => void selectSession(s.id),
     }))
     return [...actions, ...chats]
-  }, [sessions, theme, newSession, openSettings, selectSession, setTheme, toggleInspector])
+  }, [sessions, theme, mod, newSession, openSettings, selectSession, setTheme, toggleInspector, toggleWorkspace, toggleMcp, toggleGit, toggleRaceBar])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
