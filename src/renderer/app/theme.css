@@ -579,6 +579,15 @@ body.resizing {
   border-top: 1px solid var(--hairline);
 }
 
+.trust-banner {
+  margin: 14px 18px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font: 500 12px/1.4 var(--font-body);
+  background: rgba(73, 79, 223, 0.15);
+  color: var(--text-mute);
+}
+
 .attachment-strip {
   display: flex;
   flex-wrap: wrap;

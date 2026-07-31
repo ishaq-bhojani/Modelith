@@ -157,3 +157,33 @@ describe('applyEvent', () => {
     expect(useAppStore.getState().streamId).toBeNull()
   })
 })
+
+describe('trust-for-this-turn', () => {
+  it('resolveEdit forwards trustTurn and sets the trusted banner', () => {
+    const calls: unknown[] = []
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: { chat: { toolDecision: (...a: unknown[]) => { calls.push(a) } } },
+    }
+    useAppStore.setState({
+      pendingEdit: { callId: 'c1', tool: 'write_file', relPath: 'a', previous: null, proposed: 'x' },
+      trustedTurn: false,
+    })
+    useAppStore.getState().resolveEdit('accept', undefined, true)
+    expect(calls[0]).toEqual(['c1', 'accept', undefined, true])
+    expect(useAppStore.getState().trustedTurn).toBe(true)
+  })
+
+  it('resolveConfirm forwards trustTurn and sets the trusted banner', () => {
+    const calls: unknown[] = []
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: { chat: { toolDecision: (...a: unknown[]) => { calls.push(a) } } },
+    }
+    useAppStore.setState({
+      pendingConfirm: { callId: 'c2', name: 'run_command', argsJson: '{}' },
+      trustedTurn: false,
+    })
+    useAppStore.getState().resolveConfirm('accept', false, true)
+    expect(calls[0]).toEqual(['c2', 'accept', undefined, true])
+    expect(useAppStore.getState().trustedTurn).toBe(true)
+  })
+})

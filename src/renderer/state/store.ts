@@ -114,6 +114,10 @@ interface AppState {
   agentMode: boolean
   /** A write awaiting approval at the diff gate, or null (agentic-edits spec §4). */
   pendingEdit: { callId: string; tool: string; relPath: string; previous: string | null; proposed: string } | null
+  /** Set when the user accepted a pending edit/confirm with "trust this turn":
+   *  subsequent tool approvals this turn auto-apply. Reset on send/done/error
+   *  and on switching sessions. */
+  trustedTurn: boolean
   /** A non-diff tool call (MCP) awaiting yes/no, or null (mcp-client spec §3). */
   pendingConfirm: { callId: string; name: string; argsJson: string } | null
   /** Tool names the user chose to allow for the rest of the session. */
@@ -153,10 +157,14 @@ interface AppState {
   addAttachment(attachment: Attachment): void
   removeAttachment(index: number): void
   toggleAgentMode(): void
-  /** Answer the diff gate: accept / reject / accept-with-edited-content. */
-  resolveEdit(action: 'accept' | 'reject' | 'edited', content?: string): void
-  /** Answer the generic tool-confirm gate; `allowSession` remembers the tool. */
-  resolveConfirm(action: 'accept' | 'reject', allowSession?: boolean): void
+  /** Answer the diff gate: accept / reject / accept-with-edited-content.
+   *  `trustTurn` accepts and marks the rest of this turn's tool calls to
+   *  auto-apply without further gating. */
+  resolveEdit(action: 'accept' | 'reject' | 'edited', content?: string, trustTurn?: boolean): void
+  /** Answer the generic tool-confirm gate; `allowSession` remembers the tool.
+   *  `trustTurn` accepts and marks the rest of this turn's tool calls to
+   *  auto-apply without further gating. */
+  resolveConfirm(action: 'accept' | 'reject', allowSession?: boolean, trustTurn?: boolean): void
   /** Accept the pending command and auto-run this prefix for the session. */
   allowCommandPrefix(prefix: string): void
   /** Revert every edit made in a turn (agentic-edits spec §5). */
@@ -255,6 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingAttachments: [],
   agentMode: false,
   pendingEdit: null,
+  trustedTurn: false,
   pendingConfirm: null,
   allowedTools: [],
   allowedCommandPrefixes: [],
@@ -301,20 +310,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   addAttachment(attachment) { set((s) => ({ pendingAttachments: [...s.pendingAttachments, attachment] })) },
   removeAttachment(index) { set((s) => ({ pendingAttachments: s.pendingAttachments.filter((_, i) => i !== index) })) },
   toggleAgentMode() { set((s) => ({ agentMode: !s.agentMode })) },
-  resolveEdit(action, content) {
+  resolveEdit(action, content, trustTurn) {
     const edit = get().pendingEdit
     if (!edit) return
-    set({ pendingEdit: null })
-    void window.modelith.chat.toolDecision(edit.callId, action, content)
+    set({ pendingEdit: null, ...(trustTurn && action === 'accept' ? { trustedTurn: true } : {}) })
+    void window.modelith.chat.toolDecision(edit.callId, action, content, trustTurn)
   },
-  resolveConfirm(action, allowSession) {
+  resolveConfirm(action, allowSession, trustTurn) {
     const confirm = get().pendingConfirm
     if (!confirm) return
     set((s) => ({
       pendingConfirm: null,
+      ...(trustTurn && action === 'accept' ? { trustedTurn: true } : {}),
       allowedTools: allowSession && action === 'accept' ? [...new Set([...s.allowedTools, confirm.name])] : s.allowedTools,
     }))
-    void window.modelith.chat.toolDecision(confirm.callId, action)
+    void window.modelith.chat.toolDecision(confirm.callId, action, undefined, trustTurn)
   },
   allowCommandPrefix(prefix) {
     const confirm = get().pendingConfirm
@@ -666,7 +676,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Per-turn/per-session UI state must not bleed into the newly-opened
       // session: the revert affordance and any canvas selection belong to the
       // session that produced them.
-      set({ activeSessionId: id, messages, error: null, lastEditTurnId: null, canvasSelection: null })
+      set({ activeSessionId: id, messages, error: null, lastEditTurnId: null, canvasSelection: null, trustedTurn: false })
     } catch (err) {
       set({ error: toProviderError(err) })
     }
@@ -715,6 +725,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       streamingText: '',
       streamingSessionId: sessionId,
       pendingAttachments: [],
+      trustedTurn: false,
       messages: [...s.messages, {
         id: `local-${Date.now()}`, role: 'user', content, createdAt: Date.now(),
         ...(attachments.length > 0 ? { attachments } : {}),
@@ -924,6 +935,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           streamId: null,
           streamingText: '',
           streamNotice: null,
+          trustedTurn: false,
           messages: keepPartial
             ? [...s.messages, { id: `local-a-${Date.now()}`, role: 'assistant' as const, content: s.streamingText, createdAt: Date.now(), incomplete: true }]
             : s.messages,
@@ -958,6 +970,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           streamId: null,
           streamingText: '',
           streamNotice: null,
+          trustedTurn: false,
           messages: shouldAppend
             ? [...s.messages, {
               id: `local-a-${Date.now()}`, role: 'assistant',

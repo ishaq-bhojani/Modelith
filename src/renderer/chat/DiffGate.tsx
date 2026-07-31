@@ -15,6 +15,7 @@ export function DiffGate(): React.JSX.Element | null {
   const resolveEdit = useAppStore((s) => s.resolveEdit)
   const resolveConfirm = useAppStore((s) => s.resolveConfirm)
   const allowCommandPrefix = useAppStore((s) => s.allowCommandPrefix)
+  const trustedTurn = useAppStore((s) => s.trustedTurn)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -41,6 +42,9 @@ export function DiffGate(): React.JSX.Element | null {
     return (
       <div className="modal-scrim" data-testid="tool-confirm" onClick={dismiss}>
         <div className="diff-gate" onClick={(e) => e.stopPropagation()}>
+          {trustedTurn ? (
+            <div className="trust-banner" data-testid="trust-banner">Auto-applying edits this turn</div>
+          ) : null}
           <div className="diff-gate-head">
             <span className="diff-gate-title">
               {isCommand ? 'Run command' : <>Run tool <code>{confirm.name}</code></>}?
@@ -50,6 +54,9 @@ export function DiffGate(): React.JSX.Element | null {
           <div className="diff-gate-actions">
             <button className="action-primary" data-testid="confirm-accept" onClick={() => resolveConfirm('accept')}>Run</button>
             <button className="ghost-button" data-testid="confirm-reject" onClick={() => resolveConfirm('reject')}>Reject</button>
+            <button className="ghost-button" data-testid="confirm-trust-turn" onClick={() => resolveConfirm('accept', false, true)}>
+              Run &amp; trust this turn
+            </button>
             {isCommand ? (
               prefix ? (
                 <button className="ghost-button" data-testid="confirm-allow-prefix" onClick={() => allowCommandPrefix(prefix)}>
@@ -72,6 +79,9 @@ export function DiffGate(): React.JSX.Element | null {
   return (
     <div className="modal-scrim" data-testid="diff-gate" onClick={dismiss}>
       <div className="diff-gate" onClick={(e) => e.stopPropagation()}>
+        {trustedTurn ? (
+          <div className="trust-banner" data-testid="trust-banner">Auto-applying edits this turn</div>
+        ) : null}
         <div className="diff-gate-head">
           <span className="diff-gate-title">
             {pending.previous === null ? 'Create' : 'Edit'} <code>{pending.relPath}</code>
@@ -108,6 +118,9 @@ export function DiffGate(): React.JSX.Element | null {
           ) : (
             <>
               <button className="action-primary" data-testid="diff-accept" onClick={() => resolveEdit('accept')}>Accept</button>
+              <button className="action-primary" data-testid="diff-accept-trust" onClick={() => resolveEdit('accept', undefined, true)}>
+                Accept &amp; auto-apply rest of turn
+              </button>
               <button className="ghost-button" data-testid="diff-reject" onClick={() => resolveEdit('reject')}>Reject</button>
               <button className="ghost-button" data-testid="diff-edit" onClick={startEdit}>Edit…</button>
             </>
