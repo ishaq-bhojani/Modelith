@@ -9,3 +9,4 @@ playwright-report/
 
 # Never commit scratchpad scratch files, including mangled absolute paths
 *scratchpad*
+release/

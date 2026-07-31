@@ -8,22 +8,18 @@ If you fix one, please also add the test that would have caught it.
 
 ## Correctness
 
-**`applyEvent`'s `done` branch lacks the guard its `text` branch has.**
-`src/renderer/state/store.ts` — the `text` branch checks `streamId === null` before
-accumulating; the `done` branch does not. A `done` racing in after `stop()` would append
-a second, empty assistant bubble. No reachable case was found — the stream engine
-suppresses emissions after abort, and IPC ordering puts `done` ahead of the abort reply —
-but the asymmetry is a trap for the next person editing this file. Add the guard, or
-document why it is unnecessary.
+**~~`applyEvent`'s `done` branch lacks the guard its `text` branch has.~~ FIXED
+(2026-07-31)** — the `done` branch now returns early when `streamId === null`,
+matching the `text` branch, so a `done` racing in after `stop()` can't append a
+second empty bubble.
 
 **Deltas in flight at Stop are dropped by the renderer but persisted by main.**
 The locally appended bubble can therefore be shorter than the copy on disk, and silently
 grows when the session is reloaded. Cosmetic, but confusing if you notice it.
 
-**The error path clears the partial reply from the live view without appending it.**
-Stop appends the partial locally with `incomplete: true`; an error does not. The text
-visibly vanishes until the user navigates away and back, at which point it reloads from
-disk. Making the two paths symmetric would be an improvement.
+**~~The error path clears the partial reply from the live view without appending
+it.~~ FIXED (2026-07-31)** — the error branch now appends the partial as an
+`incomplete` bubble, symmetric with stop().
 
 **`send()` sets `lastStreamId` only after `chat.send` resolves.**
 `src/renderer/state/store.ts` — any event main emits before that resolves is discarded by
@@ -47,10 +43,9 @@ If a turn fails while the user is viewing a different conversation, they are nev
 The reply is persisted correctly, but there is no badge, toast, or marker. Deliberate for
 v0 to avoid building a notification system; worth revisiting.
 
-**Electron wraps handler errors before they reach the UI.**
-IPC rejections surface as `Error invoking remote method 'chat:send': ...` around the clean
-message. Not a raw stack trace, but not chat-bubble prose either. Unwrap it in the
-renderer's error mapping.
+**~~Electron wraps handler errors before they reach the UI.~~ FIXED
+(2026-07-31)** — `toProviderError` now strips the `Error invoking remote method
+'…':` envelope so the clean message reaches the UI.
 
 ## Tests and tooling
 
@@ -90,8 +85,8 @@ preload surface, which is tested separately in `tests/e2e/security.spec.ts`.
 These are scoped out of v0 by design, not oversights:
 
 - The sandboxed artifact canvas (the project's headline differentiator) — a separate plan.
-- MCP and tool-calling; filesystem and git access.
-- Installer packaging and auto-update.
+- ~~MCP and tool-calling; filesystem and git access.~~ Shipped (parity program).
+- Auto-update. (Installer packaging added 2026-07-31; auto-update still deferred.)
 - Custom provider base URLs. Deliberately removed from the renderer-supplied path because
   an unvalidated value could redirect where the API key is sent. Will return as
   main-side configuration.

@@ -80,10 +80,6 @@ export const TERMINAL_TOOL_SPECS: ToolSpec[] = [
   },
 ]
 
-/** Shell-quote a single argument for a POSIX or cmd shell (best effort). */
-function shellQuote(s: string): string {
-  return `"${s.replace(/(["$`\\])/g, '\\$1')}"`
-}
 
 /** A write proposed to the user (spec §4). The renderer diffs previous→proposed. */
 export interface PendingEdit {
@@ -108,8 +104,10 @@ export interface ToolDeps {
   requestConfirm?(confirm: { callId: string; name: string; argsJson: string }): Promise<'accept' | 'reject'>
   /** Route an MCP tool call to its server (mcp-client spec §3). */
   mcpCall?(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>
-  /** Run a shell command in the workspace root (terminal-git spec §1). */
+  /** Run a USER-APPROVED shell command in the workspace root (terminal-git §1). */
   runShell?(command: string): Promise<{ output: string; exitCode: number | null }>
+  /** Run git with an argument vector (no shell) — safe for model-supplied args. */
+  runGit?(args: string[]): Promise<{ output: string; exitCode: number | null }>
 }
 
 export interface ToolOutcome {
@@ -155,20 +153,30 @@ export async function executeTool(
   const args = parseArgs(argsRaw)
   const { workspace } = deps
 
-  // Terminal + git tools (terminal-git spec §1–2).
-  if (name === 'git_status' || name === 'git_diff' || name === 'git_log' || name === 'run_command' || name === 'git_commit') {
-    if (!deps.runShell) return { result: 'No workspace is open, so commands cannot run.', isError: true }
-    // Read-only git tools auto-run; run_command and git_commit are gated.
-    if (name === 'git_status') return runResult(await deps.runShell('git status --short --branch'))
-    if (name === 'git_log') return runResult(await deps.runShell('git log --oneline -20'))
+  // Read-only git tools auto-run — via arg-vector (no shell), so a path from a
+  // hostile repo or the model can never inject a command.
+  if (name === 'git_status' || name === 'git_diff' || name === 'git_log' || name === 'git_commit') {
+    if (!deps.runGit) return { result: 'No workspace is open.', isError: true }
+    if (name === 'git_status') return runResult(await deps.runGit(['status', '--short', '--branch']))
+    if (name === 'git_log') return runResult(await deps.runGit(['log', '--oneline', '-20']))
     if (name === 'git_diff') {
-      const p = args['path'] ? ` -- ${shellQuote(String(args['path']))}` : ''
-      return runResult(await deps.runShell(`git diff${p}`))
+      const path = args['path'] ? String(args['path']) : ''
+      return runResult(await deps.runGit(path ? ['diff', '--', path] : ['diff']))
     }
-    // Gated: run_command and git_commit.
-    const command = name === 'git_commit'
-      ? `git commit -m ${shellQuote(String(args['message'] ?? ''))}`
-      : String(args['command'] ?? '')
+    // git_commit writes history → gated, but still executed as an arg vector.
+    const message = String(args['message'] ?? '')
+    if (!message) return { result: 'Missing commit message.', isError: true }
+    if (!deps.requestConfirm) return { result: 'Approval is unavailable.', isError: true }
+    const decision = await deps.requestConfirm({ callId, name, argsJson: JSON.stringify({ command: `git commit -m ${JSON.stringify(message)}` }, null, 2) })
+    if (decision === 'reject') return { result: 'The user rejected this commit.', isError: false }
+    return runResult(await deps.runGit(['commit', '-m', message]))
+  }
+
+  // Arbitrary shell command — gated, and run through the real shell (that IS the
+  // feature; the user sees and approves the exact command).
+  if (name === 'run_command') {
+    if (!deps.runShell) return { result: 'No workspace is open, so commands cannot run.', isError: true }
+    const command = String(args['command'] ?? '')
     if (!command) return { result: 'Missing command.', isError: true }
     if (!deps.requestConfirm) return { result: 'Approval is unavailable.', isError: true }
     const decision = await deps.requestConfirm({ callId, name, argsJson: JSON.stringify({ command }, null, 2) })
