@@ -2,14 +2,23 @@
 
 All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
-## Unreleased
+## 0.2.0 — 2026-08-03
 
 ### Project Mode
-- `search_files` tool: the agent can search file contents across the project.
-- Trust-for-this-turn: one approval can auto-apply the rest of a turn's edits
-  (still checkpointed — one revert undoes the whole turn).
-- Persistent collapsible project tree with a prominent "Open Folder" entry point,
-  a project header, and auto-restore of the last folder on launch.
+Opening a folder now feels like a project, and the agent can work across it.
+
+- **`search_files`** tool: the agent can search file contents across the whole
+  project (confined to the workspace root), so it finds code instead of reading
+  blindly. Auto-runs like the other read-only tools.
+- **Trust-for-this-turn:** one approval can auto-apply the rest of a turn's gated
+  actions — file edits *and* shell/MCP calls — instead of a click per file. Trust
+  is per-turn only (resets every message) and every change is still checkpointed,
+  so one "Revert edits" undoes the entire turn. A banner shows while it's active.
+- **Persistent project tree:** a collapsible folder tree with a prominent
+  "Open Folder" entry point, the open folder shown as a project header, and
+  auto-restore of the last folder on launch. Per-file add-to-context is preserved.
+- The agent is told (when a folder is open) that it can `list_dir`,
+  `search_files`, and `read_file` to explore the project itself.
 
 ## 0.1.0 — 2026-07-31 (first public build)
 
