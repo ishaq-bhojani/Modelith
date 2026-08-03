@@ -1,9 +1,19 @@
 name: Release
 
 # Build installers for all three desktop OSes when a version tag is pushed
-# (e.g. `git tag v0.1.0 && git push --tags`), and attach them to a GitHub
-# Release. Installers are UNSIGNED for now — code-signing/notarization is a
-# later step (see the launch checklist).
+# (e.g. `git tag v0.2.0 && git push origin v0.2.0`), then attach them to ONE
+# GitHub Release.
+#
+# Two stages on purpose: the matrix BUILDS and uploads each OS's installers as
+# workflow artifacts (no release writes, so no cross-job race), then a single
+# `release` job downloads them all and creates the release. The old design ran
+# the release upload inside the matrix with `draft: true`, so three concurrent
+# jobs raced on the same tag and the installers never landed on the published
+# release. `if-no-files-found: error` + `fail_on_unmatched_files: true` make the
+# job fail loudly if installers are ever missing, instead of shipping only the
+# auto-generated source archives.
+#
+# Installers are UNSIGNED for now — code-signing/notarization is a later step.
 on:
   push:
     tags:
@@ -31,15 +41,39 @@ jobs:
       - name: Package installers
         run: npm run dist
         env:
-          # Never let electron-builder try to publish or sign without credentials.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Never let electron-builder try to sign without credentials.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Upload to the GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload installers as artifacts
+        uses: actions/upload-artifact@v4
         with:
-          draft: true
-          files: |
+          name: installers-${{ matrix.os }}
+          path: |
             release/*.exe
             release/*.zip
             release/*.dmg
             release/*.AppImage
+          # Fail the job if packaging produced nothing to upload.
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only cut a release for tag pushes; a manual run just proves the build.
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          merge-multiple: true
+      - name: Show what was collected
+        run: ls -R dist-artifacts
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/**/*
+          draft: false
+          generate_release_notes: true
+          # If none of the installers matched, fail instead of a source-only release.
+          fail_on_unmatched_files: true
