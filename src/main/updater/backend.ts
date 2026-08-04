@@ -24,9 +24,12 @@ class EventEmitterBase {
   private readonly listeners = new Map<UpdaterBackendEvent, ((payload: unknown) => void)[]>()
 
   on(event: UpdaterBackendEvent, cb: (payload: unknown) => void): void {
-    const existing = this.listeners.get(event) ?? []
-    existing.push(cb)
-    this.listeners.set(event, existing)
+    const existing = this.listeners.get(event)
+    if (existing) {
+      existing.push(cb)
+    } else {
+      this.listeners.set(event, [cb])
+    }
   }
 
   protected emit(event: UpdaterBackendEvent, payload?: unknown): void {
@@ -57,7 +60,16 @@ export class CheckOnlyBackend extends EventEmitterBase implements UpdaterBackend
     // remote-controlled text that must not reach the UI.
     if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
 
-    const body = (await response.json()) as { tag_name?: unknown }
+    let body: { tag_name?: unknown }
+    try {
+      body = (await response.json()) as { tag_name?: unknown }
+    } catch {
+      // response.json() embeds the raw body text in a SyntaxError when the
+      // payload isn't valid JSON (e.g. a captive portal, proxy, or WAF
+      // returning a 200 HTML page). Re-throw without that text — same
+      // never-leak-the-body posture as the !response.ok branch above.
+      throw new Error(`GitHub returned an unparsable response (status ${response.status})`)
+    }
     if (typeof body.tag_name !== 'string' || body.tag_name.length === 0) return null
     return { version: normalizeVersion(body.tag_name) }
   }
@@ -102,6 +114,12 @@ export class FakeUpdaterBackend extends EventEmitterBase implements UpdaterBacke
   }
 
   download(): Promise<void> {
+    // NOTE: emission here is synchronous — 'progress' then 'downloaded' both
+    // run to completion before the returned promise resolves, with no yield
+    // between them. This diverges from ElectronUpdaterBackend (Task 5), whose
+    // events arrive asynchronously off real network/disk I/O. A consumer MUST
+    // set its "downloading" state BEFORE calling download(), never after
+    // awaiting it, or it will miss or misorder the 'downloaded' event.
     this.emit('progress', 50)
     this.emit('downloaded')
     return Promise.resolve()

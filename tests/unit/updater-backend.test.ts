@@ -50,6 +50,18 @@ describe('CheckOnlyBackend', () => {
     expect(await new CheckOnlyBackend(fetchImpl as unknown as typeof fetch).check()).toBeNull()
   })
 
+  it('raises an error carrying no body text when a 200 response is not valid JSON', async () => {
+    // A captive portal, corporate proxy, WAF, or outage page can return HTTP
+    // 200 with an HTML body. response.json() then throws a SyntaxError whose
+    // message embeds the raw body text — that must never reach the caller.
+    const fetchImpl = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response('secret-token-abc123', { status: 200 })))
+    const backend = new CheckOnlyBackend(fetchImpl as unknown as typeof fetch)
+    const err = await backend.check().catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(String(err)).not.toContain('secret-token-abc123')
+  })
+
   it('refuses to download, since this platform cannot install automatically', async () => {
     const backend = new CheckOnlyBackend(vi.fn() as unknown as typeof fetch)
     await expect(backend.download()).rejects.toBeInstanceOf(UpdateError)
