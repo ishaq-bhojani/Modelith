@@ -989,11 +989,21 @@ describe('UpdaterService — scheduling', () => {
     service.stop()
   })
 
-  it('re-checks on the interval', () => {
-    const { service, backend } = makeService()
+  it('re-checks on the interval', async () => {
+    // canAutoInstall: false on purpose — this test is about scheduling, not
+    // downloading. With it true, check() parks in 'downloading' forever
+    // (FakeBackend.download() never fires 'downloaded'), and the re-entrancy
+    // guard then swallows every later tick.
+    const { service, backend } = makeService({ canAutoInstall: false })
     service.start()
-    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
-    vi.advanceTimersByTime(CHECK_INTERVAL_MS * 2)
+    // advanceTimersByTimeAsync (not advanceTimersByTime) flushes microtasks
+    // between ticks, so each check() settles before the next interval fires.
+    // With the synchronous variant the awaited check never resolves, the
+    // guard swallows every later tick, and this would assert the guard
+    // rather than the schedule.
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS)
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
     expect(backend.checkCalls).toBe(3)
     service.stop()
   })
@@ -1184,9 +1194,9 @@ export class UpdaterService {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run tests/unit/updater-service.test.ts`
-Expected: PASS.
+Expected: PASS, 24/24.
 
-> If the "moves through checking to available" assertion is brittle about the exact emitted sequence, assert on the final state plus `states.some(s => s.status === 'checking')` instead — the transition set matters, the exact emit count does not.
+> **Timer tests:** only `'re-checks on the interval'` needs `advanceTimersByTimeAsync`. The other three timer cases are correct synchronously — `check()` increments the backend counter before its first `await`, so a sync advance is enough to observe them. Do not convert those to async.
 
 - [ ] **Step 5: Commit**
 
