@@ -157,10 +157,16 @@ panel that is not on screen.
 - The rail renders one tab per category; Provider is selected on open.
 - Clicking a tab swaps the panel — the previous panel's controls leave the DOM.
 - `aria-selected` tracks the active tab.
-- The header and footer are outside the scrolling region (assert the scroll
-  container is the panel, not the dialog).
+- A half-typed API key survives leaving Provider and returning (the reason the
+  shell owns `draftKey`).
 - Restart: appears at `ready`, appears as "Download" when `available` and
   `!canAutoInstall`, absent otherwise, and calls `updates.install()`.
+
+**Not automated:** that the header and footer sit outside the scrolling region
+is a pure CSS property. jsdom does not apply stylesheets, so a unit test
+asserting it would pass regardless of whether the CSS is correct — worse than
+no test. It is a manual check: open Settings, select Modes, and confirm the
+title and Done button stay put while the panel scrolls.
 
 ## Risks
 
