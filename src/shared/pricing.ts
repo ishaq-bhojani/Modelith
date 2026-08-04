@@ -13,8 +13,9 @@ export interface ModelPrice {
  * This is deliberately plain, PR-editable data: prices change often, and a
  * contributor adding a model should not have to touch any logic. A model with
  * no entry costs `null` (shown as "—"), never a wrong number derived from a
- * default. Local runtimes are keyed with an empty price and handled as a true
- * zero in `costOf`, since they genuinely cost nothing to run.
+ * default. Local runtimes are never keyed here at all — `costOf` short-circuits
+ * on the separate `LOCAL_PROVIDERS` set below before this table is ever
+ * consulted, since they genuinely cost nothing to run.
  *
  * Figures are approximate and for display only — the app never bills anyone.
  */

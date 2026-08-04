@@ -29,7 +29,7 @@ export function FailoverPanel({ providers }: { providers: ProviderSummary[] }): 
       </PanelHead>
 
       <div className="field">
-        <label htmlFor="fallback-provider">Failover (optional)</label>
+        <label htmlFor="fallback-provider">Fallback provider (optional)</label>
         <div className="fallback-row">
           <select
             id="fallback-provider"

@@ -132,7 +132,7 @@ export function UpdatesPanel(): React.JSX.Element {
             <p className="updates-state-headline" data-testid="update-headline">{statusHeadline(update)}</p>
             {statusExplanation(update) ? (
               <p className="updates-state-explanation" data-testid="update-explanation">
-                {statusExplanation(update)}
+                {' '}{statusExplanation(update)}
               </p>
             ) : null}
           </div>

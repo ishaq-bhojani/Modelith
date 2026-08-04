@@ -2216,13 +2216,6 @@ body.resizing {
   flex: 1;
   min-width: 0;
 }
-.key-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: 500 12px/1 var(--font-body);
-  color: var(--text-mute);
-}
 .dialog-actions {
   display: flex;
   align-items: center;

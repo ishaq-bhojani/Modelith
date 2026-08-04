@@ -200,4 +200,37 @@ describe('Settings — Updates section', () => {
     await openUpdates(container)
     expect(container.querySelector('[data-testid="update-headline"]')).toBeNull()
   })
+
+  // Finding 5: the only prior 'error' + canAutoInstall:false coverage used
+  // `manualCheck: false` (the BASE default), which takes the plain `<p>`
+  // else-branch, not the state block. This is the branch that actually
+  // regressed historically (round 1 of the contradiction fix dropped the
+  // canAutoInstall check for 'error' entirely) — pin it via the state-block
+  // path by setting manualCheck: true, which is what makes showStateBlock
+  // true for an error.
+  it('explains manual install for a failed manual check via the state-block path, even when canAutoInstall is false', async () => {
+    useAppStore.setState({
+      update: { ...BASE, status: 'error', message: 'Network error.', canAutoInstall: false, manualCheck: true },
+    })
+    await openUpdates(container)
+    // Confirms the state-block path was actually taken, not the else-branch.
+    expect(container.querySelector('[data-testid="update-headline"]')?.textContent).toMatch(/network error/i)
+    expect(container.querySelector('[data-testid="update-explanation"]')?.textContent)
+      .toMatch(/manual|download|cannot/i)
+  })
+
+  // Finding 4: the two <p> children of `updates-status` in the state-block
+  // path used to render back-to-back with no separating text node, so
+  // textContent glued them into one run-on sentence — e.g.
+  // "Version 0.4.0 is available.This build cannot install…". Assert the
+  // aggregate textContent (not just each <p> in isolation) has a space at
+  // the seam.
+  it('separates the headline and explanation with a space in the combined status text', async () => {
+    useAppStore.setState({
+      update: { ...BASE, status: 'available', canAutoInstall: false, latestVersion: '0.4.0' },
+    })
+    await openUpdates(container)
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent ?? ''
+    expect(text).toContain('available. This build cannot install')
+  })
 })

@@ -16,10 +16,12 @@ function formatContextWindow(n: number | undefined): string | null {
   return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 }
 
-/** `PRICING` has no entry for a model it does not know, and per the file's own
+/** `PRICING` has no entry for a model it does not know, and per that file's own
  *  comment that must never be papered over with a default — callers render
- *  nothing rather than guess. A zero-priced local runtime IS a known price
- *  (genuinely free), so it is only ever `null` here when the lookup misses. */
+ *  nothing rather than guess. Local-runtime models are simply never keyed in
+ *  `PRICING` at all (see that file's comment); they fall into this same
+ *  "lookup missed" `null` case like any other unpriced model, so there is no
+ *  separate zero-priced entry to special-case here. */
 function formatPrice(providerId: string, model: string): string | null {
   const price = PRICING[`${providerId}:${model}`]
   if (!price) return null
@@ -59,6 +61,7 @@ export function ProviderPanel({
   const changeRef = useRef<HTMLButtonElement>(null)
 
   const selectedProvider = providers.find((p) => p.id === providerId)
+  const selectedProviderLabel = selectedProvider?.label ?? providerId
   const priceLabel = formatPrice(providerId, model)
 
   // Fires once per mount (empty deps), mirroring native HTML `autoFocus` —
@@ -115,6 +118,7 @@ export function ProviderPanel({
             className="button-secondary"
             data-testid="provider-select"
             aria-expanded={providerListOpen}
+            aria-label={`Change provider (current: ${selectedProviderLabel})`}
             ref={changeRef}
             onClick={() => setProviderListOpen((v) => !v)}
           >
@@ -130,6 +134,7 @@ export function ProviderPanel({
                 type="button"
                 className="model-option"
                 data-testid="provider-option"
+                aria-pressed={p.id === providerId}
                 onClick={() => { setProvider(p.id); setProviderListOpen(false) }}
               >
                 <span className="model-option-check">{p.id === providerId ? <IconCheck size={13} /> : null}</span>
@@ -175,7 +180,7 @@ export function ProviderPanel({
             disabled={draftKey.length === 0}
             onClick={() => void save()}
           >
-            Replace
+            {configured ? 'Replace' : 'Save key'}
           </button>
         </div>
       </div>
@@ -200,6 +205,7 @@ export function ProviderPanel({
                   type="button"
                   className="model-option"
                   data-testid="model-option"
+                  aria-pressed={m.id === model}
                   onClick={() => setModel(m.id)}
                 >
                   <span className="model-option-check">{m.id === model ? <IconCheck size={13} /> : null}</span>
