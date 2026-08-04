@@ -1,10 +1,4 @@
-import { createRequire } from 'node:module'
 import { RELEASES_API_URL, UpdateError, normalizeVersion } from './policy.js'
-
-// ESM has no bare `require`. We need a SYNCHRONOUS lazy load below (dynamic
-// import() would force selectBackend to become async and ripple through the
-// callers), so construct one.
-const require = createRequire(import.meta.url)
 
 export interface UpdateCheckResult {
   version: string
@@ -140,20 +134,38 @@ export class FakeUpdaterBackend extends EventEmitterBase implements UpdaterBacke
 /**
  * Picks the one backend this process will use, once, at startup.
  *
- * The ElectronUpdaterBackend load is lazy so that unit tests importing this
- * module never pull in electron-updater, which needs a real Electron runtime.
+ * electron-backend.ts is deliberately NOT imported (statically or lazily) by
+ * this module: electron-vite/Rollup bundles the whole main process into a
+ * single out/main/index.js, and a runtime `require('./electron-backend.js')`
+ * is an opaque call Rollup cannot follow — the file never gets emitted, and
+ * the call throws MODULE_NOT_FOUND in packaged builds. Instead, the caller
+ * (main, which can statically `import` electron-backend.js so Rollup bundles
+ * it in) passes a factory. Keeping electron-backend.ts out of this file's own
+ * import graph is also what lets unit tests import backend.ts without pulling
+ * in electron-updater, which needs a real Electron runtime.
  */
 export function selectBackend(options: {
   platform: string
   isPackaged: boolean
   fake?: boolean
+  /** Supplied by main (see src/main/ipc/handlers.ts), which can statically
+   *  import electron-backend.js. Kept out of this module so unit tests can
+   *  import it without pulling in electron-updater, which needs a real
+   *  Electron runtime. */
+  electronBackendFactory?: () => UpdaterBackend
 }): UpdaterBackend {
   if (options.fake) return new FakeUpdaterBackend()
   if (!options.isPackaged) return new NullBackend()
   if (options.platform === 'win32' || options.platform === 'linux') {
-    const { ElectronUpdaterBackend } =
-      require('./electron-backend.js') as typeof import('./electron-backend.js')
-    return new ElectronUpdaterBackend()
+    // Packaged win32/linux with no factory is a caller bug — main (see
+    // src/main/ipc/handlers.ts) is supposed to always pass one on this
+    // branch. We fall back to NullBackend (updates simply never run) rather
+    // than throwing, because a startup crash is a worse failure mode for an
+    // end user than a build that silently can't self-update; this branch is
+    // explicit and commented, not a silent default, and is exercised by a
+    // dedicated test below so a future caller regression fails CI, not just
+    // a user's auto-update.
+    return options.electronBackendFactory?.() ?? new NullBackend()
   }
   return new CheckOnlyBackend()
 }

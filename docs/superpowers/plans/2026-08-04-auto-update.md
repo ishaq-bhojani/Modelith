@@ -1342,45 +1342,33 @@ export class ElectronUpdaterBackend implements UpdaterBackend {
 
 Append to `src/main/updater/backend.ts`:
 
-Add this import at the top of `src/main/updater/backend.ts` — this project is ESM (`"type": "module"`), so the bare `require` global does not exist and must be constructed:
-
-```ts
-import { createRequire } from 'node:module'
-```
-
-and this just below the imports:
-
-```ts
-// ESM has no bare `require`. We need a SYNCHRONOUS lazy load below (dynamic
-// import() would force selectBackend to become async and ripple through the
-// callers), so construct one.
-const require = createRequire(import.meta.url)
-```
-
-Then append:
+Append to `src/main/updater/backend.ts`:
 
 ```ts
 /**
  * Picks the one backend this process will use, once, at startup.
  *
- * The ElectronUpdaterBackend load is lazy so that unit tests importing this
- * module never pull in electron-updater, which needs a real Electron runtime.
+ * ElectronUpdaterBackend is INJECTED rather than imported here. Importing it
+ * would pull electron-updater into every unit test that touches this module,
+ * and electron-updater needs a real Electron runtime. Main supplies the
+ * factory (see src/main/ipc/handlers.ts), which can import it statically.
  */
 export function selectBackend(options: {
   platform: string
   isPackaged: boolean
   fake?: boolean
+  electronBackendFactory?: () => UpdaterBackend
 }): UpdaterBackend {
   if (options.fake) return new FakeUpdaterBackend()
   if (!options.isPackaged) return new NullBackend()
   if (options.platform === 'win32' || options.platform === 'linux') {
-    const { ElectronUpdaterBackend } =
-      require('./electron-backend.js') as typeof import('./electron-backend.js')
-    return new ElectronUpdaterBackend()
+    return options.electronBackendFactory?.() ?? new NullBackend()
   }
   return new CheckOnlyBackend()
 }
 ```
+
+> **Do NOT lazy-load `electron-backend.js` with `createRequire`.** electron-vite/Rollup bundles the whole main process into a single `out/main/index.js`; a `createRequire`-built `require` is opaque to Rollup, so `electron-backend.ts` is never emitted and the call throws `MODULE_NOT_FOUND` in every packaged build. Verified empirically. Static injection from main is what makes this bundler-safe.
 
 > This repo has no ESLint (no config, no dependency) — do not add `eslint-disable` comments anywhere.
 
@@ -1522,9 +1510,12 @@ At the top of `src/main/ipc/handlers.ts`, add to the existing imports:
 import { UpdatesSetEnabledSchema } from '../../shared/ipc.js'
 import { UpdaterService } from '../updater/service.js'
 import { selectBackend } from '../updater/backend.js'
+import { ElectronUpdaterBackend } from '../updater/electron-backend.js'
 import { canAutoInstall } from '../updater/policy.js'
 import { shell } from 'electron'
 ```
+
+This file is the right home for the `electron-updater` import: it is main-only and no unit test imports it, so the dependency never reaches the test runner. `backend.ts` stays clean and testable, and the import is static so the bundler resolves it normally.
 
 (If `shell` or `app` are already imported from `electron` in this file, extend that import instead of adding a second one.)
 
@@ -1551,7 +1542,14 @@ export async function registerUpdateHandlers(
   const fake = process.env['MODELITH_FAKE_UPDATER'] === '1'
 
   updater = new UpdaterService({
-    backend: selectBackend({ platform: process.platform, isPackaged: app.isPackaged, fake }),
+    backend: selectBackend({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      fake,
+      // Injected here, not imported inside backend.ts, so electron-updater
+      // never reaches the unit-test runner.
+      electronBackendFactory: () => new ElectronUpdaterBackend(),
+    }),
     currentVersion: app.getVersion(),
     // The fake backend drives the e2e suite, which runs unpackaged; force the
     // capability on so the full download → ready path is exercised.

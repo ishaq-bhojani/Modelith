@@ -26,6 +26,13 @@ export class ElectronUpdaterBackend implements UpdaterBackend {
   }
 
   async check(): Promise<UpdateCheckResult | null> {
+    // NOTE: on failure, electron-updater both emits 'error' on the
+    // `autoUpdater` singleton (see the on() method below) AND rejects this
+    // call's promise for the same failure. UpdaterService listens for
+    // 'error' and also catches the rejection here, so one real failure calls
+    // service.fail() twice. That's harmless — fail() is idempotent state —
+    // just a wasted duplicate IPC send, not a bug to "fix" by suppressing
+    // either path.
     const result = await autoUpdater.checkForUpdates()
     const version = result?.updateInfo?.version
     if (typeof version !== 'string' || version.length === 0) return null
