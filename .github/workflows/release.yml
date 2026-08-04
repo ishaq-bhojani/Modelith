@@ -43,6 +43,9 @@ jobs:
         env:
           # Never let electron-builder try to sign without credentials.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # latest*.yml is the update metadata electron-updater reads (it carries the
+      # SHA512 of each installer). Without it on the release, every in-app update
+      # check fails, so it ships alongside the installers.
       - name: Upload installers as artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -52,6 +55,7 @@ jobs:
             release/*.zip
             release/*.dmg
             release/*.AppImage
+            release/latest*.yml
           # Fail the job if packaging produced nothing to upload.
           if-no-files-found: error
           retention-days: 7

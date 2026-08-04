@@ -2,6 +2,14 @@
 
 All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
+## [Unreleased]
+
+### Added
+- In-app software updates: Modelith checks GitHub for new releases, downloads
+  them in the background on Windows and Linux, and offers to restart and install.
+  macOS links to the release page because unsigned builds cannot auto-install.
+  Toggle in Settings → Updates.
+
 ## 0.2.0 — 2026-08-03
 
 ### Project Mode

@@ -127,9 +127,13 @@ shell operators).
 
 - **Run `npm run build` before Playwright** if you ran it directly rather than via
   `npm run test:e2e` — a stale `out/` bundle makes e2e test the *old* UI.
-- **electron-builder auto-publishes on a git tag.** The `dist` script pins
-  `--publish never`; the GitHub release is created by the workflow's release job,
-  not by electron-builder. Don't re-introduce implicit publishing.
+- **electron-builder auto-publishes on a git tag.** `electron-builder.yml` now
+  configures a `publish` provider (required so it emits the `latest*.yml` update
+  metadata electron-updater reads). That makes `--publish never` in the `dist`
+  script **load-bearing**: without it, electron-builder implicitly publishes on a
+  tag and installers land in a separate draft release instead of the published
+  one — the bug that shipped v0.2.0 with no installers. The GitHub release is
+  created by the workflow's release job. Never remove `--publish never`.
 - **CRLF warnings** ("LF will be replaced by CRLF") on Windows are harmless.
 - **Fake provider for tests:** e2e launches with `MODELITH_FAKE_PROVIDER=1`;
   prompt-triggered behaviors (e.g. `agent multiwrite`, `agent search`) live in

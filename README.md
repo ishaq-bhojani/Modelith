@@ -77,6 +77,17 @@ The **renderer** draws the UI only. It runs with `contextIsolation: true`, `node
 
 The **preload bridge** (`src/preload/index.ts`) is the only channel between them, and it is intentionally narrow: it exposes `keys.set`, `keys.delete`, and `keys.has` — there is no `keys.get`. The renderer can ask *whether* a key is configured; it can never read one back. This is verified by executable tests (`tests/e2e/security.spec.ts`, `tests/e2e/preload-bridge.spec.ts`), not just documented as a convention.
 
+### Update checks
+
+Modelith checks GitHub for a new release on launch and every six hours. It is an
+anonymous `GET` to the public GitHub API — no identifiers, no usage data, nothing
+about your conversations. Turn it off in **Settings → Updates**.
+
+On Windows and Linux a new version downloads in the background and a chip offers
+to restart and install. macOS builds are unsigned, and macOS refuses to
+auto-install unsigned updates, so there the chip links to the release page for a
+manual download.
+
 ## Known limitations
 
 - **Custom provider base URLs are not configurable in v0.** The renderer cannot supply a base URL for a provider request — this is deliberate: a renderer-controlled endpoint could redirect where main sends an API key, which the security model above forbids. When this is added, it will be main-side configuration (e.g. a settings file or an IPC call scoped to values the main process validates), never a value passed through on a per-request basis from the renderer.
