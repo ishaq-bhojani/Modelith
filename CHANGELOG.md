@@ -4,6 +4,15 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+### Changed
+- Settings is now organised into categories (Provider, Failover, Modes,
+  Updates) behind a left rail. The title and Done button stay put instead of
+  scrolling away, and only the selected category scrolls.
+
+### Added
+- A restart action in Settings → Updates, so a ready update can be applied
+  without hunting for the sidebar chip (which is dismissible).
+
 ## 0.3.2 — 2026-08-04
 
 ### Fixed

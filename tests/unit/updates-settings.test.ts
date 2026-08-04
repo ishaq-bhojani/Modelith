@@ -143,4 +143,43 @@ describe('Settings — Updates section', () => {
     expect(text).toMatch(/network error/i)
     expect(text).not.toMatch(/cannot install updates automatically/i)
   })
+
+  it('offers a restart action once an update is ready', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'ready', latestVersion: '0.4.0' } })
+    await openUpdates(container)
+    const button = container.querySelector('[data-testid="updates-install"]')
+    expect(button?.textContent).toMatch(/restart/i)
+  })
+
+  it('calls install when the restart action is clicked', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'ready', latestVersion: '0.4.0' } })
+    await openUpdates(container)
+    const button = container.querySelector('[data-testid="updates-install"]') as HTMLButtonElement
+    await act(async () => { button.click() })
+    expect(window.modelith.updates.install).toHaveBeenCalled()
+  })
+
+  it('offers a download action when the platform cannot auto-install', async () => {
+    useAppStore.setState({
+      update: { ...BASE, status: 'available', canAutoInstall: false, latestVersion: '0.4.0' },
+    })
+    await openUpdates(container)
+    expect(container.querySelector('[data-testid="updates-install"]')?.textContent).toMatch(/download/i)
+  })
+
+  it('offers no action while merely checking', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'checking' } })
+    await openUpdates(container)
+    expect(container.querySelector('[data-testid="updates-install"]')).toBeNull()
+  })
+
+  it('offers no action when an update is available and will auto-install itself', async () => {
+    // canAutoInstall platforms download automatically; the user acts at
+    // 'ready', not before, so a button here would be premature.
+    useAppStore.setState({
+      update: { ...BASE, status: 'available', canAutoInstall: true, latestVersion: '0.4.0' },
+    })
+    await openUpdates(container)
+    expect(container.querySelector('[data-testid="updates-install"]')).toBeNull()
+  })
 })

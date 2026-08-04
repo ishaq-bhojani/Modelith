@@ -49,6 +49,14 @@ function updateStatusText(update: UpdateState | null): string {
 export function UpdatesPanel(): React.JSX.Element {
   const update = useAppStore((s) => s.update)
 
+  // Only when there is something to act on. Both cases call the same bridge
+  // method: main decides whether that installs or opens the release page, so
+  // the renderer never handles a release URL.
+  const installLabel =
+    update?.status === 'ready' ? 'Restart to install'
+      : update?.status === 'available' && !update.canAutoInstall ? 'Download'
+        : null
+
   return (
     <div className="field">
       <label>Updates</label>
@@ -68,6 +76,15 @@ export function UpdatesPanel(): React.JSX.Element {
         {updateStatusText(update)}
       </p>
       <div className="dialog-actions">
+        {installLabel ? (
+          <button
+            className="button-compact"
+            data-testid="updates-install"
+            onClick={() => void window.modelith.updates.install()}
+          >
+            {installLabel}
+          </button>
+        ) : null}
         <button
           className="button-secondary"
           data-testid="updates-check-now"
