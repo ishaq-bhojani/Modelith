@@ -3,8 +3,11 @@ import type { UpdaterBackend } from './backend.js'
 import {
   CHECK_INTERVAL_MS,
   FIRST_CHECK_DELAY_MS,
+  isCheckDue,
   isNewerVersion,
+  MANUAL_CHECK_MIN_INTERVAL_MS,
   releaseUrlFor,
+  UpdateError,
   updateErrorMessage,
 } from './policy.js'
 
@@ -80,6 +83,21 @@ export class UpdaterService {
   async setEnabled(enabled: boolean): Promise<void> {
     this.patch({ enabled })
     try {
+      // Turning updates off must also stop an already-staged download from
+      // installing itself on the next quit — not just stop future checks.
+      // Without this, a user who disables updates after a download finished
+      // (status: 'ready') gets updated anyway via electron-updater's own quit
+      // hook, contradicting the explicit toggle. Re-enabling restores it.
+      // Deliberately NOT called from dismissing the chip: a dismissed but
+      // staged update installing on the user's next natural quit is the
+      // intended behaviour, only this Settings toggle changes it.
+      this.backend.setInstallOnQuit(enabled)
+    } catch (err) {
+      // A throwing backend here must never escape setEnabled — same
+      // never-throws guarantee as everywhere else in this class.
+      this.fail(err)
+    }
+    try {
       await this.persistEnabled(enabled)
     } catch (err) {
       // The in-memory toggle and timer (re)scheduling below must still take
@@ -100,6 +118,21 @@ export class UpdaterService {
     if (!this.state.enabled && !manual) return
     // A second check while one is in flight would double-download.
     if (this.state.status === 'checking' || this.state.status === 'downloading') return
+
+    // Background checks are already interval-paced (CHECK_INTERVAL_MS via
+    // start()'s timer), so this throttle applies only to manual ones — a
+    // renderer that calls updates:check in a loop (buggy UI, or a user
+    // mashing "Check now") would otherwise hammer api.github.com with no
+    // limit until GitHub rate-limits it. The interval here is far shorter
+    // than the background cadence so a genuine "Check now" still feels
+    // immediate. The user pressed a button and deserves feedback rather than
+    // a silent no-op, so this reports a truthful (throttled) error state
+    // instead of doing nothing.
+    if (manual && !isCheckDue(this.state.lastCheckedAt, this.now(), MANUAL_CHECK_MIN_INTERVAL_MS)) {
+      this.patch({ manualCheck: true })
+      this.fail(new UpdateError('throttled'))
+      return
+    }
 
     this.patch({ status: 'checking', manualCheck: manual, message: undefined })
     try {

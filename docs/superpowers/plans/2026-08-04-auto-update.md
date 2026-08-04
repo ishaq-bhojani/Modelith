@@ -1235,7 +1235,7 @@ git commit -m "feat(updater): UpdaterService state machine with injected backend
 - Consumes: `UpdaterBackend` from `./backend.js`.
 - Produces: `class ElectronUpdaterBackend implements UpdaterBackend` (from `electron-backend.ts`); `selectBackend(opts: { platform: string; isPackaged: boolean; fake?: boolean }): UpdaterBackend` (from `backend.ts`).
 
-`selectBackend` must import `ElectronUpdaterBackend` **lazily** (inside the function) so unit tests that import `backend.ts` never load `electron-updater`, which requires a real Electron runtime.
+`selectBackend` must NOT import `ElectronUpdaterBackend` itself — lazily or otherwise. It takes an optional `electronBackendFactory` parameter instead, which `main` (see `src/main/ipc/handlers.ts`) supplies by statically importing `electron-backend.js`. This keeps unit tests that import `backend.ts` from ever loading `electron-updater`, which requires a real Electron runtime — see the packaging note in Step 5 below for why a `createRequire`-based lazy import does not work in a packaged build.
 
 - [ ] **Step 1: Install the dependency**
 

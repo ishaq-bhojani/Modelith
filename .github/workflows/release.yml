@@ -35,6 +35,28 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
+      # A pushed tag (vX.Y.Z) and package.json's version are two independent
+      # sources of truth, and nothing else here cross-checks them.
+      # electron-builder writes latest.yml's `version` field FROM package.json,
+      # not from the git tag — so if a maintainer forgets the package.json
+      # bump (a documented but unenforced convention), the release still
+      # builds and publishes green, just with installers and metadata
+      # labelled the OLD version. Every Windows/Linux client then reads that
+      # metadata, concludes it is already up to date, and never updates
+      # again — silently, with no error anywhere. Only a tag push carries a
+      # tag to check against; `workflow_dispatch` has none, so this only runs
+      # for tag pushes.
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (version $tag_version) does not match package.json's version $pkg_version. latest.yml's 'version' field is written from package.json, not the tag, so this mismatch would ship a release labelled with the wrong version — every installed client would compare against $pkg_version, wrongly conclude it is already up to date, and silently never receive this update. Bump package.json to $tag_version (per CLAUDE.md's release convention) and push a matching tag."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json version $pkg_version"
       # Gate the release on the same checks CI runs, so a broken build never ships.
       - run: npm run typecheck
       - run: npm test

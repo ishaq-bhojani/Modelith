@@ -17,6 +17,17 @@ export interface UpdaterBackend {
   download(): Promise<void>
   quitAndInstall(): void
   on(event: UpdaterBackendEvent, cb: (payload: unknown) => void): void
+  /**
+   * Controls whether an already-staged download is allowed to install itself
+   * when the app quits normally, independent of dismissing the chip.
+   * `UpdaterService.setEnabled` is the only caller: turning updates OFF must
+   * also cancel a pending quit-time install (not just stop future checks),
+   * or a user who disabled updates and quit would still get updated against
+   * their explicit instruction. Dismissing the chip is unrelated and must
+   * NOT call this — a dismissed-but-staged update installing on the next
+   * natural quit is deliberate behaviour, not a bug.
+   */
+  setInstallOnQuit(enabled: boolean): void
 }
 
 /** Minimal event plumbing shared by the non-electron-updater backends. */
@@ -81,6 +92,9 @@ export class CheckOnlyBackend extends EventEmitterBase implements UpdaterBackend
   quitAndInstall(): void {
     throw new UpdateError('unsupported')
   }
+
+  // Never downloads, so there is nothing that could install on quit.
+  setInstallOnQuit(_enabled: boolean): void {}
 }
 
 /** Unpackaged builds — development and every e2e run. electron-updater throws
@@ -97,6 +111,9 @@ export class NullBackend extends EventEmitterBase implements UpdaterBackend {
   quitAndInstall(): void {
     throw new UpdateError('unsupported')
   }
+
+  // Never downloads, so there is nothing that could install on quit.
+  setInstallOnQuit(_enabled: boolean): void {}
 }
 
 /**
@@ -129,6 +146,9 @@ export class FakeUpdaterBackend extends EventEmitterBase implements UpdaterBacke
     // Nothing to do: the e2e suite asserts the UI reached "ready", and must
     // never actually restart the app under test.
   }
+
+  // No real quit-time install to gate — this backend never restarts the app.
+  setInstallOnQuit(_enabled: boolean): void {}
 }
 
 /**

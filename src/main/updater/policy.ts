@@ -17,6 +17,15 @@ export const RELEASES_API_URL = `https://api.github.com/repos/${REPO_OWNER}/${RE
 export const FIRST_CHECK_DELAY_MS = 10_000
 /** Re-check every 6h so a long-running window still learns about a release. */
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+/**
+ * Minimum spacing between MANUAL checks ("Check now"), enforced via
+ * `isCheckDue` in UpdaterService. Background checks are already paced by
+ * CHECK_INTERVAL_MS's timer and need no separate throttle. This is
+ * deliberately far shorter than CHECK_INTERVAL_MS — "Check now" must still
+ * feel responsive — but long enough that a renderer calling `updates:check`
+ * in a loop cannot hammer api.github.com into a rate limit.
+ */
+export const MANUAL_CHECK_MIN_INTERVAL_MS = 10_000
 
 /**
  * Whether this platform can download-and-install without user intervention.
@@ -92,7 +101,7 @@ export function isCheckDue(
   return now - lastCheckedAt >= intervalMs
 }
 
-export type UpdateErrorCode = 'offline' | 'rate-limited' | 'integrity' | 'unsupported' | 'unknown'
+export type UpdateErrorCode = 'offline' | 'rate-limited' | 'integrity' | 'unsupported' | 'throttled' | 'unknown'
 
 /** A failure with a known shape, so messaging never has to guess from free text. */
 export class UpdateError extends Error {
@@ -128,6 +137,8 @@ export function updateErrorMessage(err: unknown): string {
       return 'The download could not be verified and was discarded.'
     case 'unsupported':
       return 'This platform cannot install updates automatically.'
+    case 'throttled':
+      return 'Checked recently — try again in a few seconds.'
     default:
       return 'The update check failed.'
   }

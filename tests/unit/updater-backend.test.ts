@@ -66,6 +66,11 @@ describe('CheckOnlyBackend', () => {
     const backend = new CheckOnlyBackend(vi.fn() as unknown as typeof fetch)
     await expect(backend.download()).rejects.toBeInstanceOf(UpdateError)
   })
+
+  it('setInstallOnQuit is a no-op — this backend never downloads anything to install', () => {
+    const backend = new CheckOnlyBackend(vi.fn() as unknown as typeof fetch)
+    expect(() => backend.setInstallOnQuit(false)).not.toThrow()
+  })
 })
 
 describe('NullBackend', () => {
@@ -75,6 +80,10 @@ describe('NullBackend', () => {
 
   it('refuses to download', async () => {
     await expect(new NullBackend().download()).rejects.toBeInstanceOf(UpdateError)
+  })
+
+  it('setInstallOnQuit is a no-op', () => {
+    expect(() => new NullBackend().setInstallOnQuit(false)).not.toThrow()
   })
 })
 
@@ -90,5 +99,9 @@ describe('FakeUpdaterBackend', () => {
     backend.on('downloaded', () => events.push('downloaded'))
     await backend.download()
     expect(events).toEqual(['progress', 'downloaded'])
+  })
+
+  it('setInstallOnQuit is a no-op — this backend never restarts the app under test', () => {
+    expect(() => new FakeUpdaterBackend().setInstallOnQuit(false)).not.toThrow()
   })
 })

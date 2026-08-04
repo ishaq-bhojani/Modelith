@@ -81,7 +81,7 @@ New `src/main/updater/`, three files, one responsibility each:
 |---|---|---|
 | `policy.ts` | **Pure logic.** Is a check due? Is this platform auto-installable? Version compare and formatting. No Electron import. | nothing |
 | `backend.ts` | The `UpdaterBackend` interface, the non-Electron implementations, and `selectBackend()`. Imports no packaging dependency. | policy |
-| `electron-backend.ts` | The **only** file importing `electron-updater`. Adapter exposing `check()`, `download()`, `quitAndInstall()`, event subscription. Loaded lazily by `selectBackend()` so unit tests never pull in a module that needs a real Electron runtime. | electron-updater |
+| `electron-backend.ts` | The **only** file importing `electron-updater`. Adapter exposing `check()`, `download()`, `quitAndInstall()`, event subscription. Kept out of `backend.ts`'s import graph — `selectBackend()` receives it via an injected `electronBackendFactory` that `main` (which can statically `import` `electron-backend.js`) supplies, rather than `backend.ts` importing it itself, lazily or otherwise. That keeps unit tests that import `backend.ts` from pulling in a module that needs a real Electron runtime. (An earlier design loaded it lazily via `createRequire`; Rollup cannot follow that at bundle time, so it produced `MODULE_NOT_FOUND` in every packaged build and was replaced with this factory-injection approach.) | electron-updater |
 | `service.ts` | Owns lifecycle, timer, and current state; pushes state to the renderer. Receives the backend as a **constructor argument**. | policy, backend interface |
 
 The injected backend is the testability seam: `service.ts` is unit-tested against
@@ -311,8 +311,12 @@ TDD per golden rule 6 — failing test first.
 
 **E2E** (`tests/e2e/updates.spec.ts`), launched with `MODELITH_FAKE_UPDATER=1`
 mirroring the existing `MODELITH_FAKE_PROVIDER` pattern: the chip appears and
-reads "Restart", the Settings toggle persists across a relaunch, and "Check now"
-drives a visible state change.
+reads "Restart", the Settings toggle takes effect and is readable back via
+`getState()` within the same session, and "Check now" drives a visible state
+change. A real cross-relaunch persistence test would need a shared
+`MODELITH_USER_DATA` directory across launches — `launchApp` mints a fresh one
+per launch, so that path is not exercised here. The persistence-survives-reload
+behaviour IS covered, honestly, by `tests/unit/updater-handlers.test.ts`.
 
 **Also touched:** `tests/e2e/preload-bridge.spec.ts` currently asserts only that
 `keys` exposes no read path, so adding `updates` does not break it. Two cases are

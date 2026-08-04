@@ -27,9 +27,14 @@ function getAutoUpdater(): (typeof electronUpdater)['autoUpdater'] {
  * Windows (NSIS) and Linux (AppImage). Thin on purpose — everything that could
  * hold a bug lives in service.ts or policy.ts, both of which are unit-tested.
  *
- * electron-updater verifies the download's SHA512 against the signed
- * latest*.yml metadata published beside the installers. That verification is
- * the reason this dependency exists rather than a hand-rolled downloader.
+ * Integrity, honestly stated: electron-updater verifies the download's SHA512
+ * against `latest*.yml`, a plain (unsigned) checksum file served over HTTPS
+ * from GitHub. That is HTTPS-transport integrity plus a checksum match, NOT a
+ * publisher signature check — the installers themselves are unsigned
+ * (`CSC_IDENTITY_AUTO_DISCOVERY: 'false'` in release.yml), so nothing here
+ * verifies the binary actually came from us, only that the bytes match what
+ * the metadata file said to expect. Code signing remains open work; see the
+ * spec's Security section.
  */
 export class ElectronUpdaterBackend implements UpdaterBackend {
   // Resolved once, here, at construction — not at module scope (see
@@ -41,8 +46,11 @@ export class ElectronUpdaterBackend implements UpdaterBackend {
     // We drive downloading from the service so the UI can show `available`
     // before bytes start moving.
     this.autoUpdater.autoDownload = false
-    // A user who ignores the chip still gets the update on their next normal
-    // quit — no second prompt, no lost download.
+    // A user who ignores the chip (dismisses it, or just does nothing) still
+    // gets the update on their next normal quit — no second prompt, no lost
+    // download. This default flips to false only via setInstallOnQuit, which
+    // UpdaterService.setEnabled(false) calls when the user turns updates off
+    // in Settings — an explicit opt-out, not merely ignoring the chip.
     this.autoUpdater.autoInstallOnAppQuit = true
   }
 
@@ -66,6 +74,10 @@ export class ElectronUpdaterBackend implements UpdaterBackend {
 
   quitAndInstall(): void {
     this.autoUpdater.quitAndInstall()
+  }
+
+  setInstallOnQuit(enabled: boolean): void {
+    this.autoUpdater.autoInstallOnAppQuit = enabled
   }
 
   on(event: UpdaterBackendEvent, cb: (payload: unknown) => void): void {

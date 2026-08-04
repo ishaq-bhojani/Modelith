@@ -11,6 +11,8 @@ class FakeBackend implements UpdaterBackend {
   checkCalls = 0
   downloadCalls = 0
   quitCalls = 0
+  installOnQuitCalls: boolean[] = []
+  setInstallOnQuitError: unknown = null
   private readonly listeners = new Map<UpdaterBackendEvent, ((p: unknown) => void)[]>()
 
   async check(): Promise<UpdateCheckResult | null> {
@@ -28,6 +30,11 @@ class FakeBackend implements UpdaterBackend {
     this.quitCalls += 1
   }
 
+  setInstallOnQuit(enabled: boolean): void {
+    this.installOnQuitCalls.push(enabled)
+    if (this.setInstallOnQuitError) throw this.setInstallOnQuitError
+  }
+
   on(event: UpdaterBackendEvent, cb: (p: unknown) => void): void {
     const list = this.listeners.get(event) ?? []
     list.push(cb)
@@ -42,6 +49,7 @@ class FakeBackend implements UpdaterBackend {
 function makeService(overrides: Partial<{
   backend: FakeBackend; canAutoInstall: boolean; enabled: boolean; currentVersion: string
   persistEnabled: (enabled: boolean) => Promise<void>
+  now: () => number
 }> = {}) {
   const backend = overrides.backend ?? new FakeBackend()
   const states: UpdateState[] = []
@@ -51,10 +59,21 @@ function makeService(overrides: Partial<{
     canAutoInstall: overrides.canAutoInstall ?? true,
     enabled: overrides.enabled ?? true,
     emit: (s) => states.push(s),
-    now: () => 1_000,
+    now: overrides.now ?? (() => 1_000),
     ...(overrides.persistEnabled ? { persistEnabled: overrides.persistEnabled } : {}),
   })
   return { service, backend, states }
+}
+
+/** A `now` that jumps well past MANUAL_CHECK_MIN_INTERVAL_MS on every call, so
+ *  tests about something other than throttling can issue back-to-back manual
+ *  checks without tripping it. */
+function everAdvancingClock(): () => number {
+  let t = 1_000
+  return () => {
+    t += 60_000
+    return t
+  }
 }
 
 beforeEach(() => { vi.useFakeTimers() })
@@ -192,7 +211,9 @@ describe('UpdaterService — no update', () => {
 
   it('clears a stale releaseUrl and percent when a later check finds nothing newer', async () => {
     const backend = new FakeBackend()
-    const { service } = makeService({ backend, canAutoInstall: false })
+    // The second check below is manual and must not be swallowed by the
+    // manual-check throttle (Finding 4) — advance the clock between calls.
+    const { service } = makeService({ backend, canAutoInstall: false, now: everAdvancingClock() })
     // First cycle finds an update: releaseUrl gets set.
     await service.check()
     expect(service.getState()).toMatchObject({ status: 'available', releaseUrl: expect.any(String) })
@@ -293,6 +314,72 @@ describe('UpdaterService — enablement', () => {
     vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS + CHECK_INTERVAL_MS)
     expect(backend.checkCalls).toBe(0)
   })
+
+  it('setEnabled(false) disables install-on-quit on the backend', async () => {
+    const { service, backend } = makeService()
+    await service.setEnabled(false)
+    expect(backend.installOnQuitCalls).toContain(false)
+    expect(backend.installOnQuitCalls.at(-1)).toBe(false)
+  })
+
+  it('setEnabled(true) re-enables install-on-quit on the backend', async () => {
+    const { service, backend } = makeService()
+    await service.setEnabled(false)
+    await service.setEnabled(true)
+    expect(backend.installOnQuitCalls.at(-1)).toBe(true)
+  })
+
+  it('does not reject when the backend throws from setInstallOnQuit', async () => {
+    const backend = new FakeBackend()
+    backend.setInstallOnQuitError = new Error('boom')
+    const { service } = makeService({ backend })
+    await expect(service.setEnabled(false)).resolves.toBeUndefined()
+    // The toggle itself must still take effect even though the backend call failed.
+    expect(service.getState().enabled).toBe(false)
+  })
+})
+
+describe('UpdaterService — manual check throttling', () => {
+  it('throttles a second manual check made too soon after the first', async () => {
+    const { service, backend } = makeService({ canAutoInstall: false })
+    await service.check(true)
+    expect(backend.checkCalls).toBe(1)
+
+    await service.check(true)
+    // The backend must not be hit again — this is the whole point of the throttle.
+    expect(backend.checkCalls).toBe(1)
+    // The user pressed a button and must get truthful feedback, not silence.
+    expect(service.getState()).toMatchObject({ status: 'error', manualCheck: true })
+    expect(service.getState().message).toMatch(/recently|again/i)
+  })
+
+  it('does not throttle a manual check once the minimum interval has passed', async () => {
+    let now = 1_000
+    const backend = new FakeBackend()
+    const service = new UpdaterService({
+      backend,
+      currentVersion: '0.2.0',
+      canAutoInstall: false,
+      enabled: true,
+      emit: () => {},
+      now: () => now,
+    })
+    await service.check(true)
+    expect(backend.checkCalls).toBe(1)
+
+    now += 60_000 // well past MANUAL_CHECK_MIN_INTERVAL_MS
+    await service.check(true)
+    expect(backend.checkCalls).toBe(2)
+  })
+
+  it('does not throttle a background check even immediately after a manual one', async () => {
+    const { service, backend } = makeService({ canAutoInstall: false })
+    await service.check(true)
+    expect(backend.checkCalls).toBe(1)
+
+    await service.check(false)
+    expect(backend.checkCalls).toBe(2)
+  })
 })
 
 describe('UpdaterService — scheduling', () => {
@@ -345,7 +432,9 @@ describe('UpdaterService — scheduling', () => {
 
 describe('UpdaterService — download resolves without a downloaded event', () => {
   it('reaches ready anyway, and a later check is not swallowed by the guard', async () => {
-    const { service, backend } = makeService({ canAutoInstall: true })
+    // The second check below is manual and must not be swallowed by the
+    // manual-check throttle (Finding 4) — advance the clock between calls.
+    const { service, backend } = makeService({ canAutoInstall: true, now: everAdvancingClock() })
     await service.check()
     // FakeBackend.download() resolves but never fires 'downloaded' — before
     // the fix this parked state in 'downloading' forever and the
