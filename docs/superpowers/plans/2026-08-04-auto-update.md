@@ -1166,6 +1166,21 @@ export class UpdaterService {
 
       this.patch({ status: 'downloading', percent: 0 })
       await this.backend.download()
+      // Readiness is derived from download() RESOLVING, not only from the
+      // 'downloaded' event. electron-updater's downloadUpdate() resolves once
+      // the download is complete, and a backend that resolves without emitting
+      // would otherwise park state in 'downloading' forever — after which the
+      // re-entrancy guard above swallows every future check, scheduled or
+      // manual, with no error and no recovery.
+      //
+      // Only when status is STILL 'downloading': a synchronous 'downloaded'
+      // may already have moved it to 'ready', or an 'error' to 'error';
+      // neither may be clobbered. Read via getState() — TS's control-flow
+      // narrowing wrongly carries the early-return guard's exclusion of
+      // 'downloading' through to `this.state.status` here.
+      if (this.getState().status === 'downloading') {
+        this.patch({ status: 'ready', percent: 100 })
+      }
     } catch (err) {
       this.fail(err)
     }

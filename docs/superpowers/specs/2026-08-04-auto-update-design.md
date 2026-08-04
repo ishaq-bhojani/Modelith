@@ -152,7 +152,12 @@ still reporting one the user explicitly asked for. It is set when
 Transitions:
 
 - **Windows / Linux:** `idle → checking → available → downloading → ready`.
-  Download starts automatically on `available`.
+  Download starts automatically on `available`. Readiness is derived from
+  **either** the backend's `downloaded` event **or** `download()` resolving,
+  whichever lands first. Relying on the event alone would let a backend that
+  resolves silently park the state in `downloading` forever, after which the
+  re-entrancy guard swallows every future check — scheduled and manual — with
+  no error and no recovery.
 - **macOS:** `idle → checking → available`, and stops — `canAutoInstall` is
   false. The chip's action opens the release page with `shell.openExternal`.
 - **No update:** `checking → idle`, with `lastCheckedAt` updated.
