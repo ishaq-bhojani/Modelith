@@ -2259,3 +2259,42 @@ body.resizing {
 .update-chip-dismiss:hover {
   color: var(--text);
 }
+
+/* ============================================================================
+   Settings redesign — shared pieces (panel title/description, real toggle)
+   ========================================================================= */
+
+/* Panel title + description. The micro-label (.field label) goes back to
+   naming a single input; this names the panel. */
+.panel-head { display: flex; flex-direction: column; gap: 5px; }
+.panel-head h4 {
+  margin: 0;
+  font: 500 17px/1.25 var(--font-display);
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.panel-head p {
+  margin: 0;
+  max-width: 56ch;
+  font: 400 12.5px/1.5 var(--font-body);
+  color: var(--text-meta);
+  text-wrap: pretty;
+}
+
+/* A real toggle, replacing a native checkbox wrapped in .key-status. */
+.switch {
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--hover-soft);
+  cursor: pointer;
+}
+.switch.is-on { justify-content: flex-end; background: var(--accent); }
+.switch-thumb { width: 16px; height: 16px; border-radius: var(--radius-full); background: #fff; }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

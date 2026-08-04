@@ -214,6 +214,28 @@ export const IconWarning = (p: IconProps): React.JSX.Element => (
   </Svg>
 )
 
+export const IconKey = (p: IconProps): React.JSX.Element => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 1.7}>
+    <circle cx="8" cy="12" r="4" />
+    <path d="M12 12h9M18 12v3.5" />
+  </Svg>
+)
+
+export const IconUpdate = (p: IconProps): React.JSX.Element => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 1.7}>
+    <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" />
+    <path d="M5 19h14" />
+  </Svg>
+)
+
+/** Replaces the `✕` character, which rendered in the body font at a different
+ *  weight to every other control in the dialog. */
+export const IconClose = (p: IconProps): React.JSX.Element => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 1.9}>
+    <path d="m6 6 12 12M18 6 6 18" />
+  </Svg>
+)
+
 /** Brand glyph: the </> code marks in the app icon. */
 export const IconBrand = ({ size = 16 }: { size?: number }): React.JSX.Element => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
