@@ -249,11 +249,14 @@ window.modelith.updates = {
 
 2. **`.github/workflows/release.yml`** — the upload-artifact glob gains
    `release/latest*.yml`. Without those files on the release, the updater has
-   nothing to read and every check fails. The three runners emit distinct names
-   (`latest.yml`, `latest-linux.yml`, `latest-mac.yml`), so `merge-multiple: true`
-   will not collide. `latest-mac.yml` is uploaded but unused — macOS goes through
-   `CheckOnlyBackend` — and is kept only so the glob stays simple and the file is
-   already in place if signing lands later.
+   nothing to read and every check fails. Windows emits `latest.yml` and Linux
+   emits `latest-linux.yml`. macOS emits **no** metadata file — it ships
+   `mac.target: dmg`, and electron-builder only writes update metadata for a
+   `zip` target on macOS — which is expected, since macOS goes through
+   `CheckOnlyBackend` and queries the GitHub API directly instead of reading a
+   metadata file. A per-OS step verifies the expected file exists on
+   Windows/Linux before upload (skipped on macOS), so a regression that
+   silently drops the metadata fails the build instead of shipping quietly.
 
 No change to installer targets, and installers stay unsigned.
 

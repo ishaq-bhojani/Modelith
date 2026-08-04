@@ -2244,8 +2244,12 @@ And update the step comment above it:
 
 ```yaml
       # latest*.yml is the update metadata electron-updater reads (it carries the
-      # SHA512 of each installer). Without it on the release, every in-app update
-      # check fails, so it ships alongside the installers.
+      # SHA512 of each installer). Windows emits latest.yml and Linux emits
+      # latest-linux.yml; macOS emits none — it ships dmg only, and macOS goes
+      # through CheckOnlyBackend (a direct GitHub API check) instead of reading
+      # a metadata file. Without these files on the release, every in-app
+      # update check fails on the platforms that expect one, so they ship
+      # alongside the installers.
 ```
 
 - [ ] **Step 4: Record the load-bearing flag in AGENTS.md**
