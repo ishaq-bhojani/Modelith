@@ -24,10 +24,25 @@ function fakeProvider(events: StreamEvent[], delayMs = 0): Provider {
 let store: SessionStore
 let emitted: StreamEnvelope[]
 
+/**
+ * Every engine emits into an array captured HERE, at construction — never into
+ * the module-level `emitted` binding.
+ *
+ * That distinction is what keeps tests isolated. `beforeEach` reassigns
+ * `emitted`, so a callback closing over the binding would deliver a
+ * still-draining stream's envelopes into whichever array the *next* test just
+ * installed. Capturing the array instead means a late emission from a finished
+ * test lands in an orphan nobody reads. See the first test in this file.
+ */
+function collector(): { own: StreamEnvelope[]; emit: (envelope: StreamEnvelope) => void } {
+  const own: StreamEnvelope[] = []
+  emitted = own
+  return { own, emit: (envelope) => { own.push(envelope) } }
+}
+
 const build = (provider: Provider) => {
-  emitted = []
   return new StreamEngine({
-    emit: (envelope) => { emitted.push(envelope) },
+    emit: collector().emit,
     readKey: async () => 'test-key',
     store,
     resolveProvider: () => provider,
@@ -55,6 +70,32 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 
 }
 
 describe('StreamEngine', () => {
+  it('emits into the array captured at construction, not whatever `emitted` points at later', async () => {
+    // Regression guard for a test-isolation bug, not a product bug.
+    //
+    // Every `emit` callback used to close over the module-level `emitted`
+    // BINDING. `beforeEach` reassigns that binding, so an engine from an
+    // earlier test whose stream was still draining would push into the next
+    // test's array. Under full-suite CPU contention earlier streams finish
+    // late, so this file failed ~25% of full-suite runs while passing in
+    // isolation. It was diagnosed from a leaked `{type:'done', model:'sonnet'}`
+    // appearing as `emitted[0]` in a test that never uses 'sonnet'.
+    //
+    // This reproduces the swap deterministically: start a slow stream, then
+    // reassign `emitted` the way `beforeEach` would for the next test.
+    const s = await store.create('t')
+    const engine = build(fakeProvider([{ type: 'text', delta: 'late' }, { type: 'done' }], 20))
+    const streamArray = emitted
+
+    await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi' })
+    emitted = []
+    const nextTestArray = emitted
+
+    await waitFor(() => [...streamArray, ...nextTestArray].some((e) => e.event.type === 'done'))
+    expect(nextTestArray).toHaveLength(0)
+    expect(streamArray.some((e) => e.event.type === 'done')).toBe(true)
+  })
+
   it('tags every envelope with the same streamId', async () => {
     const s = await store.create('t')
     const engine = build(fakeProvider([{ type: 'text', delta: 'hi' }, { type: 'done' }]))
@@ -113,7 +154,7 @@ describe('StreamEngine', () => {
   it('emits an auth error when no key is configured', async () => {
     const s = await store.create('t')
     const engine = new StreamEngine({
-      emit: (e) => { emitted.push(e) },
+      emit: collector().emit,
       readKey: async () => null,
       store,
       resolveProvider: () => fakeProvider([{ type: 'done' }]),
@@ -134,7 +175,7 @@ describe('StreamEngine', () => {
       },
     }
     const engine = new StreamEngine({
-      emit: (e) => { emitted.push(e) },
+      emit: collector().emit,
       readKey: async () => null,
       store,
       resolveProvider: () => keylessProvider,
@@ -336,9 +377,8 @@ describe('StreamEngine failover', () => {
     providers: Record<string, Provider>,
     keys: Record<string, string | null> = {},
   ): StreamEngine {
-    emitted = []
     return new StreamEngine({
-      emit: (envelope) => { emitted.push(envelope) },
+      emit: collector().emit,
       readKey: async (id) => (id in keys ? keys[id]! : 'test-key'),
       store,
       resolveProvider: (id) => {
