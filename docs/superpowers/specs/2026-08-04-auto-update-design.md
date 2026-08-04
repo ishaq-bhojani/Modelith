@@ -80,7 +80,8 @@ New `src/main/updater/`, three files, one responsibility each:
 | File | Responsibility | Depends on |
 |---|---|---|
 | `policy.ts` | **Pure logic.** Is a check due? Is this platform auto-installable? Version compare and formatting. No Electron import. | nothing |
-| `backend.ts` | The **only** file importing `electron-updater`. Adapter exposing `check()`, `download()`, `quitAndInstall()`, event subscription. | electron-updater |
+| `backend.ts` | The `UpdaterBackend` interface, the non-Electron implementations, and `selectBackend()`. Imports no packaging dependency. | policy |
+| `electron-backend.ts` | The **only** file importing `electron-updater`. Adapter exposing `check()`, `download()`, `quitAndInstall()`, event subscription. Loaded lazily by `selectBackend()` so unit tests never pull in a module that needs a real Electron runtime. | electron-updater |
 | `service.ts` | Owns lifecycle, timer, and current state; pushes state to the renderer. Receives the backend as a **constructor argument**. | policy, backend interface |
 
 The injected backend is the testability seam: `service.ts` is unit-tested against
@@ -102,8 +103,12 @@ interface UpdaterBackend {
   the latest version and nothing else. Never downloads, so it carries no
   integrity burden. Its `download()` rejects, and `service.ts` never calls it
   because `canAutoInstall` is false — the rejection is a guard, not a code path.
+- `NullBackend` — unpackaged builds. Reports no update, so the service runs
+  harmlessly and stays `idle`.
+- `FakeUpdaterBackend` — driven by `MODELITH_FAKE_UPDATER=1` for e2e, mirroring
+  the existing `MODELITH_FAKE_PROVIDER` pattern.
 
-`service.ts` contains no platform branching; selection happens once at
+`service.ts` contains no platform branching; `selectBackend()` chooses once at
 construction.
 
 ### Trust boundary
@@ -156,8 +161,9 @@ Transitions:
 ### Unpackaged builds
 
 `electron-updater` throws when the app is not packaged. When
-`app.isPackaged === false` — development and **every e2e run** — the service
-never calls the backend and stays `idle` with `canAutoInstall: false`.
+`app.isPackaged === false` — development and **every e2e run** —
+`selectBackend()` returns `NullBackend`, so nothing reaches `electron-updater`
+and the state stays `idle` with `canAutoInstall: false`.
 
 ### Timing and install
 
@@ -300,9 +306,10 @@ mirroring the existing `MODELITH_FAKE_PROVIDER` pattern: the chip appears and
 reads "Restart", the Settings toggle persists across a relaunch, and "Check now"
 drives a visible state change.
 
-**Also touched:** `tests/e2e/preload-bridge.spec.ts` asserts the exact bridge
-shape, so adding `updates` requires updating it deliberately — that is the guard
-working as intended.
+**Also touched:** `tests/e2e/preload-bridge.spec.ts` currently asserts only that
+`keys` exposes no read path, so adding `updates` does not break it. Two cases are
+added there deliberately: that `updates` exposes exactly the five intended
+methods, and that nothing in its surface could redirect the update feed.
 
 **Known limitation:** no automated test verifies a *real* download-and-install.
 That can only be confirmed by hand against a genuine tagged release, and is
