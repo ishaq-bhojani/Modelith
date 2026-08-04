@@ -228,11 +228,23 @@ describe('UpdaterService — scheduling', () => {
     service.stop()
   })
 
-  it('re-checks on the interval', () => {
-    const { service, backend } = makeService()
+  it('re-checks on the interval', async () => {
+    // canAutoInstall: false keeps each cycle at 'available' rather than
+    // 'downloading' — the fake backend never emits 'downloaded' on its own,
+    // so with the default canAutoInstall: true the state would get stuck in
+    // 'downloading' after the first check and the re-entrancy guard would
+    // swallow every later tick regardless of timer flushing. This test is
+    // about the schedule, not download completion, so sidestep that here.
+    const { service, backend } = makeService({ canAutoInstall: false })
     service.start()
-    vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS)
-    vi.advanceTimersByTime(CHECK_INTERVAL_MS * 2)
+    // advanceTimersByTimeAsync (not advanceTimersByTime) flushes microtasks
+    // between ticks, so each check() settles before the next interval fires.
+    // With the synchronous variant the awaited check never resolves, the
+    // re-entrancy guard swallows every later tick, and the test would assert
+    // the guard rather than the schedule.
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS)
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
     expect(backend.checkCalls).toBe(3)
     service.stop()
   })
