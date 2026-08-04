@@ -86,7 +86,12 @@ describe('UpdaterService — happy path', () => {
     const { service, backend } = makeService({ canAutoInstall: true })
     await service.check()
     expect(backend.downloadCalls).toBe(1)
-    expect(service.getState().status).toBe('downloading')
+    // FakeBackend's download() resolves without ever emitting 'downloaded'.
+    // A resolved download() IS a completed download, so the service treats
+    // that resolution itself as completion rather than parking in
+    // 'downloading' forever — see the 'never gets stuck in downloading'
+    // test below for why that distinction matters.
+    expect(service.getState().status).toBe('ready')
   })
 
   it('reaches ready when the backend reports the download finished', async () => {
@@ -96,17 +101,66 @@ describe('UpdaterService — happy path', () => {
     expect(service.getState()).toMatchObject({ status: 'ready', percent: 100 })
   })
 
-  it('tracks download progress', async () => {
-    const { service, backend } = makeService({ canAutoInstall: true })
-    await service.check()
+  it('tracks download progress while the download is still in flight', async () => {
+    // FakeBackend's download() normally resolves on its own tick, and a
+    // resolved download() now means status has already moved to 'ready'
+    // (see the 'never gets stuck in downloading' test) — so a progress event
+    // fired after check() has settled arrives too late to matter, by design.
+    // To exercise progress tracking honestly this backend's download() must
+    // still be in flight when the event fires, so it is overridden here to
+    // hang until resolved explicitly.
+    const backend = new FakeBackend()
+    let resolveDownload: () => void = () => {}
+    backend.download = () => new Promise<void>((resolve) => { resolveDownload = resolve })
+    const { service } = makeService({ backend, canAutoInstall: true })
+
+    const pending = service.check()
+    for (let i = 0; i < 10 && service.getState().status !== 'downloading'; i += 1) {
+      await Promise.resolve()
+    }
+    expect(service.getState().status).toBe('downloading')
+
     backend.fire('progress', 42)
     expect(service.getState().percent).toBe(42)
+
+    resolveDownload()
+    await pending
+    expect(service.getState().status).toBe('ready')
   })
 
   it('records lastCheckedAt on a successful check', async () => {
     const { service } = makeService()
     await service.check()
     expect(service.getState().lastCheckedAt).toBe(1_000)
+  })
+})
+
+describe('UpdaterService — a throwing emit consumer', () => {
+  it('never lets a throwing emit escape check(), and state still advances', async () => {
+    const backend = new FakeBackend()
+    let emitCalls = 0
+    const service = new UpdaterService({
+      backend,
+      currentVersion: '0.2.0',
+      canAutoInstall: false,
+      enabled: true,
+      now: () => 1_000,
+      emit: () => {
+        emitCalls += 1
+        // Simulates window.webContents.send after the BrowserWindow was
+        // destroyed mid-check (Task 6's real emit).
+        throw new Error('Object has been destroyed')
+      },
+    })
+
+    await expect(service.check()).resolves.toBeUndefined()
+    expect(emitCalls).toBeGreaterThan(0)
+    // The state machine's own copy must have advanced normally even though
+    // every emit attempt threw.
+    expect(service.getState()).toMatchObject({
+      status: 'available',
+      latestVersion: '0.3.0',
+    })
   })
 })
 
@@ -134,6 +188,21 @@ describe('UpdaterService — no update', () => {
     const { service } = makeService({ backend })
     await service.check()
     expect(service.getState().status).toBe('idle')
+  })
+
+  it('clears a stale releaseUrl and percent when a later check finds nothing newer', async () => {
+    const backend = new FakeBackend()
+    const { service } = makeService({ backend, canAutoInstall: false })
+    // First cycle finds an update: releaseUrl gets set.
+    await service.check()
+    expect(service.getState()).toMatchObject({ status: 'available', releaseUrl: expect.any(String) })
+
+    // Second cycle finds nothing newer — the prior releaseUrl (and any
+    // percent) must not survive under status: 'idle', or a renderer reading
+    // those fields without checking status would follow a ghost link.
+    backend.checkResult = null
+    await service.check(true)
+    expect(service.getState()).toMatchObject({ status: 'idle', releaseUrl: undefined, percent: undefined })
   })
 })
 
@@ -210,6 +279,14 @@ describe('UpdaterService — enablement', () => {
     expect(service.getState().enabled).toBe(false)
   })
 
+  it('does not reject when persistEnabled rejects, and the toggle still takes effect', async () => {
+    const persistEnabled = vi.fn().mockRejectedValue(new Error('disk full'))
+    const { service } = makeService({ persistEnabled })
+    await expect(service.setEnabled(false)).resolves.toBeUndefined()
+    expect(service.getState().enabled).toBe(false)
+    expect(service.getState().status).toBe('error')
+  })
+
   it('does not schedule checks when start() runs while disabled', () => {
     const { service, backend } = makeService({ enabled: false })
     service.start()
@@ -263,6 +340,21 @@ describe('UpdaterService — scheduling', () => {
     const second = service.check()
     await Promise.all([first, second])
     expect(backend.checkCalls).toBe(1)
+  })
+})
+
+describe('UpdaterService — download resolves without a downloaded event', () => {
+  it('reaches ready anyway, and a later check is not swallowed by the guard', async () => {
+    const { service, backend } = makeService({ canAutoInstall: true })
+    await service.check()
+    // FakeBackend.download() resolves but never fires 'downloaded' — before
+    // the fix this parked state in 'downloading' forever and the
+    // re-entrancy guard silently swallowed every future check.
+    expect(service.getState().status).toBe('ready')
+
+    const second = await service.check(true)
+    expect(second).toBeUndefined()
+    expect(backend.checkCalls).toBe(2)
   })
 })
 

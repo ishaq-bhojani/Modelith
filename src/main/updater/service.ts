@@ -79,7 +79,14 @@ export class UpdaterService {
 
   async setEnabled(enabled: boolean): Promise<void> {
     this.patch({ enabled })
-    await this.persistEnabled(enabled)
+    try {
+      await this.persistEnabled(enabled)
+    } catch (err) {
+      // The in-memory toggle and timer (re)scheduling below must still take
+      // effect even when the write to disk fails — only the failure itself
+      // is surfaced, as state rather than a rejection that would cross IPC.
+      this.fail(err)
+    }
     if (enabled) this.start()
     else this.stop()
   }
@@ -100,7 +107,11 @@ export class UpdaterService {
       this.patch({ lastCheckedAt: this.now() })
 
       if (!result || !isNewerVersion(this.state.currentVersion, result.version)) {
-        this.patch({ status: 'idle', latestVersion: undefined })
+        // Clear every field a prior cycle may have set — a stale releaseUrl
+        // or percent surviving under status: 'idle' would be a ghost link/
+        // progress bar for any renderer code that reads them without first
+        // checking status.
+        this.patch({ status: 'idle', latestVersion: undefined, releaseUrl: undefined, percent: undefined })
         return
       }
 
@@ -116,6 +127,28 @@ export class UpdaterService {
 
       this.patch({ status: 'downloading', percent: 0 })
       await this.backend.download()
+      // electron-updater's downloadUpdate() resolves once the download is
+      // actually complete, and the fake/e2e backends may never emit a
+      // separate 'downloaded' event at all. Without this, a backend that
+      // resolves silently would park state in 'downloading' forever, and the
+      // re-entrancy guard at the top of this method would then swallow every
+      // future check — scheduled or manual — with no error and no recovery.
+      // Only apply this when status is STILL 'downloading': a 'downloaded'
+      // event may have already fired synchronously during the call above
+      // (moving status to 'ready'), or an 'error' event may have arrived
+      // (moving status to 'error') — neither may be clobbered here.
+      //
+      // Read through getState() rather than this.state directly: TS's
+      // control-flow narrowing carries the early-return guard's exclusion of
+      // 'checking'/'downloading' (line 102) through the several `this.patch`
+      // calls above for the `this.state.status` expression specifically —
+      // even though patch() reassigns `this.state` — so the direct property
+      // read is (wrongly) narrowed to a type that already excludes
+      // 'downloading' by this point. getState() returns a fresh object, so
+      // its `.status` isn't tied to that stale narrowing.
+      if (this.getState().status === 'downloading') {
+        this.patch({ status: 'ready', percent: 100 })
+      }
     } catch (err) {
       this.fail(err)
     }
@@ -132,7 +165,13 @@ export class UpdaterService {
 
   private patch(partial: Partial<UpdateState>): void {
     this.state = { ...this.state, ...partial }
-    this.emit(this.getState())
+    try {
+      this.emit(this.getState())
+    } catch {
+      // A throwing consumer (e.g. window.webContents.send after the
+      // BrowserWindow was destroyed) must never propagate out of the state
+      // machine — the state itself is already updated above regardless.
+    }
   }
 
   private fail(err: unknown): void {
