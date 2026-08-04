@@ -89,21 +89,22 @@ jobs:
       - name: Verify the app icon was generated
         shell: bash
         run: |
-          case "${{ matrix.os }}" in
-            windows-latest) expected=release/.icon-ico ;;
-            macos-latest)   expected=release/.icon-icns ;;
-            *)              expected=release/.icon-set ;;
-          esac
+          # The authoritative signal. When electron-builder cannot convert an
+          # icon it sets `isFallback`, logs "default Electron icon is used" and
+          # keeps building — see app-builder-lib/out/platformPackager.js. That
+          # silent fallback is how every release up to v0.3.2 shipped unbranded.
           if grep -qi "default .* icon is used" dist.log; then
             echo "::error::electron-builder fell back to the default Electron icon instead of building from build/icon.svg — the installer would ship unbranded. It logs this as a warning and does not fail on its own, which is why this step exists. Check that build/icon.svg exists and is valid SVG."
             grep -i "icon" dist.log || true
             exit 1
           fi
-          if [ ! -d "$expected" ] || [ -z "$(ls -A "$expected" 2>/dev/null)" ]; then
-            echo "::error::$expected is missing or empty, so electron-builder never converted build/icon.svg for this platform. Directories present: $(ls -d release/.icon-* 2>/dev/null | tr '\n' ' ')"
-            exit 1
-          fi
-          echo "Generated icon: $expected -> $(ls -A "$expected" | tr '\n' ' ')"
+          # Informational only. An earlier version of this step REQUIRED a
+          # `.icon-<fmt>` directory per OS and failed the Linux build of v0.4.0
+          # for it: macOS and Windows materialise `.icon-icns`/`.icon-ico`, but
+          # the Linux "set" conversion can hand back the source PNG directly
+          # without ever creating a directory. A healthy build legitimately has
+          # nothing here, so this must not gate the release.
+          echo "Icon conversion output: $(ls -d release/.icon-* 2>/dev/null | tr '\n' ' ' || echo '(none — normal on Linux)')"
       # latest*.yml is the update metadata electron-updater reads (it carries the
       # SHA512 of each installer). All three runners emit one — latest.yml,
       # latest-linux.yml, latest-mac.yml (verified on the v0.3.0 release).
