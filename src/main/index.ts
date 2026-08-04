@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers, getMcpManager } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers, registerUpdateHandlers, getUpdater, getMcpManager } from './ipc/handlers.js'
 import { registerWindowHandlers, installAppMenu } from './window/controls.js'
 import { CHANNELS } from '../shared/ipc.js'
 
@@ -55,6 +55,9 @@ void app.whenReady().then(() => {
   void getMcpManager().init()
   registerWindowHandlers(() => mainWindow)
   installAppMenu(() => mainWindow)
+  // Update checks run in the background; a failure is surfaced as state, never
+  // as a startup hang (same posture as the MCP init above).
+  void registerUpdateHandlers(() => mainWindow)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -62,4 +65,8 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  getUpdater()?.stop()
 })

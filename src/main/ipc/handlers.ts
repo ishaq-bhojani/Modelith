@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { ZodError } from 'zod'
@@ -28,6 +28,7 @@ import {
   GitDiffSchema,
   RaceSchema,
   ChooseWinnerSchema,
+  UpdatesSetEnabledSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -42,6 +43,10 @@ import { GitService } from '../terminal/git.js'
 import { StreamEngine } from '../chat/stream-engine.js'
 import { applyContextBudget, estimateTokens } from '../chat/context-budget.js'
 import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
+import { UpdaterService } from '../updater/service.js'
+import { selectBackend } from '../updater/backend.js'
+import { ElectronUpdaterBackend } from '../updater/electron-backend.js'
+import { canAutoInstall } from '../updater/policy.js'
 
 const MAX_CONTEXT_TOKENS = 96_000
 
@@ -275,4 +280,66 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     if (provider.requiresKey && !apiKey) return []
     return provider.listModels({ apiKey: apiKey ?? '', fetch: mainFetch })
   }))
+}
+
+let updater: UpdaterService | undefined
+
+export function getUpdater(): UpdaterService | undefined {
+  return updater
+}
+
+/**
+ * Wires the updater to IPC. The renderer can read state, request a check,
+ * toggle the preference, and install — but it cannot influence WHERE the
+ * updater looks; owner/repo live in src/main/updater/policy.ts.
+ */
+export async function registerUpdateHandlers(
+  getWindow: () => BrowserWindow | undefined,
+): Promise<void> {
+  const settings = getSettingsStore()
+  const stored = (await settings.get())['updatesEnabled']
+  const enabled = typeof stored === 'boolean' ? stored : true
+  const fake = process.env['MODELITH_FAKE_UPDATER'] === '1'
+
+  updater = new UpdaterService({
+    backend: selectBackend({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      fake,
+      // Injected here, not imported inside backend.ts, so electron-updater
+      // never reaches the unit-test runner.
+      electronBackendFactory: () => new ElectronUpdaterBackend(),
+    }),
+    currentVersion: app.getVersion(),
+    // The fake backend drives the e2e suite, which runs unpackaged; force the
+    // capability on so the full download → ready path is exercised.
+    canAutoInstall: fake || canAutoInstall(process.platform, app.isPackaged),
+    enabled,
+    emit: (state) => {
+      const window = getWindow()
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(CHANNELS.updatesChanged, state)
+      }
+    },
+    persistEnabled: async (value) => { await settings.set({ updatesEnabled: value }) },
+  })
+
+  ipcMain.handle(CHANNELS.updatesGet, () => updater?.getState())
+  ipcMain.handle(CHANNELS.updatesCheck, () => updater?.check(true))
+  ipcMain.handle(CHANNELS.updatesInstall, () => {
+    const state = updater?.getState()
+    // macOS (and any non-auto-install platform) opens the release page instead.
+    // The URL was built by policy.releaseUrlFor from a hardcoded repo constant,
+    // never taken from an API response.
+    if (state && !state.canAutoInstall) {
+      if (state.releaseUrl) void shell.openExternal(state.releaseUrl)
+      return
+    }
+    updater?.install()
+  })
+  ipcMain.handle(CHANNELS.updatesSetEnabled, withZodMapping(async (_e, raw: unknown) => {
+    await updater?.setEnabled(UpdatesSetEnabledSchema.parse(raw).enabled)
+  }))
+
+  updater.start()
 }
