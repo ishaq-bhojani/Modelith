@@ -330,12 +330,33 @@ methods, and that nothing in its surface could redirect the update feed.
 That can only be confirmed by hand against a genuine tagged release, and is
 recorded as a manual release-checklist item rather than treated as covered.
 
-## Manual verification checklist (first release after this lands)
+## Manual verification checklist
 
-1. Tag a release; confirm `latest.yml` and `latest-linux.yml` are attached
-   alongside the installers.
-2. Install the previous version on Windows, launch, wait for the chip, click
-   Restart, confirm the new version runs.
-3. Repeat on Linux with the AppImage.
-4. On macOS, confirm the chip appears and opens the release page.
-5. Confirm the Settings toggle suppresses checks entirely when off.
+The updater ships **in** v0.3.0, so v0.2.0 cannot be used to test it — there is
+no update code in it to run. Verification therefore splits across two releases.
+
+### On v0.3.0 (possible now)
+
+1. ✅ Confirm `latest.yml`, `latest-linux.yml`, and `latest-mac.yml` are attached
+   alongside the installers, and that each one's `version` matches the tag.
+   *Done for v0.3.0 — all three present and correct.*
+2. Install v0.3.0 on Windows, open **Settings → Updates**, press **Check now**,
+   and confirm it reports "Up to date." — not an error. This exercises most of
+   the risk in one step: the packaged app selecting `ElectronUpdaterBackend`,
+   reading its bundled `app-update.yml`, fetching and parsing `latest.yml` from
+   GitHub, and comparing versions. Only download-and-install remains unproven.
+3. Repeat step 2 on Linux with the AppImage.
+4. On macOS, press **Check now** and confirm it reports "Up to date." (macOS
+   uses the GitHub API directly, a different code path from Windows/Linux).
+5. Turn the toggle off, restart, and confirm no check occurs.
+
+### On the next release (v0.3.1 or later) — the real end-to-end test
+
+6. With v0.3.0 installed on Windows, launch and wait for the chip (or press
+   **Check now**), click **Restart**, and confirm the new version runs.
+7. Repeat on Linux with the AppImage.
+8. On macOS, confirm the chip appears and opens the release page rather than
+   attempting to install.
+
+Until step 6 passes, download-and-install has never been exercised against a
+real release by anything, automated or manual.
