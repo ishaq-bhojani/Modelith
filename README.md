@@ -36,10 +36,15 @@ Adding another provider is a documented, test-verified path — see [CONTRIBUTIN
 ## Install
 
 Download an installer for your OS from the [Releases](../../releases) page:
-Windows (`.exe`), macOS (`.dmg`), Linux (`.AppImage`). Builds are currently
-**unsigned**, so Windows SmartScreen and macOS Gatekeeper will warn on first
-launch — allow it through (Windows: *More info → Run anyway*; macOS: right-click →
-*Open*). Signed builds are on the roadmap.
+Windows (`.exe`), macOS (`.dmg`), Linux (`.AppImage`).
+
+On macOS, pick the file matching your Mac: **`-arm64`** for Apple Silicon (M1 and
+later), **`-x64`** for Intel. An Intel build runs on Apple Silicon under Rosetta,
+but an Apple Silicon build will not launch on an Intel Mac.
+
+Builds are currently **unsigned**, so Windows SmartScreen and macOS Gatekeeper
+will warn on first launch — allow it through (Windows: *More info → Run anyway*;
+macOS: right-click → *Open*). Signed builds are on the roadmap.
 
 Then open Settings, pick a provider, and paste an API key (Ollama needs none).
 

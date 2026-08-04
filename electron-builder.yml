@@ -43,8 +43,23 @@ linux:
     - AppImage
   category: Development
 mac:
+  # Both architectures. `macos-latest` runners are Apple Silicon, so a bare
+  # `dmg` target builds arm64 ONLY — which is what v0.3.0 shipped, leaving Intel
+  # users with nothing they could install. The failure is asymmetric and worth
+  # remembering: an x64 build runs on Apple Silicon under Rosetta, but an arm64
+  # build will not launch on Intel at all.
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  # electron-builder's default artifact name OMITS the arch suffix for x64
+  # (that is why v0.3.0 produced `Modelith-0.3.0-arm64.dmg` next to a bare
+  # `Modelith-0.3.0.AppImage`). Building both arches with that default would
+  # give `Modelith-0.3.0.dmg` and `Modelith-0.3.0-arm64.dmg` — and the
+  # unlabelled one is the Intel build, which is precisely the file an Apple
+  # Silicon user would assume is "the normal one". Name both explicitly.
+  artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.developer-tools
 
 nsis:

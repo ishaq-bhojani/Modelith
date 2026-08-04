@@ -4,6 +4,12 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+### Fixed
+- **macOS builds now cover Intel.** `macos-latest` runners are Apple Silicon, so
+  releases up to and including v0.3.0 shipped an arm64 `.dmg` only — Intel Mac
+  users had nothing they could install. Both architectures are now built, and
+  each carries an explicit `-x64` / `-arm64` suffix so the right one is obvious.
+
 ## 0.3.0 — 2026-08-04
 
 ### Software updates
