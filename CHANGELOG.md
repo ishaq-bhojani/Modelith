@@ -4,11 +4,24 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
-### Added
-- In-app software updates: Modelith checks GitHub for new releases, downloads
-  them in the background on Windows and Linux, and offers to restart and install.
-  macOS links to the release page because unsigned builds cannot auto-install.
-  Toggle in Settings → Updates.
+## 0.3.0 — 2026-08-04
+
+### Software updates
+Modelith can now tell you when a new version is out, and fetch it for you.
+
+- **Automatic checks** against GitHub Releases — shortly after launch and every
+  six hours. An anonymous `GET` to a public API: no identifiers, no usage data,
+  nothing about your conversations.
+- **Windows and Linux** download the new version in the background and show a
+  quiet chip offering to restart and install. Integrity is verified by SHA512
+  against the metadata published beside the installers.
+- **macOS** detects the new version and links to the release page. Builds are
+  unsigned, and macOS refuses to auto-install unsigned updates.
+- **Settings → Updates** shows your current version and the check status, runs a
+  check on demand, and turns automatic checks off entirely. Turning them off also
+  cancels an already-downloaded update instead of applying it on the next quit.
+- The chip stays silent while checking or downloading, and never reports a
+  failed background check — it appears only when there is something to act on.
 
 ## 0.2.0 — 2026-08-03
 
