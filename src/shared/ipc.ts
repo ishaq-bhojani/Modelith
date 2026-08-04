@@ -38,6 +38,11 @@ export const CHANNELS = {
   menuSearch: 'menu:search',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  updatesGet: 'updates:get',
+  updatesCheck: 'updates:check',
+  updatesInstall: 'updates:install',
+  updatesSetEnabled: 'updates:set-enabled',
+  updatesChanged: 'updates:changed',
   workspacePick: 'workspace:pick',
   workspaceCurrent: 'workspace:current',
   workspaceTree: 'workspace:tree',
@@ -154,3 +159,27 @@ export const RaceSchema = z.object({
   entries: z.array(FallbackSchema).min(2).max(4),
 })
 export const ChooseWinnerSchema = z.object({ raceId: z.string().min(1), columnId: z.string().min(1) })
+
+// Software updates (auto-update spec). Note there is deliberately no field here
+// for a feed URL, owner, or repo: those are constants in
+// src/main/updater/policy.ts. A renderer-supplied feed would let compromised UI
+// point the updater at an attacker's binary — the same reasoning that keeps
+// `baseUrl` off SendSchema above.
+export const UpdateStatusSchema = z.enum([
+  'idle', 'checking', 'available', 'downloading', 'ready', 'error',
+])
+
+export const UpdateStateSchema = z.object({
+  status: UpdateStatusSchema,
+  canAutoInstall: z.boolean(),
+  currentVersion: z.string(),
+  latestVersion: z.string().optional(),
+  percent: z.number().min(0).max(100).optional(),
+  releaseUrl: z.string().optional(),
+  message: z.string().optional(),
+  enabled: z.boolean(),
+  lastCheckedAt: z.number().optional(),
+  manualCheck: z.boolean(),
+})
+
+export const UpdatesSetEnabledSchema = z.object({ enabled: z.boolean() })

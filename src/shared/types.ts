@@ -196,3 +196,27 @@ export interface StreamEnvelope {
   event: StreamEvent
   columnId?: string
 }
+
+/** Software-update lifecycle (auto-update spec). Owned by main, mirrored into
+ *  the renderer store; the renderer never mutates it directly. */
+export type UpdateStatus =
+  | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+
+export interface UpdateState {
+  status: UpdateStatus
+  /** False on macOS (unsigned builds cannot auto-install) and when unpackaged. */
+  canAutoInstall: boolean
+  currentVersion: string
+  latestVersion?: string
+  /** Download progress, 0–100. */
+  percent?: number
+  /** Built by main from the version tag; never taken from an API response. */
+  releaseUrl?: string
+  /** Our own copy — never a response body. */
+  message?: string
+  enabled: boolean
+  lastCheckedAt?: number
+  /** True when the current cycle began with an explicit "Check now", so the
+   *  chip can stay silent on a background failure but report a requested one. */
+  manualCheck: boolean
+}
