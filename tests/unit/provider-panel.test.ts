@@ -72,4 +72,36 @@ describe('ProviderPanel', () => {
     expect(row?.textContent).toContain('local-model')
     expect(row?.textContent).not.toMatch(/undefined|NaN/)
   })
+
+  // Finding 1: the rebuilt key-entry row dropped the pre-redesign
+  // `<label htmlFor="apikey">`, leaving the input's accessible name to fall
+  // back to its placeholder — which itself changes text with `configured`.
+  // A screen-reader user must get one stable name, not one derived from
+  // shifting placeholder copy.
+  it('gives the key input a real accessible name via a label, not just a placeholder', async () => {
+    await render({ configured: false })
+    const input = container.querySelector('[data-testid="api-key-input"]')
+    const label = container.querySelector('label[for="apikey"]')
+    expect(input).not.toBeNull()
+    expect(input?.getAttribute('id')).toBe('apikey')
+    expect(label?.textContent).toBe('API key')
+  })
+
+  it('keeps the key input label stable regardless of configured state', async () => {
+    await render({ configured: true })
+    expect(container.querySelector('label[for="apikey"]')?.textContent).toBe('API key')
+  })
+
+  it('does not use listbox/option roles for the model list — it is plain Tab-reachable buttons, matching the provider list', async () => {
+    await render({ models: [{ id: 'm1', label: 'claude-sonnet', contextWindow: 200000 }] })
+    expect(container.querySelector('[data-testid="model-select"]')?.getAttribute('role')).toBeNull()
+    expect(container.querySelector('[data-testid="model-option"]')?.getAttribute('role')).toBeNull()
+    expect(container.querySelector('[data-testid="model-option"]')?.hasAttribute('aria-selected')).toBe(false)
+  })
+
+  it('is a valid ARIA container when there are no models to list (no role, so a plain <p> child is not an ARIA violation)', async () => {
+    await render({ models: [] })
+    expect(container.querySelector('[data-testid="model-select"]')?.getAttribute('role')).toBeNull()
+    expect(container.querySelector('[data-testid="model-select"] p.field-hint')).not.toBeNull()
+  })
 })

@@ -6,9 +6,11 @@ import { IconCheck, IconKey, IconLock } from '../../app/icons.js'
 import { DataPolicyBadge } from '../../app/DataPolicyBadge.js'
 import { PanelHead } from '../PanelHead.js'
 
-/** `200000` -> `'200k'`. Local models often report no context window at all
- *  (`ModelInfo.contextWindow` is optional in practice), so `undefined` and
- *  non-finite values render nothing rather than `'undefinedk'` or `'NaNk'`. */
+/** `200000` -> `'200k'`. `ModelInfo.contextWindow` is a required `number`
+ *  today, and every current model source (`anthropic.ts`, `openai-compat.ts`,
+ *  `ollama.ts`, `registry.ts`) supplies it — so this guard is not reachable
+ *  through any live provider right now. It stays anyway: a future provider
+ *  that omits the field should render nothing, not `'undefinedk'`/`'NaNk'`. */
 function formatContextWindow(n: number | undefined): string | null {
   if (n === undefined || !Number.isFinite(n)) return null
   return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
@@ -157,6 +159,7 @@ export function ProviderPanel({
 
         <div className="provider-card-row provider-key-entry">
           <IconKey size={14} />
+          <label className="visually-hidden" htmlFor="apikey">API key</label>
           <input
             id="apikey"
             data-testid="api-key-input"
@@ -182,7 +185,7 @@ export function ProviderPanel({
           <label>Model</label>
           {priceLabel ? <span className="model-list-meta">{priceLabel}</span> : null}
         </div>
-        <div className="model-list" data-testid="model-select" role="listbox" aria-label="Model">
+        <div className="model-list" data-testid="model-select">
           {models.length === 0 ? (
             <p className="field-hint">
               No models available yet. Providers that need a key list their models once one is
@@ -197,8 +200,6 @@ export function ProviderPanel({
                   type="button"
                   className="model-option"
                   data-testid="model-option"
-                  role="option"
-                  aria-selected={m.id === model}
                   onClick={() => setModel(m.id)}
                 >
                   <span className="model-option-check">{m.id === model ? <IconCheck size={13} /> : null}</span>
