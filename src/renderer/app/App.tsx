@@ -26,6 +26,8 @@ export function App(): React.JSX.Element {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const loadProviders = useAppStore((s) => s.loadProviders)
   const loadPlatform = useAppStore((s) => s.loadPlatform)
+  const loadUpdates = useAppStore((s) => s.loadUpdates)
+  const setUpdateState = useAppStore((s) => s.setUpdateState)
   const loadSettings = useAppStore((s) => s.loadSettings)
   const initWorkspace = useAppStore((s) => s.initWorkspace)
   const loadMcpServers = useAppStore((s) => s.loadMcpServers)
@@ -47,6 +49,8 @@ export function App(): React.JSX.Element {
   useEffect(() => { void initWorkspace() }, [initWorkspace])
   useEffect(() => { void loadMcpServers() }, [loadMcpServers])
   useEffect(() => window.modelith.chat.onEvent(applyEvent), [applyEvent])
+  useEffect(() => { void loadUpdates() }, [loadUpdates])
+  useEffect(() => window.modelith.updates.onStateChange(setUpdateState), [setUpdateState])
 
   useEffect(() => {
     document.documentElement.dataset['theme'] = theme

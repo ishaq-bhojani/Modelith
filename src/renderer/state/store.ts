@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, WorkspaceTreeEntry } from '@shared/types'
+import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, UpdateState, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { commandMatchesAllowedPrefix } from '@shared/command-safety'
 import { encodeSelection } from '../canvas/selection.js'
@@ -85,6 +85,10 @@ interface AppState {
   theme: 'dark' | 'light'
   /** OS platform, from appInfo(). Drives the frameless title-bar chrome. */
   platform: string
+  /** Software-update state, mirrored from main (auto-update spec). */
+  update: UpdateState | null
+  /** The user closed the chip this session; Settings still shows the state. */
+  updateChipDismissed: boolean
   /** Whether the context inspector drawer is open. */
   inspectorOpen: boolean
   /** Workspace-read (spec §A): open state, chosen root, and pruned file tree. */
@@ -194,6 +198,9 @@ interface AppState {
   setQuery(value: string): void
   setTheme(theme: 'dark' | 'light'): void
   loadPlatform(): Promise<void>
+  setUpdateState(state: UpdateState): void
+  dismissUpdateChip(): void
+  loadUpdates(): Promise<void>
   renameSession(id: string, title: string): Promise<void>
   deleteSession(id: string): Promise<void>
   /**
@@ -250,6 +257,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   query: '',
   theme: 'dark',
   platform: '',
+  update: null,
+  updateChipDismissed: false,
   inspectorOpen: false,
   workspaceOpen: false,
   workspaceRoot: null,
@@ -466,6 +475,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const info = await window.modelith.appInfo()
       set({ platform: info.platform })
+    } catch (err) {
+      set({ error: toProviderError(err) })
+    }
+  },
+
+  setUpdateState(state) { set({ update: state }) },
+  dismissUpdateChip() { set({ updateChipDismissed: true }) },
+
+  async loadUpdates() {
+    try {
+      const state = await window.modelith.updates.getState()
+      set({ update: state })
     } catch (err) {
       set({ error: toProviderError(err) })
     }

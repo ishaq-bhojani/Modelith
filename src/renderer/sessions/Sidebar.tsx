@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import { AppMenu } from '../app/AppMenu.js'
+import { UpdateChip } from '../app/UpdateChip.js'
 import { modKey } from '../app/shortcut.js'
 import {
   IconArchive,
@@ -240,6 +241,8 @@ export function Sidebar(): React.JSX.Element {
           </button>
         ) : null}
       </div>
+
+      <UpdateChip />
 
       <div className="sidebar-foot">
         <IconLock size={13} />

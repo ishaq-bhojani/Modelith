@@ -2159,3 +2159,43 @@ body.resizing {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ============================================================================
+   Update chip (sidebar footer)
+   ========================================================================= */
+
+.update-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font: 500 12px/1.4 var(--font-body);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--text-mute);
+}
+.update-chip-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.update-chip-action {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: 600 12px/1 var(--font-body);
+  cursor: pointer;
+}
+.update-chip-dismiss {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-meta);
+  cursor: pointer;
+}
+.update-chip-dismiss:hover {
+  color: var(--text);
+}
