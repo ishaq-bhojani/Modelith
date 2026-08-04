@@ -14,7 +14,7 @@
 
 - **TypeScript strict + ESM.** Every relative import MUST carry a `.js` extension, even for `.ts`/`.tsx` sources. Shared types come from the `@shared/types` alias.
 - **Every existing `data-testid` is preserved verbatim.** This work is an extraction plus navigation; renaming a test id is out of scope.
-- **Do not modify the `.dialog` class.** It is shared with the diff gate and other modals. The settings modal uses a new `.settings-dialog` class.
+- **Do not change any property of the `.dialog` rule.** It is shared with the diff gate and other modals, and giving them a fixed height would break them. The settings modal uses a new `.settings-dialog` class. *Extending a selector list* is explicitly allowed and required once: `.dialog h2` becomes `.dialog h2, .settings-dialog h2` (Task 2), which adds a selector without altering `.dialog`'s own behaviour.
 - **The renderer never handles a release URL.** The Restart/Download button calls `window.modelith.updates.install()`; main decides whether that installs or opens the release page.
 - **Provider is the default category** — this is what keeps `tests/e2e/settings.spec.ts` and `tests/unit/settings-dialog.test.ts` passing unchanged.
 - Commit style `type: summary`. **Do NOT add a `Co-Authored-By: Claude` trailer.**
