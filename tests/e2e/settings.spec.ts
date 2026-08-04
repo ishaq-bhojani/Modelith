@@ -9,10 +9,11 @@ test.afterAll(async () => { await app.close() })
 test('stores a key and reports it as configured without revealing it', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('open-settings').click()
-  await page.getByTestId('provider-select').selectOption('kimi')
+  await page.getByTestId('provider-select').click()
+  await page.getByTestId('provider-option').filter({ hasText: 'Kimi (Moonshot)' }).click()
   await page.getByTestId('api-key-input').fill('sk-test-value-123')
   await page.getByTestId('api-key-save').click()
-  await expect(page.getByTestId('key-status')).toHaveText('Configured')
+  await expect(page.getByTestId('key-status')).toHaveText('Key stored in the keychain')
   await expect(page.getByTestId('api-key-input')).toHaveValue('')
   // The dialog is a real modal — its backdrop covers the window and blocks
   // pointer events. Both tests share one app instance, so leaving it open
@@ -42,8 +43,9 @@ test('offers a recovery action when no model is selected', async () => {
   // send(), not the provider's 'auth' rejection (which is covered instead by
   // the unit test in tests/unit/error-notice.test.ts, since reaching a real
   // 'auth' response would require a live provider).
-  await page.getByTestId('provider-select').selectOption('deepseek')
-  await expect(page.getByTestId('key-status')).toHaveText('Not configured')
+  await page.getByTestId('provider-select').click()
+  await page.getByTestId('provider-option').filter({ hasText: 'DeepSeek' }).click()
+  await expect(page.getByTestId('key-status')).toHaveText('No key stored')
   await page.getByTestId('settings-close').click()
   await page.getByTestId('new-session').click()
   await page.getByTestId('composer-input').fill('hello')
