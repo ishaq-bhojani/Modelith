@@ -2036,7 +2036,8 @@ body.resizing {
   border-radius: var(--radius-lg);
   background: var(--canvas);
 }
-.dialog h2 {
+.dialog h2,
+.settings-dialog h2 {
   margin: 0;
   font: 500 22px/1.2 var(--font-display);
   letter-spacing: -0.22px;
@@ -2047,6 +2048,65 @@ body.resizing {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+/* The settings modal is a fixed-size shell: only the panel scrolls, so the
+   title and Done button can never scroll out of reach (which is what the
+   single-column layout did). Deliberately NOT a change to `.dialog`, which
+   other modals share. */
+.settings-dialog {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: min(760px, 100%);
+  height: min(560px, 85vh);
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+}
+.settings-head {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 0;
+}
+.settings-body {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  min-height: 0; /* lets the panel scroll instead of stretching the grid */
+}
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border-right: 1px solid var(--hairline);
+  overflow-y: auto;
+}
+.settings-rail-item {
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-mute);
+  font: 500 13px/1 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.settings-rail-item:hover { color: var(--text); }
+.settings-rail-item.is-active {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 24px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.settings-foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--hairline);
 }
 .field {
   display: flex;

@@ -28,6 +28,7 @@ test('the chip can be dismissed', async () => {
 test('the Settings toggle persists the preference', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('open-settings').click()
+  await page.getByTestId('settings-tab-updates').click()
   const toggle = page.getByTestId('updates-toggle')
   await expect(toggle).toBeChecked()
   await toggle.click()

@@ -46,6 +46,7 @@ test('forking a message creates a second session', async () => {
 test('creating a mode lists it in the composer mode menu', async () => {
   const page = await app.firstWindow()
   await page.getByTestId('open-settings').click()
+  await page.getByTestId('settings-tab-modes').click()
   await page.getByTestId('mode-name').fill('Terse')
   await page.getByTestId('mode-prompt').fill('Answer in one sentence.')
   await page.getByTestId('mode-save').click()
