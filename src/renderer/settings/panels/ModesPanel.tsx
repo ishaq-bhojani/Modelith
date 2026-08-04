@@ -1,16 +1,25 @@
-import { useState } from 'react'
 import { useAppStore } from '../../state/store.js'
 
-/** Named presets. The tallest panel — the only one expected to scroll. */
-export function ModesPanel(): React.JSX.Element {
+/**
+ * Named presets. The tallest panel — the only one expected to scroll.
+ * `modeName` and `modePrompt` are owned by the shell (SettingsDialog) so a
+ * hand-typed mode name and system prompt survive switching category and
+ * back — unmounting this panel would otherwise discard user-authored prose
+ * silently, with no warning and no undo.
+ */
+export function ModesPanel({
+  modeName, setModeName, modePrompt, setModePrompt,
+}: {
+  modeName: string
+  setModeName: (v: string) => void
+  modePrompt: string
+  setModePrompt: (v: string) => void
+}): React.JSX.Element {
   const providerId = useAppStore((s) => s.providerId)
   const model = useAppStore((s) => s.model)
   const modes = useAppStore((s) => s.modes)
   const saveMode = useAppStore((s) => s.saveMode)
   const deleteMode = useAppStore((s) => s.deleteMode)
-
-  const [modeName, setModeName] = useState('')
-  const [modePrompt, setModePrompt] = useState('')
 
   return (
     <div className="field">

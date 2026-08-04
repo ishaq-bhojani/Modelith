@@ -29,6 +29,17 @@ function click(container: HTMLDivElement, testid: string): Promise<void> {
   return act(async () => { el.click() })
 }
 
+// React tracks the native element's value setter to detect real user input;
+// assigning `.value = ...` directly is invisible to it, so the subsequent
+// 'input' event would be ignored. Going through the native prototype setter
+// (bypassing React's wrapper) is the standard workaround.
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const proto = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  setter?.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 describe('Settings navigation', () => {
   let container: HTMLDivElement
 
@@ -87,5 +98,62 @@ describe('Settings navigation', () => {
     await render(container)
     expect(container.querySelector('[role="tablist"]')).not.toBeNull()
     expect(container.querySelector('[role="tabpanel"]')).not.toBeNull()
+  })
+
+  // Finding 1: `category` used to initialise once and never reset, so
+  // reopening Settings landed wherever the user last left it. Error-recovery
+  // affordances (auth errors, "no model selected") open Settings expecting
+  // Provider — landing on Modes instead hides the fix.
+  it('reopens on Provider even if it was closed on a different category', async () => {
+    await render(container)
+    await click(container, 'settings-tab-modes')
+    expect(container.querySelector('[data-testid="settings-tab-modes"]')?.getAttribute('aria-selected')).toBe('true')
+
+    // The dialog component never unmounts (App.tsx renders it unconditionally
+    // and it returns null while closed) — closing and reopening it here means
+    // toggling `settingsOpen`, exactly as the real "Open settings" affordances do.
+    await act(async () => { useAppStore.setState({ settingsOpen: false }) })
+    await act(async () => { useAppStore.setState({ settingsOpen: true }) })
+
+    expect(container.querySelector('[data-testid="provider-select"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="settings-tab-provider"]')?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  // Findings 2 & 4: modeName/modePrompt/models/configured used to live inside
+  // the panels themselves, so unmounting on a category switch silently
+  // discarded them. They were lifted to the shell (mirroring `draftKey`).
+  it('keeps a half-typed mode name and prompt when leaving and returning to Modes', async () => {
+    await render(container)
+    await click(container, 'settings-tab-modes')
+
+    const nameInput = container.querySelector('[data-testid="mode-name"]') as HTMLInputElement
+    await act(async () => { setNativeValue(nameInput, 'Rust reviewer') })
+    const promptInput = container.querySelector('[data-testid="mode-prompt"]') as HTMLTextAreaElement
+    await act(async () => { setNativeValue(promptInput, 'You are a meticulous Rust reviewer.') })
+
+    await click(container, 'settings-tab-provider')
+    await click(container, 'settings-tab-modes')
+
+    const nameReturned = container.querySelector('[data-testid="mode-name"]') as HTMLInputElement
+    const promptReturned = container.querySelector('[data-testid="mode-prompt"]') as HTMLTextAreaElement
+    expect(nameReturned.value).toBe('Rust reviewer')
+    expect(promptReturned.value).toBe('You are a meticulous Rust reviewer.')
+  })
+
+  // Finding 6: `aria-controls` is deliberately set only on the selected tab
+  // because the other panels are not mounted and their target id does not
+  // exist. Pins that decision so it cannot silently drift.
+  it('sets aria-controls only on the active tab', async () => {
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-tab-provider"]')?.getAttribute('aria-controls')).toBe('settings-panel')
+    for (const id of ['failover', 'modes', 'updates']) {
+      expect(container.querySelector(`[data-testid="settings-tab-${id}"]`)?.hasAttribute('aria-controls')).toBe(false)
+    }
+
+    await click(container, 'settings-tab-modes')
+    expect(container.querySelector('[data-testid="settings-tab-modes"]')?.getAttribute('aria-controls')).toBe('settings-panel')
+    for (const id of ['provider', 'failover', 'updates']) {
+      expect(container.querySelector(`[data-testid="settings-tab-${id}"]`)?.hasAttribute('aria-controls')).toBe(false)
+    }
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useAppStore } from '../../state/store.js'
 import type { ModelInfo, ProviderSummary } from '@shared/types'
 import { IconCheck, IconLock } from '../../app/icons.js'
@@ -6,15 +6,25 @@ import { DataPolicyBadge } from '../../app/DataPolicyBadge.js'
 
 /**
  * Provider, API key and Model — one flow: pick a provider, authenticate,
- * choose a model. `draftKey` is owned by the shell so a half-typed key
- * survives switching category and back.
+ * choose a model. `draftKey`, `models` and `configured` are owned by the
+ * shell (SettingsDialog) so a half-typed key survives switching category and
+ * back, and so the model list / key-configured flag are not re-fetched (and
+ * flashed as stale) on every remount of this panel.
  */
 export function ProviderPanel({
-  providers, draftKey, setDraftKey,
+  providers, draftKey, setDraftKey, models, setModels, configured, setConfigured, autoFocus, onProviderFocused,
 }: {
   providers: ProviderSummary[]
   draftKey: string
   setDraftKey: (v: string) => void
+  models: ModelInfo[]
+  setModels: (v: ModelInfo[]) => void
+  configured: boolean
+  setConfigured: (v: boolean) => void
+  /** True while the Provider select still needs to claim focus for this dialog "open" session. */
+  autoFocus: boolean
+  /** Called once this panel has applied the pending auto-focus, so the shell can stop offering it. */
+  onProviderFocused: () => void
 }): React.JSX.Element {
   const reportError = useAppStore((s) => s.reportError)
   const providerId = useAppStore((s) => s.providerId)
@@ -22,27 +32,23 @@ export function ProviderPanel({
   const model = useAppStore((s) => s.model)
   const setModel = useAppStore((s) => s.setModel)
 
-  const [models, setModels] = useState<ModelInfo[]>([])
-  const [configured, setConfigured] = useState(false)
+  const selectRef = useRef<HTMLSelectElement>(null)
 
   const selectedProvider = providers.find((p) => p.id === providerId)
 
-  // Re-queries key status and the model list whenever the selected provider
-  // changes — switching providers must immediately reflect that provider's own
-  // key/model state, never the previous provider's stale values.
+  // Fires once per mount (empty deps), mirroring native HTML `autoFocus` —
+  // but unlike `autoFocus`, it only actually focuses when the shell says
+  // focus is still pending for this dialog "open" session. Without the
+  // `autoFocus` prop gate, returning to this tab on a later switch would
+  // steal focus back from wherever the keyboard user had since moved
+  // (Finding 3: Shift+Tab would walk out of the dialog instead of to the rail).
   useEffect(() => {
-    void window.modelith.keys.has(providerId).then(setConfigured).catch(reportError)
-    void window.modelith.providers.models(providerId).then((list) => {
-      setModels(list)
-      // `setProvider` resets `model` to '' (store.ts). Auto-selecting the
-      // first available model on the happy path means a user who just
-      // switches providers and clicks Done never ends up sending with an
-      // empty model string.
-      const first = list[0]
-      if (first && !list.some((m) => m.id === model)) setModel(first.id)
-    }).catch((err) => { setModels([]); reportError(err) })
+    if (autoFocus) {
+      selectRef.current?.focus()
+      onProviderFocused()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerId])
+  }, [])
 
   const save = async () => {
     try {
@@ -63,7 +69,7 @@ export function ProviderPanel({
       <div className="field">
         <label htmlFor="provider">Provider</label>
         <select
-          id="provider" data-testid="provider-select" value={providerId} autoFocus
+          id="provider" data-testid="provider-select" value={providerId} ref={selectRef}
           onChange={(e) => setProvider(e.target.value)}
         >
           {providers.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}

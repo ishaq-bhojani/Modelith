@@ -52,8 +52,17 @@ export function UpdatesPanel(): React.JSX.Element {
   // Only when there is something to act on. Both cases call the same bridge
   // method: main decides whether that installs or opens the release page, so
   // the renderer never handles a release URL.
+  //
+  // The 'ready' branch requires `canAutoInstall` too, not just the status:
+  // main's `resolveInstallAction` only ever returns `{ type: 'install' }`
+  // when `canAutoInstall` is true (see src/main/updater/policy.ts) — on a
+  // platform that cannot auto-install, main routes even a hypothetical
+  // 'ready' state to `shell.openExternal` instead. `ready` + `!canAutoInstall`
+  // is unreachable today (service.ts returns before downloading on such a
+  // platform), but the label must not claim "Restart to install" for a click
+  // that would actually open the release page.
   const installLabel =
-    update?.status === 'ready' ? 'Restart to install'
+    update?.status === 'ready' && update.canAutoInstall ? 'Restart to install'
       : update?.status === 'available' && !update.canAutoInstall ? 'Download'
         : null
 
