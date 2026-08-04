@@ -95,7 +95,7 @@ interface ActivityRow {
   name: string
   /** Root-relative path for file tools; absent for others. */
   relPath?: string
-  /** Only for diff-carrying tools, from lineDiff. */
+  /** From tool_result. Absent for non-write tools. */
   added?: number
   removed?: number
   status: 'running' | 'awaiting' | 'done' | 'failed' | 'not-applied'
@@ -103,10 +103,9 @@ interface ActivityRow {
 }
 ```
 
-The `+N −M` counts are the only genuinely new information in this feature.
-They are derivable from data the renderer already has — `tool_pending` carries
-both `previous` and `proposed` — but nothing computes them today, which is
-exactly why an edit currently reads as a bare filename.
+The `+N −M` counts are the only genuinely new information in this feature, and
+the only thing requiring a change outside the renderer. Nothing computes them
+today, which is exactly why an edit currently reads as a bare filename.
 
 Rows live in an `activity: ActivityRow[]` store slice and are **cleared when a
 new turn starts**, matching the decision that this is a live monitor rather
