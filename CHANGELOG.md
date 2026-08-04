@@ -4,11 +4,21 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+## 0.3.1 — 2026-08-04
+
 ### Fixed
 - **macOS builds now cover Intel.** `macos-latest` runners are Apple Silicon, so
   releases up to and including v0.3.0 shipped an arm64 `.dmg` only — Intel Mac
   users had nothing they could install. Both architectures are now built, and
   each carries an explicit `-x64` / `-arm64` suffix so the right one is obvious.
+
+### Internal
+- Fixed a test-isolation bug that made the stream-engine suite fail ~25% of
+  full-suite runs while passing in isolation: emit callbacks closed over a
+  module-level binding that `beforeEach` reassigns, so a still-draining stream
+  delivered its events into the next test. Since `npm test` gates release
+  packaging on all three runners, this could have failed a release build that
+  had nothing wrong with it.
 
 ## 0.3.0 — 2026-08-04
 
