@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../state/store.js'
 import type { ModelInfo, ProviderSummary } from '@shared/types'
 import { useEscapeToClose } from '../app/useEscapeToClose.js'
@@ -6,14 +6,17 @@ import { ProviderPanel } from './panels/ProviderPanel.js'
 import { FailoverPanel } from './panels/FailoverPanel.js'
 import { ModesPanel } from './panels/ModesPanel.js'
 import { UpdatesPanel } from './panels/UpdatesPanel.js'
+import { IconKey, IconRetry, IconSliders, IconUpdate, IconClose, IconLock } from '../app/icons.js'
 
 type CategoryId = 'provider' | 'failover' | 'modes' | 'updates'
 
-const CATEGORIES: { id: CategoryId; label: string }[] = [
-  { id: 'provider', label: 'Provider' },
-  { id: 'failover', label: 'Failover' },
-  { id: 'modes', label: 'Modes' },
-  { id: 'updates', label: 'Updates' },
+const RAIL: { group: string; items: { id: CategoryId; label: string; Icon: (p: { size?: number }) => React.JSX.Element }[] }[] = [
+  { group: 'Connection', items: [
+    { id: 'provider', label: 'Provider & key', Icon: IconKey },
+    { id: 'failover', label: 'Failover', Icon: IconRetry },
+  ] },
+  { group: 'Workspace', items: [{ id: 'modes', label: 'Modes', Icon: IconSliders }] },
+  { group: 'Application', items: [{ id: 'updates', label: 'Updates', Icon: IconUpdate }] },
 ]
 
 export function SettingsDialog(): React.JSX.Element | null {
@@ -23,6 +26,9 @@ export function SettingsDialog(): React.JSX.Element | null {
   const providerId = useAppStore((s) => s.providerId)
   const model = useAppStore((s) => s.model)
   const setModel = useAppStore((s) => s.setModel)
+  const fallbacks = useAppStore((s) => s.fallbacks)
+  const modes = useAppStore((s) => s.modes)
+  const update = useAppStore((s) => s.update)
 
   // Owned here, not in ProviderPanel: two panels need the provider list, and
   // fetching it twice would double the IPC call.
@@ -97,12 +103,48 @@ export function SettingsDialog(): React.JSX.Element | null {
 
   if (!open) return null
 
+  // The rail's only per-row state affordances: Failover echoes what will
+  // happen on a retry, Modes is a count, Updates is a presence dot. Each is
+  // omitted (not rendered blank) when it has nothing worth saying, so the
+  // rail stays quiet rather than padded with empty chrome.
+  function railState(id: CategoryId): React.JSX.Element | null {
+    if (id === 'failover') {
+      const fb = fallbacks[0]
+      const label = fb ? (providers.find((p) => p.id === fb.providerId)?.label ?? fb.providerId) : 'OFF'
+      return (
+        <span className="settings-rail-state" data-testid="settings-rail-state-failover">
+          {label}
+        </span>
+      )
+    }
+    if (id === 'modes') {
+      if (modes.length === 0) return null
+      return (
+        <span className="settings-rail-pill" data-testid="settings-rail-state-modes">
+          {modes.length}
+        </span>
+      )
+    }
+    if (id === 'updates') {
+      // Only 'available' and 'ready' are things the user can act on from
+      // here — mirrors UpdateChip's "quiet unless actionable" rule, but
+      // narrower: the chip also surfaces a manually-triggered 'error', which
+      // needs a message the rail's one-glyph state has no room for (that
+      // detail belongs to, and stays on, the Updates panel itself). 'idle',
+      // 'checking' and 'downloading' are mid-flight, not actionable yet.
+      const show = update?.status === 'available' || update?.status === 'ready'
+      if (!show) return null
+      return <span className="settings-rail-dot" data-testid="settings-rail-state-updates" />
+    }
+    return null
+  }
+
   return (
     <div className="dialog-backdrop" role="dialog" aria-labelledby="settings-title" aria-modal="true" onClick={close}>
       <div className="settings-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-head settings-head">
           <h2 id="settings-title">Settings</h2>
-          <button className="icon-button" data-testid="settings-close-x" aria-label="Close settings" onClick={close}>✕</button>
+          <button className="icon-button" data-testid="settings-close-x" aria-label="Close settings" onClick={close}><IconClose /></button>
         </div>
 
         <div className="settings-body">
@@ -110,23 +152,35 @@ export function SettingsDialog(): React.JSX.Element | null {
               arrows navigate the tablist, which is not implemented (every
               tab is reachable with Tab alone, and that is enough — YAGNI). */}
           <div className="settings-rail" role="tablist">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                role="tab"
-                id={`settings-tab-${c.id}`}
-                data-testid={`settings-tab-${c.id}`}
-                className={`settings-rail-item${category === c.id ? ' is-active' : ''}`}
-                aria-selected={category === c.id}
-                // Only the ACTIVE panel is mounted, so pointing the other tabs
-                // at element ids that do not exist would be worse than omitting
-                // aria-controls entirely.
-                {...(category === c.id ? { 'aria-controls': 'settings-panel' } : {})}
-                onClick={() => setCategory(c.id)}
-              >
-                {c.label}
-              </button>
+            {RAIL.map((section) => (
+              <Fragment key={section.group}>
+                {/* Presentational only: not a tab, not focusable. */}
+                <div className="settings-rail-group">{section.group}</div>
+                {section.items.map((item) => (
+                  <button
+                    key={item.id}
+                    role="tab"
+                    id={`settings-tab-${item.id}`}
+                    data-testid={`settings-tab-${item.id}`}
+                    className={`settings-rail-item${category === item.id ? ' is-active' : ''}`}
+                    aria-selected={category === item.id}
+                    // Only the ACTIVE panel is mounted, so pointing the other tabs
+                    // at element ids that do not exist would be worse than omitting
+                    // aria-controls entirely.
+                    {...(category === item.id ? { 'aria-controls': 'settings-panel' } : {})}
+                    onClick={() => setCategory(item.id)}
+                  >
+                    <item.Icon size={15} />
+                    <span className="settings-rail-label">{item.label}</span>
+                    {railState(item.id)}
+                  </button>
+                ))}
+              </Fragment>
             ))}
+            <div className="settings-rail-foot">
+              <IconLock size={13} />
+              <span>keychain-backed</span>
+            </div>
           </div>
 
           <div
@@ -163,7 +217,7 @@ export function SettingsDialog(): React.JSX.Element | null {
         </div>
 
         <div className="dialog-actions settings-foot">
-          <span className="dialog-spacer" />
+          <span className="settings-foot-note">Changes apply immediately — there is nothing to submit.</span>
           <button className="button-compact" data-testid="settings-close" onClick={close}>Done</button>
         </div>
       </div>

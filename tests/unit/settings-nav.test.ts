@@ -156,4 +156,49 @@ describe('Settings navigation', () => {
       expect(container.querySelector(`[data-testid="settings-tab-${id}"]`)?.hasAttribute('aria-controls')).toBe(false)
     }
   })
+
+  it('groups the rail under Connection, Workspace and Application', async () => {
+    await render(container)
+    const text = container.querySelector('[role="tablist"]')?.textContent ?? ''
+    expect(text).toContain('Connection')
+    expect(text).toContain('Workspace')
+    expect(text).toContain('Application')
+  })
+
+  it('names the provider tab for what the panel actually does', async () => {
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-tab-provider"]')?.textContent)
+      .toContain('Provider & key')
+  })
+
+  it('shows OFF against Failover when no fallback is configured', async () => {
+    useAppStore.setState({ fallbacks: [] })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-failover"]')?.textContent)
+      .toMatch(/off/i)
+  })
+
+  it('shows the mode count against Modes', async () => {
+    useAppStore.setState({
+      modes: [
+        { id: 'a', name: 'A', systemPrompt: 'p', providerId: 'anthropic', model: 'm' },
+        { id: 'b', name: 'B', systemPrompt: 'p', providerId: 'anthropic', model: 'm' },
+      ],
+    })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-modes"]')?.textContent).toBe('2')
+  })
+
+  it('marks Updates only when there is something to act on', async () => {
+    useAppStore.setState({ update: null })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-updates"]')).toBeNull()
+  })
+
+  it('closes with an icon button rather than a text glyph', async () => {
+    await render(container)
+    const close = container.querySelector('[data-testid="settings-close-x"]')
+    expect(close?.querySelector('svg')).not.toBeNull()
+    expect(close?.textContent).toBe('')
+  })
 })

@@ -2070,7 +2070,7 @@ body.resizing {
 }
 .settings-body {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: 208px 1fr;
   min-height: 0; /* lets the panel scroll instead of stretching the grid */
 }
 .settings-rail {
@@ -2095,6 +2095,70 @@ body.resizing {
 .settings-rail-item.is-active {
   background: var(--surface-raised);
   color: var(--text);
+}
+.settings-rail-group {
+  padding: 16px 12px 8px;
+  font: 600 10px/1 var(--font-body);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+.settings-rail-group:first-child { padding-top: 8px; }
+.settings-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+/* Same 3px × 18px bar as .session-row[aria-current='true']::before, so
+   "selected" reads identically in the sidebar and here. */
+.settings-rail-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 9px;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.settings-rail-label { flex: 1; text-align: left; }
+.settings-rail-state {
+  flex: none;
+  font: 400 11px/1 var(--font-mono, ui-monospace, monospace);
+  color: var(--text-meta);
+}
+.settings-rail-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--hover-soft);
+  font: 600 9.5px/1 var(--font-body);
+  letter-spacing: 0.4px;
+  color: var(--text-meta);
+}
+.settings-rail-dot {
+  width: 6px; height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+}
+.settings-rail-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--hairline);
+  font: 400 11px/1.4 var(--font-mono, ui-monospace, monospace);
+  color: var(--text-meta);
+}
+.settings-foot-note {
+  flex: 1;
+  font: 400 11.5px/1.4 var(--font-body);
+  color: var(--text-meta);
 }
 .settings-panel {
   display: flex;
