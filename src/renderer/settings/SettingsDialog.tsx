@@ -10,11 +10,20 @@ import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
 // every status gets a line here, including the macOS "cannot auto-install"
 // explanation, so it must live inside `updates-status` itself rather than a
 // separate paragraph the test never looks at.
+// Single source of truth for the manual-install sentence — referenced by
+// every branch below that needs it, so a branch can no longer silently omit
+// or diverge from it (as happened when the `error` case was rewritten
+// without it during an earlier fix).
+const MANUAL_INSTALL_NOTE =
+  'This build cannot install updates automatically; download new versions manually from the release page.'
+
 function updateStatusText(update: UpdateState | null): string {
   if (!update) return ''
   switch (update.status) {
     case 'error':
-      return update.message ?? 'Update check failed.'
+      return update.canAutoInstall
+        ? (update.message ?? 'Update check failed.')
+        : `${update.message ?? 'Update check failed.'} ${MANUAL_INSTALL_NOTE}`
     case 'ready':
       // Reaching 'ready' already means a build was downloaded and is staged
       // to install (auto, or already fetched manually) — appending the
@@ -29,15 +38,15 @@ function updateStatusText(update: UpdateState | null): string {
     case 'checking':
       return update.canAutoInstall
         ? 'Checking…'
-        : 'Checking… This build cannot install updates automatically; download new versions manually from the release page.'
+        : `Checking… ${MANUAL_INSTALL_NOTE}`
     case 'available':
       return update.canAutoInstall
         ? `Version ${update.latestVersion ?? ''} is available.`
-        : `Version ${update.latestVersion ?? ''} is available. This build cannot install updates automatically; download new versions manually from the release page.`
+        : `Version ${update.latestVersion ?? ''} is available. ${MANUAL_INSTALL_NOTE}`
     default:
       return update.canAutoInstall
         ? 'Up to date.'
-        : 'Up to date. This build cannot install updates automatically; download new versions manually from the release page.'
+        : `Up to date. ${MANUAL_INSTALL_NOTE}`
   }
 }
 

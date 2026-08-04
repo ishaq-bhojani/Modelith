@@ -94,4 +94,25 @@ describe('Settings — Updates section', () => {
     expect(text).toMatch(/ready|restart/i)
     expect(text).not.toMatch(/cannot install updates automatically/i)
   })
+
+  // Pins the manual-install gate from both sides for the 'error' status,
+  // which round-1 of the contradiction fix silently dropped: 'error' fell
+  // through to `update.message ?? 'Update check failed.'` with no
+  // `canAutoInstall` branch at all, so a macOS user whose check failed lost
+  // the one piece of guidance telling them what to do about it.
+  it('explains manual install when a check fails and canAutoInstall is false', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'error', message: 'Network error.', canAutoInstall: false } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent ?? ''
+    expect(text).toMatch(/network error/i)
+    expect(text).toMatch(/manual|download|cannot/i)
+  })
+
+  it('does not append the manual-install sentence on error when canAutoInstall is true', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'error', message: 'Network error.', canAutoInstall: true } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent ?? ''
+    expect(text).toMatch(/network error/i)
+    expect(text).not.toMatch(/cannot install updates automatically/i)
+  })
 })
