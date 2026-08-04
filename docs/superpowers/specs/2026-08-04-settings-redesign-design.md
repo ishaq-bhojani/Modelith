@@ -160,9 +160,11 @@ mapping is not one-to-one the plan states it explicitly.
 - **The provider "Change" affordance is under-specified.** The design shows the
   collapsed state only. Implemented as an expanding list reusing the model-row
   vocabulary — a decision made here, not in the design.
-- **`.key-status` and `.dialog-actions` are shared with other components.**
-  Retiring their second jobs must not restyle the diff gate or the composer;
-  new classes rather than edits to the shared ones.
+- **`.dialog-actions` is shared outside settings** — `SecretWarning.tsx:39`
+  uses it (verified). Retiring its second job inside settings must not restyle
+  that dialog, so the redesign adds new classes rather than editing the shared
+  one. `.key-status` is settings-only (verified: no non-settings renderer use),
+  so it can be retired outright once nothing references it.
 - **Price and context data may be missing** for a given model. Both are
   supplementary, so both render only when present rather than showing an empty
   column or `undefined`.
