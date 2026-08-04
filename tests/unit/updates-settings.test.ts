@@ -52,13 +52,13 @@ describe('Settings — Updates section', () => {
 
   it('reflects the enabled state in the toggle', async () => {
     await openUpdates(container)
-    const toggle = container.querySelector('[data-testid="updates-toggle"]') as HTMLInputElement
-    expect(toggle.checked).toBe(true)
+    const toggle = container.querySelector('[data-testid="updates-toggle"]')
+    expect(toggle?.getAttribute('aria-checked')).toBe('true')
   })
 
   it('persists the toggle through the bridge', async () => {
     await openUpdates(container)
-    const toggle = container.querySelector('[data-testid="updates-toggle"]') as HTMLInputElement
+    const toggle = container.querySelector('[data-testid="updates-toggle"]') as HTMLButtonElement
     await act(async () => { toggle.click() })
     expect(window.modelith.updates.setEnabled).toHaveBeenCalledWith(false)
   })
@@ -181,5 +181,23 @@ describe('Settings — Updates section', () => {
     })
     await openUpdates(container)
     expect(container.querySelector('[data-testid="updates-install"]')).toBeNull()
+  })
+
+  it('splits the macOS caveat out of the status sentence', async () => {
+    useAppStore.setState({
+      update: { ...BASE, status: 'available', canAutoInstall: false, latestVersion: '0.4.0' },
+    })
+    await openUpdates(container)
+    // The headline names the version; the explanation carries the caveat. They
+    // are separate elements now, not one concatenated sentence.
+    expect(container.querySelector('[data-testid="update-headline"]')?.textContent).toContain('0.4.0')
+    expect(container.querySelector('[data-testid="update-explanation"]')?.textContent)
+      .toMatch(/unsigned|manually|release page/i)
+  })
+
+  it('offers no state block when there is nothing to act on', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'idle' } })
+    await openUpdates(container)
+    expect(container.querySelector('[data-testid="update-headline"]')).toBeNull()
   })
 })

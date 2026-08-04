@@ -18,6 +18,11 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 - Settings is now organised into categories (Provider, Failover, Modes,
   Updates) behind a left rail. The title and Done button stay put instead of
   scrolling away, and only the selected category scrolls.
+- Settings panels now say what they configure. Each has a title and a short
+  description, provider/policy/key state collapse into one card with the key
+  state as the most prominent thing on the panel, the provider and model
+  pickers are lists rather than OS dropdowns, and the rail carries icons,
+  groups and per-row state.
 
 ### Added
 - A restart action in Settings → Updates, so a ready update can be applied
