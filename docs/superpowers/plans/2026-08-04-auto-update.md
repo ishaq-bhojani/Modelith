@@ -546,6 +546,16 @@ describe('CheckOnlyBackend', () => {
     expect(String(err)).not.toContain('secret-token-abc123')
   })
 
+  it('never leaks the body when a 2xx response is not valid JSON', async () => {
+    // The !ok branch short-circuits before .json(), so this is the only path
+    // that exercises the parse guard — and it is where the leak actually was.
+    const fetchImpl = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response('secret-token-abc123', { status: 200 })))
+    const backend = new CheckOnlyBackend(fetchImpl as unknown as typeof fetch)
+    const err = await backend.check().catch((e: unknown) => e)
+    expect(String(err)).not.toContain('secret-token-abc123')
+  })
+
   it('returns null when the payload has no usable tag', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ tag_name: 42 }))
     expect(await new CheckOnlyBackend(fetchImpl as unknown as typeof fetch).check()).toBeNull()
@@ -652,7 +662,16 @@ export class CheckOnlyBackend extends EventEmitterBase implements UpdaterBackend
     // remote-controlled text that must not reach the UI.
     if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
 
-    const body = (await response.json()) as { tag_name?: unknown }
+    let body: { tag_name?: unknown }
+    try {
+      body = (await response.json()) as { tag_name?: unknown }
+    } catch {
+      // response.json() embeds the raw body text in a SyntaxError when the
+      // payload isn't valid JSON (e.g. a captive portal, proxy, or WAF
+      // returning a 200 HTML page). Re-throw without that text — same
+      // never-leak-the-body posture as the !response.ok branch above.
+      throw new Error(`GitHub returned an unparsable response (status ${response.status})`)
+    }
     if (typeof body.tag_name !== 'string' || body.tag_name.length === 0) return null
     return { version: normalizeVersion(body.tag_name) }
   }
