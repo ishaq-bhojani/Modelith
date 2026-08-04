@@ -1,0 +1,15 @@
+<!--
+  The Modelith mark at small sizes — favicons, 16px chrome, tray.
+
+  Same geometry as brand.svg on a lighter 2.0 weight. At 16px the 2.4 stroke
+  closes the void at the optical centre and the mark reads as a solid blob;
+  thinning the stroke keeps the space between the brackets open, which is the
+  whole idea of the mark.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9.4 7 4.6 12l4.8 5"/>
+  <path d="m14.6 7 4.8 5-4.8 5"/>
+  <path d="M13.3 6.4 10.7 17.6"/>
+</svg>

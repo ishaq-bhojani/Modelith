@@ -1,0 +1,60 @@
+<!--
+  Modelith app icon — the master source for every packaged icon.
+
+  electron-builder reads `build/` (electron-builder.yml: buildResources) and
+  generates the macOS .icns, the Windows .ico and the Linux PNG set from this
+  one file. No raster is committed: verified on a Windows build, electron-builder
+  produced a complete 7-size .ico (16→256) from this SVG alone, so a checked-in
+  PNG would only be a second source of truth that could drift.
+
+  `build/` did not exist before this file, which is why every release up to
+  v0.3.2 shipped Electron's default icon despite `buildResources: build` being
+  set all along.
+
+  The release workflow asserts an icon was actually generated for each OS —
+  macOS .icns generation cannot be tested from a Windows or Linux machine, and
+  a silently-defaulted icon is exactly the kind of thing that only shows up
+  once an installer is in a user's hands.
+
+  Geometry is from the brand spec: a 22.4% corner radius, the mark at 64% of
+  the tile, and all three strokes on one 2.4-unit weight with round caps. The
+  void at the optical centre is the point of the mark, so the slash must not be
+  thickened or the brackets pulled inward.
+
+  The gradient is the one place the brand uses one; everything else in the app
+  is flat on true black.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!--
+      CSS `linear-gradient(140deg, #7c81ff 0%, #494fdf 52%, #3a40c4 100%)`
+      expressed in user space. A CSS angle is measured clockwise from "to top",
+      so 140deg gives the direction vector (sin140, -cos140) = (0.643, 0.766) —
+      right and downward in SVG's y-down space. For a 1024 square the gradient
+      line is |W·sinθ| + |H·cosθ| = 1442.8 long, centred on the tile, which puts
+      the endpoints just outside the corners.
+    -->
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse"
+                    x1="48.1" y1="-40.6" x2="975.9" y2="1064.6">
+      <stop offset="0" stop-color="#7c81ff"/>
+      <stop offset="0.52" stop-color="#494fdf"/>
+      <stop offset="1" stop-color="#3a40c4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="229.4" ry="229.4" fill="url(#tile)"/>
+
+  <!--
+    The mark, drawn in its native 24-unit space and scaled to 656px (64% of
+    1024), centred. Keeping the original path data untouched and scaling the
+    whole group means the 2.4 stroke weight scales with it, exactly as the
+    spec's proportions require.
+  -->
+  <g transform="translate(184 184) scale(27.3333)"
+     fill="none" stroke="#ffffff" stroke-width="2.4"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.4 7 4.6 12l4.8 5"/>
+    <path d="m14.6 7 4.8 5-4.8 5"/>
+    <path d="M13.3 6.4 10.7 17.6"/>
+  </g>
+</svg>

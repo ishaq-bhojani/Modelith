@@ -10,3 +10,6 @@ playwright-report/
 # Never commit scratchpad scratch files, including mangled absolute paths
 *scratchpad*
 release/
+
+# CI build log, tee'd so the icon check can inspect electron-builder output
+dist.log

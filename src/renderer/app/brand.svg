@@ -1,0 +1,17 @@
+<!--
+  The Modelith mark, for display at 20px and above.
+
+  Strokes are `currentColor` so the mark inherits whatever it sits on — the
+  title bar, a README, a lockup. The app icon (build/icon.svg) is the only
+  place the mark is drawn on the brand gradient; everywhere else it is flat.
+
+  Below roughly 20px the 2.4 weight fills the void that makes this a mark
+  rather than a pair of chevrons — use brand-16.svg there instead.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2.4"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9.4 7 4.6 12l4.8 5"/>
+  <path d="m14.6 7 4.8 5-4.8 5"/>
+  <path d="M13.3 6.4 10.7 17.6"/>
+</svg>

@@ -4,6 +4,16 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+### Added
+- **A real app icon.** `electron-builder.yml` has pointed at `buildResources: build`
+  all along, but that directory never existed — which is why every release up to
+  v0.3.2 shipped Electron's default icon. `build/icon.svg` is now the single
+  master; electron-builder generates the macOS `.icns`, Windows `.ico` and Linux
+  PNG set from it.
+- The release workflow fails if electron-builder falls back to the default icon.
+  It only logs a warning in that case and builds happily on, which is exactly how
+  the missing icon went unnoticed for four releases.
+
 ### Changed
 - Settings is now organised into categories (Provider, Failover, Modes,
   Updates) behind a left rail. The title and Done button stay put instead of

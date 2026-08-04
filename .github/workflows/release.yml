@@ -61,10 +61,49 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Package installers
-        run: npm run dist
+        shell: bash
+        # Tee'd so the icon check below can inspect what electron-builder said.
+        # Safe to pipe: Actions runs `shell: bash` as `bash --noprofile --norc
+        # -eo pipefail`, so a failing `npm run dist` still fails the step rather
+        # than being masked by tee's exit code. Do not switch this to the
+        # default shell without re-checking that.
+        run: npm run dist 2>&1 | tee dist.log
         env:
           # Never let electron-builder try to sign without credentials.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # electron-builder generates the platform icon from build/icon.svg into a
+      # `.icon-<fmt>` directory beside the installers. When it cannot, it does
+      # NOT fail the build: `resolveIcon` sets `isFallback` and only logs
+      # "default Electron icon is used" (app-builder-lib/out/platformPackager.js).
+      # That silent fallback is exactly how every release up to v0.3.2 shipped
+      # unbranded without anyone noticing.
+      #
+      # Both signals are checked. The directory alone is not enough — the
+      # fallback path still writes one, just containing Electron's icon. The
+      # log line is the authoritative signal; the directory check catches the
+      # case where conversion did not run at all.
+      #
+      # The SVG→.ico path is verified locally on Windows; SVG→.icns cannot be
+      # exercised from a Windows or Linux machine, so CI is the only place it
+      # is ever proven.
+      - name: Verify the app icon was generated
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            windows-latest) expected=release/.icon-ico ;;
+            macos-latest)   expected=release/.icon-icns ;;
+            *)              expected=release/.icon-set ;;
+          esac
+          if grep -qi "default .* icon is used" dist.log; then
+            echo "::error::electron-builder fell back to the default Electron icon instead of building from build/icon.svg — the installer would ship unbranded. It logs this as a warning and does not fail on its own, which is why this step exists. Check that build/icon.svg exists and is valid SVG."
+            grep -i "icon" dist.log || true
+            exit 1
+          fi
+          if [ ! -d "$expected" ] || [ -z "$(ls -A "$expected" 2>/dev/null)" ]; then
+            echo "::error::$expected is missing or empty, so electron-builder never converted build/icon.svg for this platform. Directories present: $(ls -d release/.icon-* 2>/dev/null | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "Generated icon: $expected -> $(ls -A "$expected" | tr '\n' ' ')"
       # latest*.yml is the update metadata electron-updater reads (it carries the
       # SHA512 of each installer). All three runners emit one — latest.yml,
       # latest-linux.yml, latest-mac.yml (verified on the v0.3.0 release).
