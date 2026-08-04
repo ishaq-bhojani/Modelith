@@ -249,13 +249,16 @@ window.modelith.updates = {
 
 2. **`.github/workflows/release.yml`** — the upload-artifact glob gains
    `release/latest*.yml`. Without those files on the release, the updater has
-   nothing to read and every check fails. Windows emits `latest.yml` and Linux
-   emits `latest-linux.yml`. macOS emits **no** metadata file — it ships
-   `mac.target: dmg`, and electron-builder only writes update metadata for a
-   `zip` target on macOS — which is expected, since macOS goes through
-   `CheckOnlyBackend` and queries the GitHub API directly instead of reading a
-   metadata file. A per-OS step verifies the expected file exists on
-   Windows/Linux before upload (skipped on macOS), so a regression that
+   nothing to read and every check fails. All three runners emit one:
+   `latest.yml`, `latest-linux.yml`, and `latest-mac.yml` — confirmed on the
+   v0.3.0 release, where `latest-mac.yml` points at the arm64 dmg.
+
+   Only Windows and Linux are **verified** by the pre-upload step; macOS is
+   skipped deliberately. Modelith never reads `latest-mac.yml` (macOS uses
+   `CheckOnlyBackend` against the GitHub API), and it would be unusable even if
+   it did, since Squirrel.Mac updates from a `zip` and this one references a
+   `dmg`. Gating the release on a file we do not consume would add a failure
+   mode for no benefit. The Windows/Linux check means a regression that
    silently drops the metadata fails the build instead of shipping quietly.
 
 No change to installer targets, and installers stay unsigned.

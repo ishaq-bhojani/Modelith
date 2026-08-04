@@ -2244,12 +2244,16 @@ And update the step comment above it:
 
 ```yaml
       # latest*.yml is the update metadata electron-updater reads (it carries the
-      # SHA512 of each installer). Windows emits latest.yml and Linux emits
-      # latest-linux.yml; macOS emits none — it ships dmg only, and macOS goes
-      # through CheckOnlyBackend (a direct GitHub API check) instead of reading
-      # a metadata file. Without these files on the release, every in-app
-      # update check fails on the platforms that expect one, so they ship
-      # alongside the installers.
+      # SHA512 of each installer). All three runners emit one — latest.yml,
+      # latest-linux.yml, latest-mac.yml (verified on the v0.3.0 release).
+      # Without these files on the release, every in-app update check fails, so
+      # they ship alongside the installers.
+      #
+      # Only Windows and Linux are VERIFIED below. Modelith never reads
+      # latest-mac.yml: macOS goes through CheckOnlyBackend, which queries the
+      # GitHub API directly. It would be unusable anyway — it points at the dmg,
+      # and Squirrel.Mac updates from a zip. Requiring a file we do not consume
+      # would only add a way for the release to fail for no reason.
 ```
 
 - [ ] **Step 4: Record the load-bearing flag in AGENTS.md**
