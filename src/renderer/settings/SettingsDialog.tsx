@@ -1,9 +1,35 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import type { ModelInfo, ProviderSummary } from '@shared/types'
+import type { ModelInfo, ProviderSummary, UpdateState } from '@shared/types'
 import { IconCheck, IconLock } from '../app/icons.js'
 import { useEscapeToClose } from '../app/useEscapeToClose.js'
 import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
+
+// Settings is the always-available surface for update state (unlike the
+// sidebar chip, which stays deliberately silent for most of the lifecycle):
+// every status gets a line here, including the macOS "cannot auto-install"
+// explanation, so it must live inside `updates-status` itself rather than a
+// separate paragraph the test never looks at.
+function updateStatusText(update: UpdateState | null): string {
+  if (!update) return ''
+  const base = (() => {
+    switch (update.status) {
+      case 'error': return update.message ?? 'Update check failed.'
+      case 'ready': return `Version ${update.latestVersion ?? ''} is ready — restart to install.`
+      case 'available': return `Version ${update.latestVersion ?? ''} is available.`
+      case 'downloading': return `Downloading… ${update.percent ?? 0}%`
+      case 'checking': return 'Checking…'
+      default: return 'Up to date.'
+    }
+  })()
+  // This build (macOS, unsigned) cannot install updates on its own — the note
+  // must land inside this same string regardless of lifecycle status, since
+  // it is the only element this section's manual-install explanation renders
+  // into.
+  return update.canAutoInstall
+    ? base
+    : `${base} This build cannot install updates automatically; download new versions manually from the release page.`
+}
 
 export function SettingsDialog(): React.JSX.Element | null {
   const open = useAppStore((s) => s.settingsOpen)
@@ -18,6 +44,7 @@ export function SettingsDialog(): React.JSX.Element | null {
   const modes = useAppStore((s) => s.modes)
   const saveMode = useAppStore((s) => s.saveMode)
   const deleteMode = useAppStore((s) => s.deleteMode)
+  const update = useAppStore((s) => s.update)
 
   const [providers, setProviders] = useState<ProviderSummary[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -251,6 +278,34 @@ export function SettingsDialog(): React.JSX.Element | null {
           >
             Add mode (uses the current provider &amp; model)
           </button>
+        </div>
+
+        <div className="field">
+          <label>Updates</label>
+          <p className="field-hint" data-testid="updates-version">
+            Modelith {update?.currentVersion ?? ''}
+          </p>
+          <label className="key-status">
+            <input
+              type="checkbox"
+              data-testid="updates-toggle"
+              checked={update?.enabled ?? true}
+              onChange={(e) => void window.modelith.updates.setEnabled(e.target.checked)}
+            />
+            <span>Automatically check for updates</span>
+          </label>
+          <p className="field-hint" data-testid="updates-status">
+            {updateStatusText(update)}
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="button-secondary"
+              data-testid="updates-check-now"
+              onClick={() => void window.modelith.updates.check()}
+            >
+              Check now
+            </button>
+          </div>
         </div>
 
         <div className="dialog-actions">
