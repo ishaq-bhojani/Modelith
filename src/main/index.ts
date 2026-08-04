@@ -55,9 +55,11 @@ void app.whenReady().then(() => {
   void getMcpManager().init()
   registerWindowHandlers(() => mainWindow)
   installAppMenu(() => mainWindow)
-  // Update checks run in the background; a failure is surfaced as state, never
-  // as a startup hang (same posture as the MCP init above).
-  void registerUpdateHandlers(() => mainWindow)
+  // Synchronous: registers every updates:* channel and starts the service
+  // before this call returns, so a renderer mounting right after can never
+  // race ahead of a handler existing. The persisted enabled/disabled
+  // preference and periodic checks load and run in the background.
+  registerUpdateHandlers(() => mainWindow)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

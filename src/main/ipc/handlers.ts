@@ -46,7 +46,7 @@ import { getProvider, listProviders, mainFetch } from '../providers/registry.js'
 import { UpdaterService } from '../updater/service.js'
 import { selectBackend } from '../updater/backend.js'
 import { ElectronUpdaterBackend } from '../updater/electron-backend.js'
-import { canAutoInstall } from '../updater/policy.js'
+import { canAutoInstall, resolveInstallAction } from '../updater/policy.js'
 
 const MAX_CONTEXT_TOKENS = 96_000
 
@@ -292,16 +292,28 @@ export function getUpdater(): UpdaterService | undefined {
  * Wires the updater to IPC. The renderer can read state, request a check,
  * toggle the preference, and install — but it cannot influence WHERE the
  * updater looks; owner/repo live in src/main/updater/policy.ts.
+ *
+ * Registration is entirely SYNCHRONOUS on purpose. An earlier version of this
+ * function awaited the persisted `updatesEnabled` read before registering any
+ * `ipcMain.handle` channel; since index.ts calls this as
+ * `void registerUpdateHandlers(...)` (never awaited), a renderer that mounts
+ * fast enough could invoke `updates:get` before the handler existed at all,
+ * surfacing "No handler registered" as a spurious startup error. Constructing
+ * the service and registering every channel here — before any `await` — makes
+ * that race impossible: by the time this function returns, `updates:get`
+ * already has a real UpdaterService behind it.
  */
-export async function registerUpdateHandlers(
+export function registerUpdateHandlers(
   getWindow: () => BrowserWindow | undefined,
-): Promise<void> {
+): void {
   const settings = getSettingsStore()
-  const stored = (await settings.get())['updatesEnabled']
-  const enabled = typeof stored === 'boolean' ? stored : true
   const fake = process.env['MODELITH_FAKE_UPDATER'] === '1'
 
-  updater = new UpdaterService({
+  // `enabled: true` is the same fallback used below once the persisted value
+  // loads and turns out to be unset — so a renderer that reads state before
+  // the settings file has been read back sees exactly what it would see once
+  // that read completes anyway, in the common case.
+  const service = new UpdaterService({
     backend: selectBackend({
       platform: process.platform,
       isPackaged: app.isPackaged,
@@ -314,7 +326,7 @@ export async function registerUpdateHandlers(
     // The fake backend drives the e2e suite, which runs unpackaged; force the
     // capability on so the full download → ready path is exercised.
     canAutoInstall: fake || canAutoInstall(process.platform, app.isPackaged),
-    enabled,
+    enabled: true,
     emit: (state) => {
       const window = getWindow()
       if (window && !window.isDestroyed()) {
@@ -323,23 +335,67 @@ export async function registerUpdateHandlers(
     },
     persistEnabled: async (value) => { await settings.set({ updatesEnabled: value }) },
   })
+  updater = service
 
-  ipcMain.handle(CHANNELS.updatesGet, () => updater?.getState())
-  ipcMain.handle(CHANNELS.updatesCheck, () => updater?.check(true))
+  // Set the instant an explicit `updates:set-enabled` call is received (see
+  // below), synchronously, before anything else in that handler runs. Guards
+  // the persisted-value application further down: once the user has made an
+  // explicit choice, a slow settings read that resolves afterward must never
+  // clobber it with a possibly-stale value.
+  let userToggled = false
+
+  ipcMain.handle(CHANNELS.updatesGet, () => service.getState())
+  ipcMain.handle(CHANNELS.updatesCheck, () => service.check(true))
   ipcMain.handle(CHANNELS.updatesInstall, () => {
-    const state = updater?.getState()
-    // macOS (and any non-auto-install platform) opens the release page instead.
-    // The URL was built by policy.releaseUrlFor from a hardcoded repo constant,
-    // never taken from an API response.
-    if (state && !state.canAutoInstall) {
-      if (state.releaseUrl) void shell.openExternal(state.releaseUrl)
+    // The decision (install vs. open-release vs. noop) is a pure function in
+    // policy.ts, unit-tested directly — this handler is just a thin shell
+    // that acts on it. The URL, when present, was built by
+    // policy.releaseUrlFor from a hardcoded repo constant; it never came from
+    // a response body or from the renderer.
+    const action = resolveInstallAction(service.getState())
+    if (action.type === 'open-release') {
+      // openExternal can reject (e.g. no default browser configured); that
+      // must not become an unhandled promise rejection.
+      void shell.openExternal(action.url).catch(() => {})
       return
     }
-    updater?.install()
+    if (action.type === 'install') service.install()
   })
   ipcMain.handle(CHANNELS.updatesSetEnabled, withZodMapping(async (_e, raw: unknown) => {
-    await updater?.setEnabled(UpdatesSetEnabledSchema.parse(raw).enabled)
+    userToggled = true
+    await service.setEnabled(UpdatesSetEnabledSchema.parse(raw).enabled)
   }))
 
-  updater.start()
+  // Started with the enabled: true default above — never blocked on the
+  // settings read below, so a slow or failing disk read never leaves the
+  // service unstarted.
+  service.start()
+
+  // Load the persisted preference in the background. The handlers above
+  // already exist and the service is already running with its default, so
+  // this can take as long as it needs to without ever exposing a window where
+  // `updates:get` has no handler, or where it would return undefined.
+  void settings.get()
+    .then((all) => {
+      const stored = all['updatesEnabled']
+      if (typeof stored !== 'boolean') return
+      // An explicit setEnabled() the user triggered (via IPC) while this read
+      // was in flight reflects their current, real intent — it must win over
+      // a persisted value that may now be stale. userToggled is set
+      // synchronously at the top of that handler, before any `await`, so this
+      // check is race-free regardless of which promise settles first.
+      if (userToggled) return
+      if (stored === service.getState().enabled) return
+      // Reuses setEnabled rather than patching state directly so the
+      // start()/stop() scheduling stays correct (e.g. stored: false must stop
+      // the timers service.start() above already armed). It re-persists the
+      // same value it just read, which is a harmless no-op write.
+      void service.setEnabled(stored)
+    })
+    .catch(() => {
+      // A failed settings read must not throw across this background chain,
+      // and must not leave the service unstarted — it already started above
+      // with the same enabled: true fallback used when the key was never
+      // written, which is the correct fallback here too.
+    })
 }

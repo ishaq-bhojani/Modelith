@@ -1,3 +1,5 @@
+import type { UpdateState } from '../../shared/types.js'
+
 /**
  * Pure update-policy logic. No Electron import, no I/O — everything here is a
  * function of its arguments so the whole file is unit-testable.
@@ -54,6 +56,31 @@ export function isNewerVersion(current: string, candidate: string): boolean {
 
 export function releaseUrlFor(version: string): string {
   return `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/tag/v${normalizeVersion(version)}`
+}
+
+/**
+ * The `updates:install` routing decision, as a pure function of state. Kept
+ * here — and kept pure — so the security property this task is really about
+ * (shell.openExternal only ever receives a URL WE built, never something
+ * lifted from an API response) is checkable without a live Electron process.
+ * src/main/ipc/handlers.ts's `updates:install` handler is a thin shell that
+ * just calls this and acts on the result.
+ */
+export type InstallAction =
+  | { type: 'install' }
+  | { type: 'open-release'; url: string }
+  | { type: 'noop' }
+
+export function resolveInstallAction(state: UpdateState): InstallAction {
+  if (state.canAutoInstall) {
+    // Mirrors UpdaterService.install()'s own guard: installing is only ever
+    // meaningful once a download has actually finished.
+    return state.status === 'ready' ? { type: 'install' } : { type: 'noop' }
+  }
+  // macOS (and any other non-auto-install platform): open the release page
+  // instead — but never call shell.openExternal with an undefined URL just
+  // because a check hasn't completed yet.
+  return state.releaseUrl ? { type: 'open-release', url: state.releaseUrl } : { type: 'noop' }
 }
 
 export function isCheckDue(
