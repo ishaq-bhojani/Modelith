@@ -5,6 +5,15 @@ import { createRoot } from 'react-dom/client'
 import React from 'react'
 import { useAppStore } from '../../src/renderer/state/store.js'
 import { SettingsDialog } from '../../src/renderer/settings/SettingsDialog.js'
+import type { UpdateState } from '../../src/shared/types.js'
+
+const UPDATE_BASE: UpdateState = {
+  status: 'idle',
+  canAutoInstall: true,
+  currentVersion: '0.2.0',
+  enabled: true,
+  manualCheck: false,
+}
 
 function installBridge(): void {
   ;(window as unknown as { modelith: unknown }).modelith = {
@@ -187,6 +196,27 @@ describe('Settings navigation', () => {
     })
     await render(container)
     expect(container.querySelector('[data-testid="settings-rail-state-modes"]')?.textContent).toBe('2')
+  })
+
+  it('shows the dot against Updates when a downloadable update is available', async () => {
+    useAppStore.setState({ update: { ...UPDATE_BASE, status: 'available' } })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-updates"]')).not.toBeNull()
+  })
+
+  it('shows the dot against Updates when an update is ready to install', async () => {
+    useAppStore.setState({ update: { ...UPDATE_BASE, status: 'ready' } })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-updates"]')).not.toBeNull()
+  })
+
+  it('shows no dot against Updates while a check is merely in progress', async () => {
+    // A real, non-null update state that a wrong "any update object at all"
+    // implementation could mistakenly light up — unlike `update: null`, this
+    // genuinely exercises the status narrowing.
+    useAppStore.setState({ update: { ...UPDATE_BASE, status: 'checking' } })
+    await render(container)
+    expect(container.querySelector('[data-testid="settings-rail-state-updates"]')).toBeNull()
   })
 
   it('marks Updates only when there is something to act on', async () => {

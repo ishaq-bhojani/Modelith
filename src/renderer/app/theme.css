@@ -2082,7 +2082,11 @@ body.resizing {
   overflow-y: auto;
 }
 .settings-rail-item {
-  padding: 8px 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -2104,13 +2108,6 @@ body.resizing {
   color: var(--text-meta);
 }
 .settings-rail-group:first-child { padding-top: 8px; }
-.settings-rail-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-}
 /* Same 3px × 18px bar as .session-row[aria-current='true']::before, so
    "selected" reads identically in the sidebar and here. */
 .settings-rail-item.is-active::before {
