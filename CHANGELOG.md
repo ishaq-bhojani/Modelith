@@ -4,6 +4,21 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+## 0.3.2 — 2026-08-04
+
+### Fixed
+- **Windows auto-update could not download.** v0.3.0 and v0.3.1 published a
+  `latest.yml` pointing at `Modelith-Setup-<version>.exe`, but the installer was
+  actually uploaded as `Modelith.Setup.<version>.exe` — NSIS names it with
+  spaces, and GitHub rewrites spaces to dots. Every Windows client that found an
+  update got a 404 when it tried to fetch it. The installer is now named without
+  spaces so both agree. **Windows users on v0.3.0 or v0.3.1 must update manually
+  once**; the in-app updater could not have delivered this fix to them.
+  Linux and macOS were unaffected.
+- The release workflow now verifies that every filename referenced by
+  `latest*.yml` actually exists in the build output, so a mismatch of this kind
+  fails the build instead of shipping a release that silently cannot update.
+
 ## 0.3.1 — 2026-08-04
 
 ### Fixed

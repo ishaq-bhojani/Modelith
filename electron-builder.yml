@@ -66,3 +66,13 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # No spaces in the installer filename, or auto-update 404s on Windows.
+  #
+  # The NSIS default is "${productName} Setup ${version}.${ext}" — with spaces.
+  # electron-builder writes latest.yml's `url` with those spaces replaced by
+  # HYPHENS (it assumes it will publish the file itself), but our workflow
+  # uploads the artifact via actions, and GitHub replaces spaces with DOTS. So
+  # v0.3.1 shipped `Modelith.Setup.0.3.1.exe` while latest.yml pointed clients
+  # at `Modelith-Setup-0.3.1.exe` — a 404 for every Windows client that tried
+  # to update. Naming it without spaces makes both agree.
+  artifactName: ${productName}-Setup-${version}.${ext}

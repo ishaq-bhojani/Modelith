@@ -96,6 +96,25 @@ jobs:
             exit 1
           fi
           echo "Found $expected"
+
+          # Every filename latest*.yml points at must exist EXACTLY as named.
+          # Existing metadata is not enough — v0.3.1 shipped a latest.yml
+          # referencing `Modelith-Setup-0.3.1.exe` while the artifact was
+          # `Modelith Setup 0.3.1.exe` (NSIS's default name has spaces, which
+          # GitHub then turns into dots). Every Windows client that tried to
+          # update got a 404. A filename mismatch is invisible to every other
+          # check in this workflow, so assert it directly.
+          missing=0
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            if [ -f "release/$name" ]; then
+              echo "  ok: $name"
+            else
+              echo "::error::$expected references '$name', but no such file exists in release/. Clients read that name to build the download URL, so every in-app update would 404. Files actually built: $(ls release/ | tr '\n' ' '). Fix the artifactName in electron-builder.yml so the built filename matches — and avoid spaces, which GitHub rewrites on upload."
+              missing=1
+            fi
+          done <<< "$(sed -n 's/^[[:space:]]*-\{0,1\}[[:space:]]*url:[[:space:]]*//p' "$expected")"
+          [ "$missing" -eq 0 ] || exit 1
       - name: Upload installers as artifacts
         uses: actions/upload-artifact@v4
         with:
