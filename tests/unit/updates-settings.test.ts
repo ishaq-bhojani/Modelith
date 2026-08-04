@@ -57,6 +57,28 @@ describe('Settings — Updates section', () => {
     expect(window.modelith.updates.setEnabled).toHaveBeenCalledWith(false)
   })
 
+  it('rounds the download percentage to two decimals', async () => {
+    // electron-updater reports a raw float, so the status line read
+    // "Downloading… 90.35480160960444%" verbatim.
+    useAppStore.setState({ update: { ...BASE, status: 'downloading', percent: 90.35480160960444 } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent
+    expect(text).toContain('90.35%')
+    expect(text).not.toContain('90.3548')
+  })
+
+  it('still shows two decimals for a whole-number percentage', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'downloading', percent: 50 } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    expect(container.querySelector('[data-testid="updates-status"]')?.textContent).toContain('50.00%')
+  })
+
+  it('shows 0.00% before any progress arrives', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'downloading' } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    expect(container.querySelector('[data-testid="updates-status"]')?.textContent).toContain('0.00%')
+  })
+
   it('runs a manual check', async () => {
     await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
     const button = container.querySelector('[data-testid="updates-check-now"]') as HTMLButtonElement

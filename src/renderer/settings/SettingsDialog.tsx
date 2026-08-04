@@ -34,7 +34,9 @@ function updateStatusText(update: UpdateState | null): string {
       // Mid-download, telling the user to go download manually instead is
       // self-contradictory regardless of `canAutoInstall`, so this status
       // never carries the manual-install sentence either.
-      return `Downloading… ${update.percent ?? 0}%`
+      // electron-updater reports a raw float (90.35480160960444), so format
+      // it — the unrounded value spills across the status line.
+      return `Downloading… ${(update.percent ?? 0).toFixed(2)}%`
     case 'checking':
       return update.canAutoInstall
         ? 'Checking…'
