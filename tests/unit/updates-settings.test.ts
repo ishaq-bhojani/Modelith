@@ -70,4 +70,28 @@ describe('Settings — Updates section', () => {
     expect(container.querySelector('[data-testid="updates-status"]')?.textContent)
       .toMatch(/manual|download|cannot/i)
   })
+
+  // Regression coverage for the self-contradictory copy the code review
+  // flagged: appending the manual-install sentence unconditionally whenever
+  // `canAutoInstall` is false produced nonsense like "Downloading… 40% This
+  // build cannot install updates automatically…" for statuses where the
+  // manual-install framing isn't actually true (mid-download, or already
+  // downloaded and ready). Those two statuses must never carry that sentence,
+  // even with `canAutoInstall: false` — asserting on its absence so a
+  // regression reintroducing it fails.
+  it('does not contradict itself while downloading, even when canAutoInstall is false', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'downloading', percent: 40, canAutoInstall: false } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent ?? ''
+    expect(text).toMatch(/download/i)
+    expect(text).not.toMatch(/cannot install updates automatically/i)
+  })
+
+  it('does not contradict itself once ready, even when canAutoInstall is false', async () => {
+    useAppStore.setState({ update: { ...BASE, status: 'ready', latestVersion: '0.3.0', canAutoInstall: false } })
+    await act(async () => { createRoot(container).render(React.createElement(SettingsDialog)) })
+    const text = container.querySelector('[data-testid="updates-status"]')?.textContent ?? ''
+    expect(text).toMatch(/ready|restart/i)
+    expect(text).not.toMatch(/cannot install updates automatically/i)
+  })
 })

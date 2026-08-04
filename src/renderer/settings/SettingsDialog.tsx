@@ -12,23 +12,33 @@ import { DataPolicyBadge } from '../app/DataPolicyBadge.js'
 // separate paragraph the test never looks at.
 function updateStatusText(update: UpdateState | null): string {
   if (!update) return ''
-  const base = (() => {
-    switch (update.status) {
-      case 'error': return update.message ?? 'Update check failed.'
-      case 'ready': return `Version ${update.latestVersion ?? ''} is ready — restart to install.`
-      case 'available': return `Version ${update.latestVersion ?? ''} is available.`
-      case 'downloading': return `Downloading… ${update.percent ?? 0}%`
-      case 'checking': return 'Checking…'
-      default: return 'Up to date.'
-    }
-  })()
-  // This build (macOS, unsigned) cannot install updates on its own — the note
-  // must land inside this same string regardless of lifecycle status, since
-  // it is the only element this section's manual-install explanation renders
-  // into.
-  return update.canAutoInstall
-    ? base
-    : `${base} This build cannot install updates automatically; download new versions manually from the release page.`
+  switch (update.status) {
+    case 'error':
+      return update.message ?? 'Update check failed.'
+    case 'ready':
+      // Reaching 'ready' already means a build was downloaded and is staged
+      // to install (auto, or already fetched manually) — appending the
+      // manual-install sentence here would contradict "restart to install"
+      // in the same breath, so it never applies to this status.
+      return `Version ${update.latestVersion ?? ''} is ready — restart to install.`
+    case 'downloading':
+      // Mid-download, telling the user to go download manually instead is
+      // self-contradictory regardless of `canAutoInstall`, so this status
+      // never carries the manual-install sentence either.
+      return `Downloading… ${update.percent ?? 0}%`
+    case 'checking':
+      return update.canAutoInstall
+        ? 'Checking…'
+        : 'Checking… This build cannot install updates automatically; download new versions manually from the release page.'
+    case 'available':
+      return update.canAutoInstall
+        ? `Version ${update.latestVersion ?? ''} is available.`
+        : `Version ${update.latestVersion ?? ''} is available. This build cannot install updates automatically; download new versions manually from the release page.`
+    default:
+      return update.canAutoInstall
+        ? 'Up to date.'
+        : 'Up to date. This build cannot install updates automatically; download new versions manually from the release page.'
+  }
 }
 
 export function SettingsDialog(): React.JSX.Element | null {
