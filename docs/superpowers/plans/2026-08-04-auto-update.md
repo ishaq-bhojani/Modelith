@@ -536,10 +536,14 @@ describe('CheckOnlyBackend', () => {
   })
 
   it('raises an error carrying only the status code, never the response body', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(new Response('secret-token-abc123', { status: 500 }))
+    // mockImplementation (not mockResolvedValue): a Response body can only be
+    // consumed once, so each call needs its own instance.
+    const fetchImpl = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response('secret-token-abc123', { status: 500 })))
     const backend = new CheckOnlyBackend(fetchImpl as unknown as typeof fetch)
-    await expect(backend.check()).rejects.toThrow(/500/)
-    await expect(backend.check()).rejects.not.toThrow(/secret-token-abc123/)
+    const err = await backend.check().catch((e: unknown) => e)
+    expect(String(err)).toMatch(/500/)
+    expect(String(err)).not.toContain('secret-token-abc123')
   })
 
   it('returns null when the payload has no usable tag', async () => {
@@ -807,7 +811,12 @@ describe('UpdaterService — happy path', () => {
   it('moves through checking to available and records the release URL', async () => {
     const { service, states } = makeService({ canAutoInstall: false })
     await service.check()
-    expect(states.map((s) => s.status)).toEqual(['checking', 'idle', 'available'].slice(0, states.length))
+    // Assert the transition boundaries, not the exact emit count: `check()`
+    // patches lastCheckedAt mid-flight, which legitimately emits 'checking'
+    // more than once.
+    expect(states[0]!.status).toBe('checking')
+    expect(states.at(-1)!.status).toBe('available')
+    expect(states.some((s) => s.status === 'checking')).toBe(true)
     expect(service.getState()).toMatchObject({
       status: 'available',
       latestVersion: '0.3.0',
@@ -1289,11 +1298,28 @@ export class ElectronUpdaterBackend implements UpdaterBackend {
 
 Append to `src/main/updater/backend.ts`:
 
+Add this import at the top of `src/main/updater/backend.ts` — this project is ESM (`"type": "module"`), so the bare `require` global does not exist and must be constructed:
+
+```ts
+import { createRequire } from 'node:module'
+```
+
+and this just below the imports:
+
+```ts
+// ESM has no bare `require`. We need a SYNCHRONOUS lazy load below (dynamic
+// import() would force selectBackend to become async and ripple through the
+// callers), so construct one.
+const require = createRequire(import.meta.url)
+```
+
+Then append:
+
 ```ts
 /**
  * Picks the one backend this process will use, once, at startup.
  *
- * The ElectronUpdaterBackend import is lazy so that unit tests importing this
+ * The ElectronUpdaterBackend load is lazy so that unit tests importing this
  * module never pull in electron-updater, which needs a real Electron runtime.
  */
 export function selectBackend(options: {
@@ -1304,20 +1330,15 @@ export function selectBackend(options: {
   if (options.fake) return new FakeUpdaterBackend()
   if (!options.isPackaged) return new NullBackend()
   if (options.platform === 'win32' || options.platform === 'linux') {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ElectronUpdaterBackend } = require('./electron-backend.js') as
-      typeof import('./electron-backend.js')
+    const { ElectronUpdaterBackend } =
+      require('./electron-backend.js') as typeof import('./electron-backend.js')
     return new ElectronUpdaterBackend()
   }
   return new CheckOnlyBackend()
 }
 ```
 
-> If `require` is unavailable in this ESM build, replace the lazy import with a `createRequire(import.meta.url)` call at the top of `backend.ts`:
-> ```ts
-> import { createRequire } from 'node:module'
-> const require = createRequire(import.meta.url)
-> ```
+> This repo has no ESLint (no config, no dependency) — do not add `eslint-disable` comments anywhere.
 
 - [ ] **Step 6: Run the test to verify it passes**
 
