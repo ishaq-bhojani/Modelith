@@ -175,6 +175,11 @@ jobs:
     # Only cut a release for tag pushes; a manual run just proves the build.
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      # Needed for scripts/release-notes.mjs and CHANGELOG.md — this job used to
+      # publish without ever checking the repo out.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
       - name: Download all installers
         uses: actions/download-artifact@v4
         with:
@@ -182,11 +187,41 @@ jobs:
           merge-multiple: true
       - name: Show what was collected
         run: ls -R dist-artifacts
+      # GitHub sorts release assets alphabetically, which puts the three
+      # latest*.yml files — update metadata no human should download — at the
+      # top of the list, above every installer. Nothing on the page said which
+      # of the five builds was yours, and picking the arm64 dmg on an Intel Mac
+      # produces an app that will not launch at all. This body leads with a
+      # download table; the notes come from CHANGELOG.md so the release page
+      # and the changelog cannot drift.
+      - name: Build the release notes
+        shell: bash
+        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
+      # A table pointing at files that do not exist is worse than no table, and
+      # this repo has already shipped one metadata file naming an artifact that
+      # was never uploaded. Assert every filename the body mentions is really
+      # attached, before publishing rather than after.
+      - name: Verify the download table matches the built files
+        shell: bash
+        run: |
+          missing=0
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            if find dist-artifacts -name "$name" -type f | grep -q .; then
+              echo "  ok: $name"
+            else
+              echo "::error::The release notes tell users to download '$name', but no such file was built. Files present: $(find dist-artifacts -type f -printf '%f ' 2>/dev/null). Fix the download table in scripts/release-notes.mjs, or the artifactName in electron-builder.yml, so the two agree."
+              missing=1
+            fi
+          done <<< "$(grep -oE '`Modelith[^`]*`' release-notes.md | tr -d '`' | sort -u)"
+          [ "$missing" -eq 0 ] || exit 1
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist-artifacts/**/*
           draft: false
+          body_path: release-notes.md
+          # Appends the auto-generated commit list beneath our body.
           generate_release_notes: true
           # If none of the installers matched, fail instead of a source-only release.
           fail_on_unmatched_files: true
