@@ -18,7 +18,8 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
     "dist": "electron-vite build && electron-builder --publish never",
-    "dist:dir": "electron-vite build && electron-builder --dir"
+    "dist:dir": "electron-vite build && electron-builder --dir",
+    "icons": "python scripts/render-icon.py"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
