@@ -20,6 +20,20 @@ directories:
 # devDependency version; asar keeps the app bundle compact.
 asar: true
 
+# Required for auto-update: this is what makes electron-builder emit the
+# latest.yml / latest-linux.yml metadata that electron-updater reads.
+#
+# !! The `--publish never` flag in package.json's `dist` script is LOAD-BEARING
+# because of this block. With a publish provider configured, electron-builder
+# implicitly publishes when it sees a git tag — that is exactly what broke the
+# v0.2.0 release, putting installers into a separate draft release instead of
+# the published one. The workflow's release job owns publishing. Do not remove
+# `--publish never`.
+publish:
+  provider: github
+  owner: ishaq-bhojani
+  repo: Modelith
+
 win:
   target:
     - nsis

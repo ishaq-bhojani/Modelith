@@ -1,4 +1,10 @@
+import { createRequire } from 'node:module'
 import { RELEASES_API_URL, UpdateError, normalizeVersion } from './policy.js'
+
+// ESM has no bare `require`. We need a SYNCHRONOUS lazy load below (dynamic
+// import() would force selectBackend to become async and ripple through the
+// callers), so construct one.
+const require = createRequire(import.meta.url)
 
 export interface UpdateCheckResult {
   version: string
@@ -129,4 +135,25 @@ export class FakeUpdaterBackend extends EventEmitterBase implements UpdaterBacke
     // Nothing to do: the e2e suite asserts the UI reached "ready", and must
     // never actually restart the app under test.
   }
+}
+
+/**
+ * Picks the one backend this process will use, once, at startup.
+ *
+ * The ElectronUpdaterBackend load is lazy so that unit tests importing this
+ * module never pull in electron-updater, which needs a real Electron runtime.
+ */
+export function selectBackend(options: {
+  platform: string
+  isPackaged: boolean
+  fake?: boolean
+}): UpdaterBackend {
+  if (options.fake) return new FakeUpdaterBackend()
+  if (!options.isPackaged) return new NullBackend()
+  if (options.platform === 'win32' || options.platform === 'linux') {
+    const { ElectronUpdaterBackend } =
+      require('./electron-backend.js') as typeof import('./electron-backend.js')
+    return new ElectronUpdaterBackend()
+  }
+  return new CheckOnlyBackend()
 }
