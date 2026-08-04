@@ -4,29 +4,54 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
-### Added
-- **A real app icon.** `electron-builder.yml` has pointed at `buildResources: build`
-  all along, but that directory never existed — which is why every release up to
-  v0.3.2 shipped Electron's default icon. `build/icon.svg` is now the single
-  master; electron-builder generates the macOS `.icns`, Windows `.ico` and Linux
-  PNG set from it.
-- The release workflow fails if electron-builder falls back to the default icon.
-  It only logs a warning in that case and builds happily on, which is exactly how
-  the missing icon went unnoticed for four releases.
+## 0.4.0 — 2026-08-04
 
-### Changed
-- Settings is now organised into categories (Provider, Failover, Modes,
-  Updates) behind a left rail. The title and Done button stay put instead of
-  scrolling away, and only the selected category scrolls.
-- Settings panels now say what they configure. Each has a title and a short
-  description, provider/policy/key state collapse into one card with the key
-  state as the most prominent thing on the panel, the provider and model
-  pickers are lists rather than OS dropdowns, and the rail carries icons,
-  groups and per-row state.
+### Modelith has a face
+The app finally looks like itself, and Settings finally reads like a settings
+screen rather than one long form.
 
-### Added
-- A restart action in Settings → Updates, so a ready update can be applied
+- **A real app icon.** `electron-builder.yml` has pointed at
+  `buildResources: build` since packaging was added, but that directory never
+  existed — which is why every release up to v0.3.2 shipped Electron's default
+  icon. `build/icon.svg` is now the single master; electron-builder generates
+  the macOS `.icns`, Windows `.ico` and Linux PNG set from it.
+- **The icon shows while the app is running, too.** A packaged build takes its
+  taskbar icon from the executable, but in development there is no executable,
+  so `npm run dev` showed Electron's logo regardless. The window now carries
+  the icon directly.
+- The release workflow **fails** if electron-builder falls back to the default
+  icon. It only logs a warning in that case and builds happily on, which is
+  exactly how the missing icon went unnoticed for four releases.
+
+### Settings, redesigned
+- **Categories behind a left rail** — Provider & key, Failover, Modes, Updates.
+  The title and Done button stay put instead of scrolling away, and only the
+  selected category scrolls. The rail carries icons, groups, and each row's own
+  state: whether failover is off, how many modes exist, whether an update is
+  waiting.
+- **Every panel says what it configures**, with a title and a short
+  description. Previously a 10.5px uppercase micro-label was doing the job of a
+  panel heading.
+- **Provider, data policy and key state are one card**, with the key state the
+  most prominent thing on the panel rather than grey text between an input and
+  a hint. Remove sits with the status it acts on.
+- **The provider and model pickers are lists, not OS dropdowns**, reusing the
+  same rows as the header model picker so the same choice looks the same in
+  both places. Model rows now show their context window, and the panel shows
+  the model's price where one is known.
+- **A restart action in Settings → Updates**, so a ready update can be applied
   without hunting for the sidebar chip (which is dismissible).
+- The auto-check control is a real toggle instead of a bare checkbox borrowed
+  from the key-status styling.
+
+### Fixed
+- The download percentage no longer renders as `90.35480160960444%`.
+- A test-isolation bug that made the stream-engine suite fail roughly a quarter
+  of full-suite runs while passing in isolation. Emit callbacks closed over a
+  module-level binding that `beforeEach` reassigns, so a still-draining stream
+  delivered its events into the next test. Since `npm test` gates release
+  packaging on all three runners, this could have failed a release build that
+  had nothing wrong with it.
 
 ## 0.3.2 — 2026-08-04
 
