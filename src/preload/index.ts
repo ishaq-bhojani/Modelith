@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, WorkspaceTreeEntry } from '../shared/types.js'
+import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, UpdateState, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -84,6 +84,15 @@ export interface ModelithBridge {
   git: {
     status(): Promise<GitStatus>
     diff(path?: string): Promise<string>
+  }
+  /** Software updates (auto-update spec). Read-only from the renderer's side:
+   *  there is deliberately no way to supply a feed URL, owner, or repo. */
+  updates: {
+    getState(): Promise<UpdateState>
+    check(): Promise<void>
+    install(): Promise<void>
+    setEnabled(enabled: boolean): Promise<void>
+    onStateChange(handler: (state: UpdateState) => void): () => void
   }
 }
 
@@ -169,6 +178,17 @@ const bridge: ModelithBridge = {
   git: {
     status: () => ipcRenderer.invoke(CHANNELS.gitStatus),
     diff: (path) => ipcRenderer.invoke(CHANNELS.gitDiff, { path }),
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke(CHANNELS.updatesGet),
+    check: () => ipcRenderer.invoke(CHANNELS.updatesCheck),
+    install: () => ipcRenderer.invoke(CHANNELS.updatesInstall),
+    setEnabled: (enabled) => ipcRenderer.invoke(CHANNELS.updatesSetEnabled, { enabled }),
+    onStateChange: (handler) => {
+      const listener = (_e: unknown, state: UpdateState) => handler(state)
+      ipcRenderer.on(CHANNELS.updatesChanged, listener)
+      return () => { ipcRenderer.off(CHANNELS.updatesChanged, listener) }
+    },
   },
 }
 

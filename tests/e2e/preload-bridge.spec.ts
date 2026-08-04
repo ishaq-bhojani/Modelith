@@ -21,3 +21,20 @@ test('window.modelith exposes no key-reading method', async () => {
   expect(keyMethodNames).not.toContain('get')
   expect(keyMethodNames).not.toContain('read')
 })
+
+test('window.modelith.updates exposes only the intended methods', async () => {
+  const page = await app.firstWindow()
+  const names = await page.evaluate(() => Object.keys(window.modelith.updates))
+  expect(names.sort()).toEqual(['check', 'getState', 'install', 'onStateChange', 'setEnabled'])
+})
+
+test('the updates bridge offers no way to redirect the update feed', async () => {
+  const page = await app.firstWindow()
+  const state = await page.evaluate(() => window.modelith.updates.getState())
+  // The renderer can read state but never supplies owner/repo/URL: a
+  // renderer-controlled feed would let compromised UI point the updater at an
+  // attacker's binary.
+  expect(state).not.toHaveProperty('feedUrl')
+  expect(typeof state.currentVersion).toBe('string')
+  expect(typeof state.canAutoInstall).toBe('boolean')
+})
