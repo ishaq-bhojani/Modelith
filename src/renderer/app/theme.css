@@ -2586,6 +2586,25 @@ body.resizing {
   border-radius: 0 2px 2px 0;
   background: var(--accent);
 }
+.project-collapse {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-meta);
+  padding: 0;
+  cursor: pointer;
+}
+.project-collapse svg {
+  transition: transform 0.12s ease;
+}
+.project-collapse[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
 .project-name {
   flex: 1;
   min-width: 0;

@@ -220,6 +220,19 @@ export function registerProjectHandlers(): void {
     const { id, projectId } = SessionSetProjectSchema.parse(raw)
     await sessions.setProject(id, projectId ?? undefined)
   }))
+  ipcMain.handle(CHANNELS.projectOpenFolder, withZodMapping(async (_e, raw: unknown) => {
+    const { id } = ProjectIdSchema.parse(raw)
+    // rootOf resolves via the project store, never a renderer-supplied path
+    // (see the schema comment above) — it returns null both for an id that
+    // matches no project and for one whose project was removed, so an id
+    // naming no project is a silent no-op, not a throw.
+    const root = await projects.rootOf(id)
+    if (!root) return
+    // The folder can be gone from disk (moved/deleted outside the app) while
+    // the project still lists — shell.openPath must degrade quietly rather
+    // than reject the IPC call or surface as an unhandled rejection.
+    await shell.openPath(root).catch(() => {})
+  }))
 }
 
 export function registerChatHandlers(getWindow: () => BrowserWindow | undefined): void {

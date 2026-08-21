@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../state/store.js'
-import { IconPencil, IconTrash } from '../app/icons.js'
+import { IconChevronDown, IconFolder, IconPencil, IconTrash } from '../app/icons.js'
 import type { ProjectMeta } from '@shared/types'
 
 /**
@@ -28,10 +28,16 @@ export function ProjectGroup({
   const setActiveProject = useAppStore((s) => s.setActiveProject)
   const renameProject = useAppStore((s) => s.renameProject)
   const removeProject = useAppStore((s) => s.removeProject)
+  const openProjectFolder = useAppStore((s) => s.openProjectFolder)
   const isActive = project.id === activeProjectId
 
   const [isEditing, setIsEditing] = useState(false)
   const [draftName, setDraftName] = useState(project.name)
+  // Design spec (2026-08-04-projects-design.md, "Sidebar"): "Each project is
+  // a collapsible group with its sessions beneath it." Expanded by default —
+  // collapsing is something the user opts into, not a state a fresh install
+  // (or a freshly created project) should ever start in.
+  const [collapsed, setCollapsed] = useState(false)
 
   const commitRename = () => {
     const name = draftName.trim()
@@ -57,6 +63,16 @@ export function ProjectGroup({
           }
         }}
       >
+        <button
+          className="project-collapse"
+          data-testid="project-collapse"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `Expand ${project.name}` : `Collapse ${project.name}`}
+          onClick={(e) => { e.stopPropagation(); setCollapsed((v) => !v) }}
+        >
+          <IconChevronDown size={12} />
+        </button>
+
         {isEditing ? (
           <input
             className="project-name-input"
@@ -90,6 +106,18 @@ export function ProjectGroup({
               <IconPencil size={12} />
             </button>
             <button
+              className="row-action"
+              data-testid="project-open-folder"
+              title="Open folder"
+              aria-label={`Open ${project.name}'s folder`}
+              onClick={(e) => {
+                e.stopPropagation()
+                void openProjectFolder(project.id)
+              }}
+            >
+              <IconFolder size={12} />
+            </button>
+            <button
               className="row-action row-action-danger"
               data-testid="project-remove"
               title="Remove"
@@ -108,7 +136,10 @@ export function ProjectGroup({
           </span>
         )}
       </div>
-      {children}
+      {/* Collapsing removes the sessions from the DOM entirely (not a CSS
+          hide) so they also leave the accessibility tree, matching
+          aria-expanded on the toggle above. */}
+      {collapsed ? null : children}
     </div>
   )
 }

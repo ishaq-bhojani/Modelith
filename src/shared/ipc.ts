@@ -53,6 +53,7 @@ export const CHANNELS = {
   projectRename: 'projects:rename',
   projectRemove: 'projects:remove',
   projectSetActive: 'projects:set-active',
+  projectOpenFolder: 'projects:open-folder',
   sessionSetProject: 'sessions:set-project',
   chatToolDecision: 'chat:tool-decision',
   mcpList: 'mcp:list',

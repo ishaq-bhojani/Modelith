@@ -83,6 +83,10 @@ export interface ModelithBridge {
     rename(id: string, name: string): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
     remove(id: string): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
     setActive(id: string | null): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+    /** Resolves the id to its root in main and opens it there — the renderer
+     *  never supplies a path. A no-op (not a throw) for an id naming no
+     *  project. */
+    openFolder(id: string): Promise<void>
   }
   /** MCP server management (mcp-client spec §2). */
   mcp: {
@@ -187,6 +191,7 @@ const bridge: ModelithBridge = {
     rename: (id, name) => ipcRenderer.invoke(CHANNELS.projectRename, { id, name }),
     remove: (id) => ipcRenderer.invoke(CHANNELS.projectRemove, { id }),
     setActive: (id) => ipcRenderer.invoke(CHANNELS.projectSetActive, { id }),
+    openFolder: (id) => ipcRenderer.invoke(CHANNELS.projectOpenFolder, { id }),
   },
   mcp: {
     list: () => ipcRenderer.invoke(CHANNELS.mcpList),

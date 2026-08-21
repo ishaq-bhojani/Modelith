@@ -16,6 +16,7 @@ function installBridge(): void {
     projects: {
       list: vi.fn().mockResolvedValue({ projects: PROJECTS, activeId: 'p1' }),
       create: vi.fn(), rename: vi.fn(), remove: vi.fn(), setActive: vi.fn(),
+      openFolder: vi.fn().mockResolvedValue(undefined),
     },
     sessions: { setProject: vi.fn().mockResolvedValue(undefined) },
   }
@@ -85,6 +86,146 @@ describe('Sidebar projects', () => {
       sessions: [{ id: 's9', title: 'Orphan', updatedAt: 1, projectId: 'gone' }],
     })
     await render(container)
-    expect(container.textContent).toContain('Orphan')
+    // Fix round 1, item 5: assert it lands specifically under Unfiled, not
+    // merely somewhere in the container — the latter would also pass if the
+    // orphan were rendered under the wrong (or no) group, which is the only
+    // bug this test exists to catch.
+    expect(container.querySelector('[data-testid="unfiled-group"]')?.textContent).toContain('Orphan')
+    for (const group of container.querySelectorAll('[data-testid="project-group"]')) {
+      expect(group.textContent).not.toContain('Orphan')
+    }
+  })
+})
+
+// Fix round 1, item 3: docs/superpowers/specs/2026-08-04-projects-design.md
+// line 117 — "Each project is a collapsible group with its sessions beneath
+// it." Dropped from task-5-brief.md; this covers it directly.
+describe('Sidebar projects — collapse', () => {
+  let container: HTMLDivElement
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    installBridge()
+    useAppStore.setState({
+      projects: PROJECTS,
+      activeProjectId: 'p1',
+      sessions: [
+        { id: 's1', title: 'In Modelith', updatedAt: 3, projectId: 'p1' },
+        { id: 's2', title: 'In Logitrax', updatedAt: 2, projectId: 'p2' },
+      ],
+      activeSessionId: null,
+      query: '',
+    })
+  })
+
+  function click(el: Element | null): Promise<void> {
+    return act(async () => { (el as HTMLElement).click() })
+  }
+
+  // Every session row's move-session <select> lists every project name as an
+  // <option>, so a naive `.textContent.includes(name)` on a whole
+  // project-group can match the WRONG group (any group with at least one
+  // session row contains every other project's name via that dropdown).
+  // `.project-row`'s own textContent is just the collapse icon (no text) +
+  // the bare name span + action-button icons (no text) — nothing else — so
+  // it's the only reliable anchor.
+  function groupNamed(name: string): HTMLElement {
+    const rows = [...container.querySelectorAll('[data-testid="project-row"]')]
+    const row = rows.find((r) => r.textContent === name)
+    return row!.closest('[data-testid="project-group"]') as HTMLElement
+  }
+
+  it('starts expanded, so nothing collapses on first render', async () => {
+    await render(container)
+    const modelith = groupNamed('Modelith')
+    expect(modelith.querySelector('[data-testid="project-collapse"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(modelith.textContent).toContain('In Modelith')
+  })
+
+  it('collapsing a group removes its sessions from the DOM, not just hides them visually', async () => {
+    await render(container)
+    const modelith = groupNamed('Modelith')
+    await click(modelith.querySelector('[data-testid="project-collapse"]'))
+
+    expect(modelith.querySelector('[data-testid="project-collapse"]')?.getAttribute('aria-expanded')).toBe('false')
+    // Not just visually hidden: the row must actually be gone.
+    expect(modelith.querySelector('.session-row')).toBeNull()
+  })
+
+  it('collapsing one project does not affect another', async () => {
+    await render(container)
+    const modelith = groupNamed('Modelith')
+    const logitrax = groupNamed('Logitrax')
+    await click(modelith.querySelector('[data-testid="project-collapse"]'))
+
+    expect(logitrax.querySelector('[data-testid="project-collapse"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(logitrax.querySelector('.session-row')).not.toBeNull()
+  })
+
+  it('toggling the collapse control does not also change the active project', async () => {
+    const setActive = vi.fn().mockResolvedValue({ projects: PROJECTS, activeId: 'p1' })
+    ;(window as unknown as { modelith: { projects: { setActive: unknown } } }).modelith.projects.setActive = setActive
+    await render(container)
+    const logitrax = groupNamed('Logitrax')
+    await click(logitrax.querySelector('[data-testid="project-collapse"]'))
+
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it('expanding again restores the sessions', async () => {
+    await render(container)
+    const modelith = groupNamed('Modelith')
+    const toggle = () => modelith.querySelector('[data-testid="project-collapse"]')
+    await click(toggle())
+    await click(toggle())
+
+    expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+    expect(modelith.querySelector('.session-row')).not.toBeNull()
+  })
+})
+
+// Fix round 1, item 4: spec line 126, "Project → Rename, Open folder,
+// Remove" — only Rename and Remove existed.
+describe('Sidebar projects — open folder', () => {
+  let container: HTMLDivElement
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    installBridge()
+    useAppStore.setState({
+      projects: PROJECTS,
+      activeProjectId: 'p1',
+      sessions: [{ id: 's1', title: 'In Modelith', updatedAt: 3, projectId: 'p1' }],
+      activeSessionId: null,
+      query: '',
+    })
+  })
+
+  it('passes only the project id to the bridge, never the root string it already has', async () => {
+    await render(container)
+    const rows = [...container.querySelectorAll('[data-testid="project-row"]')]
+    const modelithRow = rows.find((r) => r.textContent === 'Modelith')!
+    const button = modelithRow.querySelector('[data-testid="project-open-folder"]') as HTMLButtonElement
+
+    await act(async () => { button.click() })
+
+    const openFolder = (window as unknown as { modelith: { projects: { openFolder: ReturnType<typeof vi.fn> } } })
+      .modelith.projects.openFolder
+    expect(openFolder).toHaveBeenCalledWith('p1')
+  })
+
+  it('does not also select the project as active', async () => {
+    const setActive = vi.fn().mockResolvedValue({ projects: PROJECTS, activeId: 'p1' })
+    ;(window as unknown as { modelith: { projects: { setActive: unknown } } }).modelith.projects.setActive = setActive
+    await render(container)
+    const rows = [...container.querySelectorAll('[data-testid="project-row"]')]
+    const logitraxRow = rows.find((r) => r.textContent === 'Logitrax')!
+    const button = logitraxRow.querySelector('[data-testid="project-open-folder"]') as HTMLButtonElement
+
+    await act(async () => { button.click() })
+
+    expect(setActive).not.toHaveBeenCalled()
   })
 })

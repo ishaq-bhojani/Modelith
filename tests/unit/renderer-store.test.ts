@@ -235,4 +235,182 @@ describe('newSession()', () => {
 
     expect(setProject).not.toHaveBeenCalled()
   })
+
+  // Fix round 1, item 1: all four calls used to share one try/catch, so a
+  // rejected setProject() left loadSessions()/selectSession() never called.
+  // Main had already created the session — it's not lost from storage — but
+  // the user saw an error banner and, on a fresh install, the empty "No
+  // chats yet" state with no way to reach it. Clicking "New chat" again then
+  // creates a second orphan instead of surfacing the first. A stamp failure
+  // must degrade to "created, left Unfiled", not "created, unreachable".
+  it('still loads sessions and selects the new one when filing it under the active project fails', async () => {
+    const setProject = vi.fn().mockRejectedValue(new Error('disk full'))
+    const list = vi.fn().mockResolvedValue([{ id: 's-new', title: 'New chat', updatedAt: 1 }])
+    const load = vi.fn().mockResolvedValue([])
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({ id: 's-new' }),
+          setProject,
+          list,
+          load,
+        },
+      },
+    }
+    useAppStore.setState({ activeProjectId: 'p1', sessions: [], activeSessionId: null, messages: [], error: null })
+
+    await useAppStore.getState().newSession()
+
+    expect(setProject).toHaveBeenCalledWith('s-new', 'p1')
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledWith('s-new')
+    expect(useAppStore.getState().activeSessionId).toBe('s-new')
+    expect(useAppStore.getState().sessions).toEqual([{ id: 's-new', title: 'New chat', updatedAt: 1 }])
+  })
+})
+
+// Fix round 1, item 2: sidebar-projects.test.ts drives loadProjects/
+// createProject/renameProject/removeProject/setActiveProject/moveSession
+// entirely through useAppStore.setState, so none of these bodies ever ran.
+// These exercise the actions directly against a mocked bridge.
+describe('project store actions', () => {
+  const PROJECT_A = { id: 'p1', name: 'A', root: '/a', createdAt: 1, lastOpenedAt: 1 }
+  const PROJECT_B = { id: 'p2', name: 'B', root: '/b', createdAt: 2, lastOpenedAt: 2 }
+
+  function installBridge(overrides: {
+    list?: ReturnType<typeof vi.fn>
+    create?: ReturnType<typeof vi.fn>
+    rename?: ReturnType<typeof vi.fn>
+    remove?: ReturnType<typeof vi.fn>
+    setActive?: ReturnType<typeof vi.fn>
+    setProject?: ReturnType<typeof vi.fn>
+    sessionsList?: ReturnType<typeof vi.fn>
+  } = {}): void {
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: {
+          list: overrides.list ?? vi.fn(),
+          create: overrides.create ?? vi.fn(),
+          rename: overrides.rename ?? vi.fn(),
+          remove: overrides.remove ?? vi.fn(),
+          setActive: overrides.setActive ?? vi.fn(),
+        },
+        sessions: {
+          setProject: overrides.setProject ?? vi.fn().mockResolvedValue(undefined),
+          list: overrides.sessionsList ?? vi.fn().mockResolvedValue([]),
+        },
+        workspace: { current: vi.fn().mockResolvedValue(null) },
+      },
+    }
+  }
+
+  it('loadProjects sets state from the bridge return value', async () => {
+    const list = vi.fn().mockResolvedValue({ projects: [PROJECT_A], activeId: 'p1' })
+    installBridge({ list })
+    useAppStore.setState({ projects: [], activeProjectId: null })
+
+    await useAppStore.getState().loadProjects()
+
+    expect(useAppStore.getState().projects).toEqual([PROJECT_A])
+    expect(useAppStore.getState().activeProjectId).toBe('p1')
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('createProject sets state from create()s return value, not a follow-up list() round trip', async () => {
+    const list = vi.fn()
+    const create = vi.fn().mockResolvedValue({ projects: [PROJECT_A, PROJECT_B], activeId: 'p2' })
+    installBridge({ list, create })
+    useAppStore.setState({ projects: [], activeProjectId: null })
+
+    await useAppStore.getState().createProject()
+
+    expect(useAppStore.getState().projects).toEqual([PROJECT_A, PROJECT_B])
+    expect(useAppStore.getState().activeProjectId).toBe('p2')
+    // Every projects.* method already returns the fresh { projects, activeId }
+    // — a redundant list() call is a bug waiting to go stale.
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('renameProject sets state from rename()s return value, not a follow-up list() round trip', async () => {
+    const list = vi.fn()
+    const renamed = { ...PROJECT_A, name: 'Renamed' }
+    const rename = vi.fn().mockResolvedValue({ projects: [renamed], activeId: 'p1' })
+    installBridge({ list, rename })
+    useAppStore.setState({ projects: [PROJECT_A], activeProjectId: 'p1' })
+
+    await useAppStore.getState().renameProject('p1', 'Renamed')
+
+    expect(rename).toHaveBeenCalledWith('p1', 'Renamed')
+    expect(useAppStore.getState().projects).toEqual([renamed])
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('setActiveProject sets state from setActive()s return value, not a follow-up list() round trip', async () => {
+    const list = vi.fn()
+    const setActive = vi.fn().mockResolvedValue({ projects: [PROJECT_A, PROJECT_B], activeId: 'p2' })
+    installBridge({ list, setActive })
+    useAppStore.setState({ projects: [PROJECT_A, PROJECT_B], activeProjectId: 'p1' })
+
+    await useAppStore.getState().setActiveProject('p2')
+
+    expect(setActive).toHaveBeenCalledWith('p2')
+    expect(useAppStore.getState().activeProjectId).toBe('p2')
+    expect(list).not.toHaveBeenCalled()
+  })
+
+  it('removeProject sets state from the bridge return value and reloads sessions, so a removed group cannot keep showing sessions', async () => {
+    const list = vi.fn()
+    const remove = vi.fn().mockResolvedValue({ projects: [], activeId: null })
+    const sessionsList = vi.fn().mockResolvedValue([{ id: 's1', title: 'Unfiled now', updatedAt: 1 }])
+    installBridge({ list, remove, sessionsList })
+    useAppStore.setState({ projects: [PROJECT_A], activeProjectId: 'p1', sessions: [] })
+
+    await useAppStore.getState().removeProject('p1')
+
+    expect(remove).toHaveBeenCalledWith('p1')
+    expect(useAppStore.getState().projects).toEqual([])
+    expect(list).not.toHaveBeenCalled()
+    // The reload-after-mutate contract: without it the sidebar keeps
+    // rendering sessions under a project group that no longer exists.
+    expect(sessionsList).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().sessions).toEqual([{ id: 's1', title: 'Unfiled now', updatedAt: 1 }])
+  })
+
+  it('moveSession calls setProject then reloads sessions, so a moved session is not left showing under its old group', async () => {
+    const setProject = vi.fn().mockResolvedValue(undefined)
+    const sessionsList = vi.fn().mockResolvedValue([{ id: 's1', title: 'Moved', updatedAt: 1, projectId: 'p2' }])
+    installBridge({ setProject, sessionsList })
+    useAppStore.setState({ sessions: [{ id: 's1', title: 'Moved', updatedAt: 1, projectId: 'p1' }] })
+
+    await useAppStore.getState().moveSession('s1', 'p2')
+
+    expect(setProject).toHaveBeenCalledWith('s1', 'p2')
+    expect(sessionsList).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().sessions).toEqual([{ id: 's1', title: 'Moved', updatedAt: 1, projectId: 'p2' }])
+  })
+
+  // Fix round 1, item 4: "Open folder" resolves an id to a root in main and
+  // opens it — the store action is a thin, id-only pass-through.
+  it('openProjectFolder passes only the id to the bridge, never a path', async () => {
+    const openFolder = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: { projects: { openFolder } },
+    }
+
+    await useAppStore.getState().openProjectFolder('p1')
+
+    expect(openFolder).toHaveBeenCalledWith('p1')
+  })
+
+  it('openProjectFolder surfaces a bridge failure through the shared error field', async () => {
+    const openFolder = vi.fn().mockRejectedValue(new Error('boom'))
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: { projects: { openFolder } },
+    }
+    useAppStore.setState({ error: null })
+
+    await useAppStore.getState().openProjectFolder('p1')
+
+    expect(useAppStore.getState().error?.message).toContain('boom')
+  })
 })

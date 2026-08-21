@@ -225,6 +225,9 @@ interface AppState {
   removeProject(id: string): Promise<void>
   setActiveProject(id: string | null): Promise<void>
   moveSession(id: string, projectId: string | null): Promise<void>
+  /** Resolves to the project's root in main and opens it there — the
+   *  renderer never supplies a path (projects spec row menu: Open folder). */
+  openProjectFolder(id: string): Promise<void>
   loadProviders(): Promise<void>
   loadSettings(): Promise<void>
   setFallbacks(fallbacks: Fallback[]): Promise<void>
@@ -713,6 +716,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadSessions()
     } catch (err) { set({ error: toProviderError(err) }) }
   },
+  async openProjectFolder(id) {
+    try {
+      await window.modelith.projects.openFolder(id)
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
 
   // Selects the first provider (and its first model) only when nothing is
   // chosen yet, or the current selection no longer exists. This is what lets
@@ -765,8 +773,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Unfiled and jumping on the next reload. With no active project the
       // session stays Unfiled, which is correct (deviation from task-5-brief.md,
       // which does not stamp projectId at creation — see task-5-report.md).
+      //
+      // This gets its own try/catch (fix round 1, item 1): main has already
+      // created and persisted the session by this point, so a rejected
+      // setProject() must not skip loadSessions()/selectSession() below — that
+      // would strand a real, persisted session that the sidebar never shows
+      // and the user cannot reach (clicking "New chat" again then creates a
+      // second orphan instead of surfacing the first). Worst case on failure
+      // is the chat lands in Unfiled instead of the active project, which is
+      // a state the user can already fix by hand — not an invisible session.
       const activeProjectId = get().activeProjectId
-      if (activeProjectId !== null) await window.modelith.sessions.setProject(id, activeProjectId)
+      if (activeProjectId !== null) {
+        try { await window.modelith.sessions.setProject(id, activeProjectId) }
+        catch (err) { set({ error: toProviderError(err) }) }
+      }
       await get().loadSessions()
       await get().selectSession(id)
     } catch (err) {
