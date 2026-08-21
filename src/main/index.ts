@@ -2,8 +2,9 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { WINDOW_OPTIONS } from './security/window-options.js'
 import { applySecurityPolicy } from './security/csp.js'
-import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers, registerUpdateHandlers, getUpdater, getMcpManager } from './ipc/handlers.js'
+import { registerHandlers, registerSecretHandlers, registerChatHandlers, registerWorkspaceHandlers, registerProjectHandlers, registerUpdateHandlers, getUpdater, getMcpManager, getSettingsStore, getProjectStore } from './ipc/handlers.js'
 import { registerWindowHandlers, installAppMenu } from './window/controls.js'
+import { migrateWorkspaceRoot } from './projects/migrate.js'
 import { CHANNELS } from '../shared/ipc.js'
 
 // Portable-mode override. Keeps E2E runs out of the developer's real app data,
@@ -42,14 +43,19 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   registerHandlers()
   registerSecretHandlers()
   createWindow()
+  // One-time: turns a pre-projects `workspaceRoot` setting into a project, so
+  // an upgrading user's existing conversations still resolve a root instead of
+  // reporting "no workspace". Must run before registerProjectHandlers() below.
+  await migrateWorkspaceRoot(getSettingsStore(), getProjectStore())
   // Registered once: ipcMain.handle() throws if a channel is bound twice, and
   // `activate` can create new windows over the lifetime of the app.
   registerChatHandlers(() => mainWindow)
   registerWorkspaceHandlers(() => mainWindow)
+  registerProjectHandlers()
   // Connect any configured MCP servers in the background; failures surface as
   // per-server error status in the panel, never as a startup hang.
   void getMcpManager().init()

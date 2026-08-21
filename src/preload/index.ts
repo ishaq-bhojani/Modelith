@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS } from '../shared/ipc.js'
 import type { AppInfo } from '../shared/ipc.js'
-import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatus, ModelInfo, ProviderSummary, StreamEnvelope, UpdateState, WorkspaceTreeEntry } from '../shared/types.js'
+import type { Attachment, ChatMessage, ContextPreview, GitStatus, McpServerStatus, ModelInfo, ProjectMeta, ProviderSummary, StreamEnvelope, UpdateState, WorkspaceTreeEntry } from '../shared/types.js'
 
 export type { StreamEnvelope } from '../shared/types.js'
 
@@ -46,6 +46,8 @@ export interface ModelithBridge {
     branch(sourceId: string, uptoId: string, title: string): Promise<{ id: string }>
     truncateFrom(id: string, messageId: string): Promise<void>
     editMessage(id: string, messageId: string, content: string): Promise<void>
+    /** File (or unfile, with null) a session under a project (projects spec). */
+    setProject(id: string, projectId: string | null): Promise<void>
   }
   window: {
     minimize(): Promise<void>
@@ -72,6 +74,15 @@ export interface ModelithBridge {
     read(relPath: string): Promise<{ relPath: string; text: string }>
     /** Revert every edit made in a turn (agentic-edits spec §5). */
     revert(turnId: string): Promise<number>
+  }
+  /** Projects (projects spec). No method accepts a path — the folder comes
+   *  from the native dialog in main. */
+  projects: {
+    list(): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+    create(): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+    rename(id: string, name: string): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+    remove(id: string): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+    setActive(id: string | null): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
   }
   /** MCP server management (mcp-client spec §2). */
   mcp: {
@@ -132,6 +143,7 @@ const bridge: ModelithBridge = {
     branch: (sourceId, uptoId, title) => ipcRenderer.invoke(CHANNELS.sessionBranch, { sourceId, uptoId, title }),
     truncateFrom: (id, messageId) => ipcRenderer.invoke(CHANNELS.sessionTruncateFrom, { id, messageId }),
     editMessage: (id, messageId, content) => ipcRenderer.invoke(CHANNELS.sessionEditMessage, { id, messageId, content }),
+    setProject: (id, projectId) => ipcRenderer.invoke(CHANNELS.sessionSetProject, { id, projectId }),
   },
   window: {
     minimize: () => ipcRenderer.invoke(CHANNELS.windowMinimize),
@@ -168,6 +180,13 @@ const bridge: ModelithBridge = {
     tree: () => ipcRenderer.invoke(CHANNELS.workspaceTree),
     read: (relPath) => ipcRenderer.invoke(CHANNELS.workspaceRead, { relPath }),
     revert: (turnId) => ipcRenderer.invoke(CHANNELS.workspaceRevert, { turnId }),
+  },
+  projects: {
+    list: () => ipcRenderer.invoke(CHANNELS.projectsList),
+    create: () => ipcRenderer.invoke(CHANNELS.projectCreate),
+    rename: (id, name) => ipcRenderer.invoke(CHANNELS.projectRename, { id, name }),
+    remove: (id) => ipcRenderer.invoke(CHANNELS.projectRemove, { id }),
+    setActive: (id) => ipcRenderer.invoke(CHANNELS.projectSetActive, { id }),
   },
   mcp: {
     list: () => ipcRenderer.invoke(CHANNELS.mcpList),

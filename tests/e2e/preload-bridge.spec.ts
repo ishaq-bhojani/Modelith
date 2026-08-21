@@ -38,3 +38,12 @@ test('the updates bridge offers no way to redirect the update feed', async () =>
   expect(typeof state.currentVersion).toBe('string')
   expect(typeof state.canAutoInstall).toBe('boolean')
 })
+
+test('the projects bridge offers no way to supply a path', async () => {
+  const page = await app.firstWindow()
+  const names = await page.evaluate(() => Object.keys(window.modelith.projects))
+  expect(names.sort()).toEqual(['create', 'list', 'remove', 'rename', 'setActive'])
+  // A renderer-supplied path would become an agent's confinement boundary.
+  const created = await page.evaluate(() => window.modelith.projects.create.length)
+  expect(created).toBe(0)
+})

@@ -48,6 +48,12 @@ export const CHANNELS = {
   workspaceTree: 'workspace:tree',
   workspaceRead: 'workspace:read',
   workspaceRevert: 'workspace:revert',
+  projectsList: 'projects:list',
+  projectCreate: 'projects:create',
+  projectRename: 'projects:rename',
+  projectRemove: 'projects:remove',
+  projectSetActive: 'projects:set-active',
+  sessionSetProject: 'sessions:set-project',
   chatToolDecision: 'chat:tool-decision',
   mcpList: 'mcp:list',
   mcpAdd: 'mcp:add',
@@ -183,3 +189,15 @@ export const UpdateStateSchema = z.object({
 })
 
 export const UpdatesSetEnabledSchema = z.object({ enabled: z.boolean() })
+
+// Projects. There is deliberately no `root` field on any of these: the folder
+// comes from the native dialog in main, and a renderer-supplied path would
+// become an agent's confinement boundary — the same reasoning that keeps
+// `baseUrl` off SendSchema.
+export const ProjectIdSchema = z.object({ id: z.string().min(1) })
+export const ProjectRenameSchema = z.object({ id: z.string().min(1), name: z.string().min(1) })
+export const ProjectSetActiveSchema = z.object({ id: z.string().min(1).nullable() })
+export const SessionSetProjectSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+})

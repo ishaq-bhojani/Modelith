@@ -29,6 +29,10 @@ import {
   RaceSchema,
   ChooseWinnerSchema,
   UpdatesSetEnabledSchema,
+  ProjectIdSchema,
+  ProjectRenameSchema,
+  ProjectSetActiveSchema,
+  SessionSetProjectSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -178,6 +182,43 @@ export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undef
   // landed in, so switching project before hitting Revert cannot redirect it.
   ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping((_e, raw: unknown) => {
     return workspace.revertTurn(WorkspaceRevertSchema.parse(raw).turnId)
+  }))
+}
+
+export function registerProjectHandlers(): void {
+  const projects = getProjectStore()
+  const sessions = getSessionStore()
+
+  ipcMain.handle(CHANNELS.projectsList, () => projects.list())
+  ipcMain.handle(CHANNELS.projectCreate, async () => {
+    // The path comes from the dialog inside Workspace.pick(), never from the
+    // renderer. pick() already creates-or-reuses the project and makes it
+    // active, so a cancelled dialog simply leaves the list unchanged and the
+    // renderer re-renders the same state.
+    await getWorkspace().pick()
+    return projects.list()
+  })
+  ipcMain.handle(CHANNELS.projectRename, withZodMapping(async (_e, raw: unknown) => {
+    const { id, name } = ProjectRenameSchema.parse(raw)
+    await projects.rename(id, name)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.projectRemove, withZodMapping(async (_e, raw: unknown) => {
+    const { id } = ProjectIdSchema.parse(raw)
+    // Order matters: unfile the sessions first, so a crash between the two
+    // leaves sessions pointing at a project that still exists rather than one
+    // that does not.
+    await sessions.clearProject(id)
+    await projects.remove(id)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.projectSetActive, withZodMapping(async (_e, raw: unknown) => {
+    await projects.setActive(ProjectSetActiveSchema.parse(raw).id)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.sessionSetProject, withZodMapping(async (_e, raw: unknown) => {
+    const { id, projectId } = SessionSetProjectSchema.parse(raw)
+    await sessions.setProject(id, projectId ?? undefined)
   }))
 }
 
