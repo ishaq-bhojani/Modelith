@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppSettingsStore } from '../../src/main/settings/store.js'
@@ -43,5 +43,21 @@ describe('workspaceRoot migration', () => {
     await settings.set({ workspaceRoot: '/a' })
     await migrateWorkspaceRoot(settings, projects)
     expect((await projects.list()).projects[0]?.root).toBe('/a')
+  })
+
+  it('resolves rather than rejects when projects.json is corrupt, and leaves it untouched', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oc-migrate-corrupt-'))
+    const projectsPath = join(dir, 'projects.json')
+    const corruptContents = '{ this is not valid json'
+    await writeFile(projectsPath, corruptContents)
+    const corruptSettings = new AppSettingsStore(join(dir, 'settings.json'))
+    const corruptProjects = new ProjectStore(projectsPath)
+    await corruptSettings.set({ workspaceRoot: '/a' })
+
+    await expect(migrateWorkspaceRoot(corruptSettings, corruptProjects)).resolves.toBeUndefined()
+
+    // The catch must not quietly undo "fail loudly": the corrupt file must
+    // still be there, unmodified, for projects:list to surface next time.
+    expect(await readFile(projectsPath, 'utf8')).toBe(corruptContents)
   })
 })
