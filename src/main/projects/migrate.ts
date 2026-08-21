@@ -8,8 +8,23 @@ import type { ProjectStore } from './store.js'
  * sessions — the spec is explicit that guessing which old conversations
  * belonged to that folder is what the Unfiled group exists to avoid.
  *
- * Idempotent: `ProjectStore.create` reuses a project with the same root, so
- * running this on every launch cannot produce duplicates.
+ * Genuinely one-time: `settings.workspaceRoot` is CLEARED once the project
+ * exists, because nothing else in the app writes or clears it any more (the
+ * pre-projects `Workspace.pick()` writer is gone). Left in place, this would
+ * run on every launch forever, and `ProjectStore.create()` on an existing root
+ * bumps `lastOpenedAt` and sets `activeId` — so the legacy folder would hijack
+ * the active project and sort to the top of the sidebar on every restart, and
+ * a legacy project the user removed would reappear, active, on the next
+ * launch, with no UI able to stop it.
+ *
+ * The clear deliberately does NOT gate on `projects.json` existing: removing
+ * the only project leaves that file present but empty, which is exactly the
+ * resurrection case such a gate would miss.
+ *
+ * It is also ordered after `create()` and inside the same `try`, so a failed
+ * migration leaves `workspaceRoot` in place and the next launch retries.
+ * Idempotent regardless: `ProjectStore.create` reuses a project with the same
+ * root, so even a re-run cannot produce duplicates.
  *
  * Deliberately never rejects. This runs unguarded at startup in
  * `src/main/index.ts`, before every other IPC handler is registered
@@ -39,6 +54,9 @@ export async function migrateWorkspaceRoot(
     const root = (await settings.get())['workspaceRoot']
     if (typeof root !== 'string' || root.length === 0) return
     await projects.create(root)
+    // `set` merges a patch and JSON.stringify drops undefined values, so this
+    // removes the key from settings.json rather than persisting a null.
+    await settings.set({ workspaceRoot: undefined })
   } catch (err) {
     // No logger is wired into main at this point in startup; this is a plain
     // diagnostic for whoever investigates a report of "my projects vanished".
