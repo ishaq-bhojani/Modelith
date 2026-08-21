@@ -275,20 +275,34 @@ export class StreamEngine {
    * other project's folder. That is what makes a mid-turn project switch
    * harmless — the active project is not an input here.
    *
-   * A session that belongs to NO project — one started before its folder was
-   * opened, or before this app had projects at all — is filed into the active
-   * project now, once, and then resolved the same way as any other. This is the
-   * spec's "a new chat belongs to the active project", applied at the first
-   * turn that actually needs a root rather than at creation. It is a one-time
-   * assignment, not a per-call fallback: from here on the root is a pure
-   * function of the session, so switching projects mid-turn still cannot
-   * retarget anything. With no active project there is nothing to file into and
-   * the answer is `null` — the workspace tools then report "no workspace",
-   * exactly as they do before any folder is picked.
+   * A session that belongs to NO project is filed into the active project —
+   * but ONLY when it is a genuinely new chat, one whose entire history is the
+   * user message this turn just appended. That is the spec's "a new chat
+   * belongs to the active project", applied at the first turn that actually
+   * needs a root rather than at creation, which covers the ordinary
+   * start-chatting-then-open-a-folder flow. It is a one-time assignment, not a
+   * per-call fallback: from here on the root is a pure function of the session,
+   * so switching projects mid-turn still cannot retarget anything.
+   *
+   * The history check is load-bearing, not a nicety. An absent `projectId` does
+   * NOT mean "new chat" — `SessionStore.clearProject` (how removing a project
+   * unfiles its conversations) and `setProject(id, undefined)` (how "Move to
+   * project… → None" works) both DELETE the field. Without this check, closing
+   * project A would hand a long conversation about A's code to whatever project
+   * happens to be active, and every legacy Unfiled chat would silently jump
+   * into the active project on its first agent turn — the guess that Unfiled
+   * exists to avoid.
+   *
+   * With no active project, or nothing to adopt, the answer is `null` — the
+   * workspace tools then report "no workspace", exactly as they do before any
+   * folder is picked.
    */
   private async resolveTurnRoot(sessionId: string): Promise<string | null> {
     const session = (await this.deps.store.list()).find((s) => s.id === sessionId)
     if (session?.projectId !== undefined) return this.deps.projects.rootOf(session.projectId)
+    // run() appends this turn's user message before calling us, so a brand-new
+    // chat has exactly one message here and anything older has more.
+    if ((await this.deps.store.load(sessionId)).length > 1) return null
     const { projects, activeId } = await this.deps.projects.list()
     const active = projects.find((p) => p.id === activeId)
     if (!active) return null

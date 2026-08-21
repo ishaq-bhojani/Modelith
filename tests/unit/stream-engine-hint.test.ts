@@ -7,11 +7,7 @@ import { SessionStore } from '../../src/main/sessions/store.js'
 import { Workspace } from '../../src/main/workspace/service.js'
 import { ProjectStore } from '../../src/main/projects/store.js'
 import type { Provider } from '../../src/main/providers/types.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 let store: SessionStore
 let projects: ProjectStore
@@ -43,7 +39,7 @@ it('appends a discovery hint to the system prompt in agent mode', async () => {
   }
   const engine = new StreamEngine({
     emit: () => {}, readKey: async () => 'k', store, resolveProvider: () => provider,
-    workspace: new Workspace(fakeSettings(root), () => undefined, undefined, projects),
+    workspace: new Workspace(() => undefined, undefined, projects),
     projects,
   } as ConstructorParameters<typeof StreamEngine>[0])
   const s = await store.create('t')

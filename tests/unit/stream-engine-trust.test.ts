@@ -8,11 +8,7 @@ import { Workspace } from '../../src/main/workspace/service.js'
 import { ProjectStore } from '../../src/main/projects/store.js'
 import type { Provider } from '../../src/main/providers/types.js'
 import type { StreamEnvelope } from '../../src/shared/types.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 // Emits TWO write_file calls in one turn, then finishes once results return.
 function twoWriteProvider(): Provider {
@@ -66,7 +62,7 @@ function build(): StreamEngine {
     readKey: async () => 'k',
     store,
     resolveProvider: () => twoWriteProvider(),
-    workspace: new Workspace(fakeSettings(root), () => undefined, undefined, projects),
+    workspace: new Workspace(() => undefined, undefined, projects),
     projects,
   } as ConstructorParameters<typeof StreamEngine>[0])
 }

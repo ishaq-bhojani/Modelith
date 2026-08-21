@@ -2,7 +2,6 @@ import { dialog } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AppSettingsStore } from '../settings/store.js'
 import type { WorkspaceTreeEntry as TreeEntry } from '../../shared/types.js'
 import { isIgnored, isInsideRoot } from './paths.js'
 import type { CheckpointStore } from './checkpoints.js'
@@ -45,11 +44,6 @@ export class WorkspaceError extends Error {
  */
 export class Workspace {
   constructor(
-    // The root no longer comes from settings — it comes from ProjectStore — so
-    // nothing here reads this. The parameter slot stays so every call site
-    // (and the pre-projects `workspaceRoot` migration that still owns settings)
-    // keeps its existing shape.
-    _settings: AppSettingsStore,
     private readonly getWindow: () => BrowserWindow | undefined,
     private readonly checkpoints?: CheckpointStore,
     private readonly projects?: ProjectStore,

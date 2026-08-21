@@ -3,11 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Workspace } from '../../src/main/workspace/service.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 let root: string
 let ws: Workspace
@@ -21,7 +17,7 @@ beforeAll(async () => {
   await writeFile(path.join(root, 'bin.dat'), Buffer.from([0x00, 0x6e, 0x65, 0x65, 0x64, 0x00])) // "nee" around NULs
   await mkdir(path.join(root, 'node_modules', 'pkg'), { recursive: true })
   await writeFile(path.join(root, 'node_modules', 'pkg', 'i.js'), 'needleValue in deps')
-  ws = new Workspace(fakeSettings(root), () => undefined)
+  ws = new Workspace(() => undefined)
 })
 afterAll(async () => { if (root) await rm(path.dirname(root), { recursive: true, force: true }) })
 

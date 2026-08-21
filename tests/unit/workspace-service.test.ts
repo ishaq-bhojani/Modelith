@@ -3,15 +3,8 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Workspace, WorkspaceError } from '../../src/main/workspace/service.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
 /** An in-memory stand-in for the settings store, so no disk KV is needed here. */
-function fakeSettings(root: string): AppSettingsStore {
-  return {
-    get: async () => ({ workspaceRoot: root }),
-    set: async () => {},
-  } as unknown as AppSettingsStore
-}
 
 let root: string
 let outside: string
@@ -30,7 +23,7 @@ beforeAll(async () => {
   // never expose.
   outside = path.join(base, 'secret.txt')
   await writeFile(outside, 'TOP SECRET')
-  ws = new Workspace(fakeSettings(root), () => undefined)
+  ws = new Workspace(() => undefined)
 })
 
 afterAll(async () => {

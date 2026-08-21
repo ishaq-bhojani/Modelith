@@ -89,7 +89,6 @@ let workspaceInstance: Workspace | undefined
 let workspaceGetWindow: () => BrowserWindow | undefined = () => undefined
 export function getWorkspace(): Workspace {
   workspaceInstance ??= new Workspace(
-    getSettingsStore(),
     () => workspaceGetWindow(),
     new CheckpointStore(join(app.getPath('userData'), 'checkpoints')),
     getProjectStore(),

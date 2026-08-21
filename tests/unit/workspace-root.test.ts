@@ -3,7 +3,6 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../../src/main/workspace/service.js'
-import { AppSettingsStore } from '../../src/main/settings/store.js'
 import { ProjectStore } from '../../src/main/projects/store.js'
 import { SessionStore } from '../../src/main/sessions/store.js'
 import { StreamEngine } from '../../src/main/chat/stream-engine.js'
@@ -21,12 +20,7 @@ beforeEach(async () => {
   await writeFile(join(rootA, 'only-in-a.txt'), 'A', 'utf8')
   await writeFile(join(rootB, 'only-in-b.txt'), 'B', 'utf8')
   projects = new ProjectStore(join(base, 'projects.json'))
-  workspace = new Workspace(
-    new AppSettingsStore(join(base, 'settings.json')),
-    () => undefined,
-    undefined,
-    projects,
-  )
+  workspace = new Workspace(() => undefined, undefined, projects)
 })
 
 describe('Workspace roots are per-call, not global', () => {
@@ -85,11 +79,18 @@ function listDirProvider(): Provider {
   }
 }
 
-async function listDirResultFor(projectId: string | undefined): Promise<string> {
+/**
+ * Run one agent turn against a fresh session and return what `list_dir` saw.
+ * `setUp` puts the session into the state under test (filed, unfiled, carrying
+ * history) before the turn starts.
+ */
+async function listDirResultFor(
+  setUp?: (sessions: SessionStore, sessionId: string) => Promise<void>,
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'oc-turnroot-'))
   const sessions = new SessionStore(dir)
   const session = await sessions.create('t')
-  if (projectId !== undefined) await sessions.setProject(session.id, projectId)
+  await setUp?.(sessions, session.id)
   const engine = new StreamEngine({
     emit: () => {},
     readKey: async () => 'k',
@@ -109,29 +110,49 @@ async function listDirResultFor(projectId: string | undefined): Promise<string> 
 }
 
 describe("a turn's root comes from its own session", () => {
-  it('confines the turn to the session\'s project, not the active one', async () => {
+  /** A conversation that already happened, so the session is not a new chat. */
+  async function withHistory(sessions: SessionStore, id: string): Promise<void> {
+    await sessions.append(id, { id: 'm1', role: 'user', content: 'about A', createdAt: 1 })
+    await sessions.append(id, { id: 'm2', role: 'assistant', content: 'sure', createdAt: 2 })
+  }
+
+  it("confines the turn to the session's project, not the active one", async () => {
     const a = await projects.create(rootA)
     await projects.create(rootB) // B is now ACTIVE, but the session belongs to A
-    expect(await listDirResultFor(a.id)).toContain('only-in-a.txt')
+    expect(await listDirResultFor((s, id) => s.setProject(id, a.id))).toContain('only-in-a.txt')
   })
 
-  it('resolves NO root for a session naming a removed project', async () => {
+  it('never adopts a session that removing its project unfiled', async () => {
     const a = await projects.create(rootA)
-    await projects.create(rootB)
-    await projects.remove(a.id)
-    // The state a non-destructive Remove deliberately leaves behind. It must
-    // never borrow the surviving project's folder.
-    const result = await listDirResultFor(a.id)
+    await projects.create(rootB) // B is now ACTIVE
+    const result = await listDirResultFor(async (s, id) => {
+      await s.setProject(id, a.id)
+      await withHistory(s, id)
+      // How the app actually removes a project (handlers: clearProject, then
+      // remove). "Close this project" is non-destructive, so its conversations
+      // are kept and unfiled — and clearProject DELETES projectId, so being
+      // unfiled cannot by itself mean "a brand-new chat".
+      await s.clearProject(a.id)
+      await projects.remove(a.id)
+    })
+    // A long conversation about project A must not start editing project B.
     expect(result).toBe('No workspace folder is open.')
     expect(result).not.toContain('only-in-b.txt')
   })
 
-  it('reports no workspace for an unfiled session when no project exists', async () => {
-    expect(await listDirResultFor(undefined)).toBe('No workspace folder is open.')
+  it('never adopts a pre-existing unfiled chat', async () => {
+    await projects.create(rootA)
+    // The spec is explicit that Unfiled exists so the app does not guess which
+    // project a months-old chat belonged to. Only a NEW chat may be adopted.
+    expect(await listDirResultFor(withHistory)).toBe('No workspace folder is open.')
   })
 
-  it('files an unfiled session into the active project on its first turn', async () => {
+  it('reports no workspace for a new chat when no project exists', async () => {
+    expect(await listDirResultFor()).toBe('No workspace folder is open.')
+  })
+
+  it('files a NEW chat into the active project on its first turn', async () => {
     await projects.create(rootA)
-    expect(await listDirResultFor(undefined)).toContain('only-in-a.txt')
+    expect(await listDirResultFor()).toContain('only-in-a.txt')
   })
 })

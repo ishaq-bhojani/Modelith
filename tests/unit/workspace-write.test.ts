@@ -4,23 +4,20 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Workspace } from '../../src/main/workspace/service.js'
 import { CheckpointStore } from '../../src/main/workspace/checkpoints.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 let base: string
 let root: string
 let ws: Workspace
+let checkpoints: CheckpointStore
 
 beforeEach(async () => {
   base = await mkdtemp(path.join(tmpdir(), 'oc-wr-'))
   root = path.join(base, 'project')
   await mkdir(root, { recursive: true })
   await writeFile(path.join(root, 'a.txt'), 'original')
-  const checkpoints = new CheckpointStore(path.join(base, 'checkpoints'))
-  ws = new Workspace(fakeSettings(root), () => undefined, checkpoints)
+  checkpoints = new CheckpointStore(path.join(base, 'checkpoints'))
+  ws = new Workspace(() => undefined, checkpoints)
 })
 afterEach(async () => { await rm(base, { recursive: true, force: true }) })
 
@@ -78,14 +75,42 @@ describe('Workspace.revertTurn across projects', () => {
     // A turn edits project A's a.txt, so the checkpoint belongs to project A.
     await ws.applyWrite(root, { relPath: 'a.txt', content: 'changed', turnId: 't9', callId: 'c1' })
 
-    // The user switches to the other project and only then hits Revert. The
-    // pre-image must go back where it came from: resolving it against whatever
-    // is active would overwrite an unrelated project's file at the same path,
-    // silently destroying work in a project the user was not even looking at.
+    // Revert is given no root at all, so the only root in play is the one the
+    // checkpoint recorded. That is what makes the destructive case impossible:
+    // when the UI later hands revert the ACTIVE project instead (the user
+    // switched projects before clicking Revert), the pre-image would land on
+    // this other project's file at the same relative path and silently destroy
+    // work in a project they were not even looking at.
     const n = await ws.revertTurn('t9')
 
     expect(n).toBe(1)
     expect(await readFile(path.join(other, 'a.txt'), 'utf8')).toBe('the other project')
+    expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
+  })
+
+  it('skips a checkpoint that recorded no root instead of guessing one', async () => {
+    // What an upgrade finds on disk: a checkpoint written before roots were
+    // recorded. There is no safe way to place its pre-image, and guessing is
+    // the destructive behaviour above — so it is skipped, not thrown on, and
+    // not counted.
+    await checkpoints.record({ turnId: 't10', callId: 'c1', relPath: 'a.txt', existed: true, prevBase64: Buffer.from('legacy').toString('base64') })
+
+    await expect(ws.revertTurn('t10')).resolves.toBe(0)
+    expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
+  })
+
+  it('skips a checkpoint whose recorded root is gone from disk', async () => {
+    const vanishing = path.join(base, 'unmounted')
+    await mkdir(vanishing, { recursive: true })
+    await writeFile(path.join(vanishing, 'a.txt'), 'was here')
+    await ws.applyWrite(vanishing, { relPath: 'a.txt', content: 'changed', turnId: 't11', callId: 'c1' })
+
+    // The folder is deleted, renamed, or on an unmounted drive by the time the
+    // user reverts. Nothing can be restored, but the revert must not throw and
+    // must not look elsewhere for somewhere to put the bytes.
+    await rm(vanishing, { recursive: true, force: true })
+
+    await expect(ws.revertTurn('t11')).resolves.toBe(0)
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
   })
 })
