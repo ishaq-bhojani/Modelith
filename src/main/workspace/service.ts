@@ -80,8 +80,24 @@ export class Workspace {
     return (await this.projects?.activeRoot()) ?? null
   }
 
-  /** A pruned, capped listing of the given root (dirs first per level). */
+  /**
+   * A pruned, capped listing of the given root (dirs first per level).
+   *
+   * A root that is not a readable directory RIGHT NOW — deleted, renamed, or
+   * on an unmounted drive — is reported as `not-found` rather than listed as
+   * empty. `walk` deliberately swallows a failed `readdir` so one unreadable
+   * subdirectory cannot fail the whole tree, but applying that to the root
+   * itself made a vanished project indistinguishable from an empty one (the
+   * projects spec's error table promises "an empty tree with an explanatory
+   * line") and left the IPC handler's ENOENT branch unreachable.
+   */
   async tree(root: string): Promise<TreeEntry[]> {
+    try {
+      if (!(await stat(root)).isDirectory()) throw new WorkspaceError('not-found')
+    } catch (err) {
+      if (err instanceof WorkspaceError) throw err
+      throw new WorkspaceError('not-found')
+    }
     const entries: TreeEntry[] = []
     await this.walk(root, root, entries)
     return entries

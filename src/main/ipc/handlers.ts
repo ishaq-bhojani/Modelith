@@ -41,7 +41,7 @@ import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
 import { ProjectStore } from '../projects/store.js'
-import { Workspace } from '../workspace/service.js'
+import { Workspace, WorkspaceError } from '../workspace/service.js'
 import { CheckpointStore } from '../workspace/checkpoints.js'
 import { McpManager } from '../mcp/manager.js'
 import { GitService } from '../terminal/git.js'
@@ -167,8 +167,18 @@ export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undef
     } catch (err) {
       // A project's folder can vanish — deleted, renamed, or on an unmounted
       // drive. The spec keeps the project listed (it may come back) and shows
-      // an empty tree rather than removing it or surfacing a raw ENOENT.
-      if ((err as { code?: string }).code === 'ENOENT') return []
+      // "an empty tree with an explanatory line", so this must NOT collapse to
+      // the empty array an empty folder returns: the renderer would have no
+      // way left to tell the two apart. It rejects with a stable code the
+      // store matches on (WORKSPACE_ROOT_MISSING) and renders as a line in
+      // the panel rather than an error banner.
+      //
+      // The old `err.code === 'ENOENT'` branch here could never fire —
+      // Workspace.walk swallowed the readdir failure and returned [] — which
+      // is why the case reached the user as "No files.".
+      if (err instanceof WorkspaceError && err.code === 'not-found') {
+        throw new Error('workspace-root-missing')
+      }
       throw err
     }
   })

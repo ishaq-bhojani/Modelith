@@ -42,6 +42,25 @@ describe('Workspace.tree', () => {
     const big = (await ws.tree(root)).find((e) => e.relPath === 'big.txt')
     expect(big?.readable).toBe(false)
   })
+
+  // M6: a project folder that is gone (deleted, renamed, or on an unmounted
+  // drive) used to be indistinguishable from an empty one — `walk` swallows
+  // the readdir failure and returns [], so the caller saw "No files." and the
+  // ENOENT catch in the IPC handler was dead code that could never fire.
+  it('reports a root that is not on disk rather than returning an empty listing', async () => {
+    await expect(ws.tree(path.join(root, 'no-such-folder'))).rejects.toBeInstanceOf(WorkspaceError)
+    await expect(ws.tree(path.join(root, 'no-such-folder'))).rejects.toMatchObject({ code: 'not-found' })
+  })
+
+  it('still returns an empty listing for a folder that genuinely has no files', async () => {
+    const empty = path.join(root, 'empty-dir')
+    await mkdir(empty, { recursive: true })
+    expect(await ws.tree(empty)).toEqual([])
+  })
+
+  it('reports a root that is a file, not a directory', async () => {
+    await expect(ws.tree(path.join(root, 'big.txt'))).rejects.toMatchObject({ code: 'not-found' })
+  })
 })
 
 describe('Workspace.read', () => {
