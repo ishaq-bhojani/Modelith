@@ -36,6 +36,7 @@ import { Keystore } from '../secrets/keystore.js'
 import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
+import { ProjectStore } from '../projects/store.js'
 import { Workspace } from '../workspace/service.js'
 import { CheckpointStore } from '../workspace/checkpoints.js'
 import { McpManager } from '../mcp/manager.js'
@@ -75,9 +76,15 @@ export function getSettingsStore(): AppSettingsStore {
   return settingsStoreInstance
 }
 
+let projectStoreInstance: ProjectStore | undefined
+export function getProjectStore(): ProjectStore {
+  projectStoreInstance ??= new ProjectStore(ProjectStore.defaultPath(app.getPath('userData')))
+  return projectStoreInstance
+}
+
 // A single Workspace (with its checkpoint store) shared by the workspace handlers
-// and the chat engine, so reads, gated writes, and revert all confine to the
-// same dialog-chosen root. getWindow is late-bound via a mutable holder.
+// and the chat engine, so reads, gated writes, and revert all confine to a root
+// obtained the same way. getWindow is late-bound via a mutable holder.
 let workspaceInstance: Workspace | undefined
 let workspaceGetWindow: () => BrowserWindow | undefined = () => undefined
 export function getWorkspace(): Workspace {
@@ -85,6 +92,7 @@ export function getWorkspace(): Workspace {
     getSettingsStore(),
     () => workspaceGetWindow(),
     new CheckpointStore(join(app.getPath('userData'), 'checkpoints')),
+    getProjectStore(),
   )
   return workspaceInstance
 }
@@ -144,14 +152,33 @@ export function registerSecretHandlers(): void {
 export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undefined): void {
   workspaceGetWindow = getWindow
   const workspace = getWorkspace()
+  // These are the UI's handlers, so they act on the ACTIVE project — the tree
+  // and the file the user is looking at. An agent turn never comes through
+  // here: it resolves its own root from its session (see StreamEngine).
   ipcMain.handle(CHANNELS.workspacePick, () => workspace.pick())
-  ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.current())
-  ipcMain.handle(CHANNELS.workspaceTree, () => workspace.tree())
-  ipcMain.handle(CHANNELS.workspaceRead, withZodMapping((_e, raw: unknown) => {
-    return workspace.read(WorkspaceReadSchema.parse(raw).relPath)
+  ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.activeRoot())
+  ipcMain.handle(CHANNELS.workspaceTree, async () => {
+    const root = await workspace.activeRoot()
+    if (!root) return []
+    try {
+      return await workspace.tree(root)
+    } catch (err) {
+      // A project's folder can vanish — deleted, renamed, or on an unmounted
+      // drive. The spec keeps the project listed (it may come back) and shows
+      // an empty tree rather than removing it or surfacing a raw ENOENT.
+      if ((err as { code?: string }).code === 'ENOENT') return []
+      throw err
+    }
+  })
+  ipcMain.handle(CHANNELS.workspaceRead, withZodMapping(async (_e, raw: unknown) => {
+    const root = await workspace.activeRoot()
+    if (!root) throw new Error('No project is open.')
+    return workspace.read(root, WorkspaceReadSchema.parse(raw).relPath)
   }))
-  ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping((_e, raw: unknown) => {
-    return workspace.revertTurn(WorkspaceRevertSchema.parse(raw).turnId)
+  ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping(async (_e, raw: unknown) => {
+    const root = await workspace.activeRoot()
+    if (!root) throw new Error('No project is open.')
+    return workspace.revertTurn(root, WorkspaceRevertSchema.parse(raw).turnId)
   }))
 }
 
@@ -171,6 +198,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     maxContextTokens: MAX_CONTEXT_TOKENS,
     // Enables agentic edits (gated writes) when a turn opts in.
     workspace: getWorkspace(),
+    // Resolves the turn's confinement root from its own session's project.
+    projects: getProjectStore(),
     // Contributes MCP server tools to agent turns (gated per call).
     mcp: getMcpManager(),
   })

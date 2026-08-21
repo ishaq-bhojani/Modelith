@@ -39,37 +39,37 @@ afterAll(async () => {
 
 describe('Workspace.tree', () => {
   it('lists source files and prunes ignored directories', async () => {
-    const entries = await ws.tree()
+    const entries = await ws.tree(root)
     const rels = entries.map((e) => e.relPath)
     expect(rels).toContain('src/a.txt')
     expect(rels.some((r) => r.includes('node_modules'))).toBe(false)
   })
 
   it('marks an oversized file as not readable', async () => {
-    const big = (await ws.tree()).find((e) => e.relPath === 'big.txt')
+    const big = (await ws.tree(root)).find((e) => e.relPath === 'big.txt')
     expect(big?.readable).toBe(false)
   })
 })
 
 describe('Workspace.read', () => {
   it('reads a text file inside the root', async () => {
-    expect(await ws.read('src/a.txt')).toEqual({ relPath: 'src/a.txt', text: 'hello world' })
+    expect(await ws.read(root, 'src/a.txt')).toEqual({ relPath: 'src/a.txt', text: 'hello world' })
   })
 
   it('refuses to read outside the root via ..', async () => {
     // The core security assertion: a traversal to the sibling secret is rejected.
-    await expect(ws.read('../secret.txt')).rejects.toMatchObject({ code: 'outside-root' })
+    await expect(ws.read(root, '../secret.txt')).rejects.toMatchObject({ code: 'outside-root' })
   })
 
   it('refuses a binary file', async () => {
-    await expect(ws.read('bin.dat')).rejects.toMatchObject({ code: 'not-text' })
+    await expect(ws.read(root, 'bin.dat')).rejects.toMatchObject({ code: 'not-text' })
   })
 
   it('refuses an oversized file', async () => {
-    await expect(ws.read('big.txt')).rejects.toMatchObject({ code: 'too-large' })
+    await expect(ws.read(root, 'big.txt')).rejects.toMatchObject({ code: 'too-large' })
   })
 
   it('reports a missing file', async () => {
-    await expect(ws.read('nope.txt')).rejects.toBeInstanceOf(WorkspaceError)
+    await expect(ws.read(root, 'nope.txt')).rejects.toBeInstanceOf(WorkspaceError)
   })
 })

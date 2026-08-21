@@ -106,6 +106,14 @@ export type ApprovalDecision =
 
 export interface ToolDeps {
   workspace: Workspace
+  /**
+   * The root this turn is confined to, resolved once from the turn's own
+   * session (projects spec). `null` means the session has no project — the
+   * workspace tools are then unavailable, exactly as before a folder is
+   * picked. It must never be filled in from the *active* project: that would
+   * let a mid-turn project switch retarget an in-flight tool call.
+   */
+  root: string | null
   turnId: string
   /** Ask the user to approve a write; resolves with their decision. */
   requestApproval(edit: PendingEdit): Promise<ApprovalDecision>
@@ -202,17 +210,27 @@ export async function executeTool(
     return { result: out.text, isError: out.isError }
   }
 
+  // Everything below is a workspace tool (git, shell and MCP already returned).
+  if (!isKnownTool(name)) return { result: `Unknown tool: ${name}`, isError: true }
+  // They need this turn's root. Without one the session has no project: report
+  // the same "no workspace" condition they already report before a folder is
+  // picked, rather than throwing or borrowing some other project's folder.
+  const root = deps.root
+  if (root === null) {
+    return { result: friendlyWorkspaceError(new WorkspaceError('no-root')), isError: true }
+  }
+
   try {
     if (name === 'read_file') {
-      const { text } = await workspace.read(String(args['path'] ?? ''))
+      const { text } = await workspace.read(root, String(args['path'] ?? ''))
       return { result: text, isError: false }
     }
     if (name === 'list_dir') {
-      const tree = await workspace.tree()
+      const tree = await workspace.tree(root)
       return { result: tree.map((e) => `${e.kind === 'dir' ? '[dir] ' : ''}${e.relPath}`).join('\n'), isError: false }
     }
     if (name === 'search_files') {
-      const res = await workspace.search(String(args['query'] ?? ''))
+      const res = await workspace.search(root, String(args['query'] ?? ''))
       if (res.hits.length === 0) return { result: 'No matches found.', isError: false }
       const body = res.hits.map((h) => `${h.relPath}:${h.line}: ${h.text}`).join('\n')
       const note = res.truncated ? `\n[results truncated at ${res.hits.length} matches — narrow the query]` : ''
@@ -221,7 +239,7 @@ export async function executeTool(
     if (name === 'write_file' || name === 'apply_edit') {
       const relPath = String(args['path'] ?? '')
       if (!relPath) return { result: 'Missing path.', isError: true }
-      const previous = await workspace.currentContent(relPath)
+      const previous = await workspace.currentContent(root, relPath)
 
       let proposed: string
       if (name === 'write_file') {
@@ -243,9 +261,11 @@ export async function executeTool(
         return { result: 'The user rejected this change; it was not applied.', isError: false }
       }
       const finalContent = decision.action === 'edited' ? decision.content : proposed
-      await workspace.applyWrite({ relPath, content: finalContent, turnId: deps.turnId, callId })
+      await workspace.applyWrite(root, { relPath, content: finalContent, turnId: deps.turnId, callId })
       return { result: `Applied change to ${relPath}.`, isError: false, applied: true }
     }
+    // Unreachable — the isKnownTool() guard above already rejected everything
+    // else. Kept so the branches stay exhaustive for the compiler.
     return { result: `Unknown tool: ${name}`, isError: true }
   } catch (err) {
     return { result: friendlyWorkspaceError(err), isError: true }

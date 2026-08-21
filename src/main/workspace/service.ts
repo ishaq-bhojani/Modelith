@@ -6,6 +6,7 @@ import type { AppSettingsStore } from '../settings/store.js'
 import type { WorkspaceTreeEntry as TreeEntry } from '../../shared/types.js'
 import { isIgnored, isInsideRoot } from './paths.js'
 import type { CheckpointStore } from './checkpoints.js'
+import type { ProjectStore } from '../projects/store.js'
 
 /** Per-file text cap, matching the composer's text-attach ceiling (spec §A.2). */
 const MAX_BYTES = 256 * 1024
@@ -30,25 +31,38 @@ export class WorkspaceError extends Error {
 
 /**
  * Read-only access to a user-chosen workspace folder (spec §A). Every read is
- * confined to the dialog-chosen root: the renderer never supplies the root, and
- * a path that resolves outside it (via `..` or a symlink) is rejected. Nothing
- * is written or executed.
+ * confined to a root the CALLER supplies: the renderer never supplies the root,
+ * and a path that resolves outside it (via `..` or a symlink) is rejected.
+ * Nothing is written or executed.
+ *
+ * The root is an explicit, required first argument on every confined method
+ * rather than something read from global state (projects spec, "Where the
+ * agent's root comes from"). With several projects, reading a global root per
+ * call would let a project switch mid-turn retarget an in-flight tool call —
+ * the user approves a write in project A and it lands in project B. Making the
+ * root required is deliberate: an optional parameter on a confinement boundary
+ * is a bug waiting to be forgotten.
  */
 export class Workspace {
   constructor(
-    private readonly settings: AppSettingsStore,
+    // The root no longer comes from settings — it comes from ProjectStore — so
+    // nothing here reads this. The parameter slot stays so every call site
+    // (and the pre-projects `workspaceRoot` migration that still owns settings)
+    // keeps its existing shape.
+    _settings: AppSettingsStore,
     private readonly getWindow: () => BrowserWindow | undefined,
     private readonly checkpoints?: CheckpointStore,
+    private readonly projects?: ProjectStore,
   ) {}
 
-  /** Open the native directory picker; persist and return the chosen root. */
+  /** Open the native directory picker; record it as a project and return it. */
   async pick(): Promise<string | null> {
     // Test seam: the native dialog cannot be driven in E2E, so when this env var
     // is set (only in tests) the picker resolves to it directly. It never
     // changes the security model — main still holds the root and confines reads.
     const testRoot = process.env['MODELITH_WORKSPACE_ROOT']
     if (testRoot) {
-      await this.settings.set({ workspaceRoot: testRoot })
+      await this.projects?.create(testRoot)
       return testRoot
     }
     const window = this.getWindow()
@@ -57,20 +71,23 @@ export class Workspace {
       : dialog.showOpenDialog({ properties: ['openDirectory'] }))
     if (result.canceled || result.filePaths.length === 0) return null
     const root = result.filePaths[0]!
-    await this.settings.set({ workspaceRoot: root })
+    // create() reuses a project with the same root and makes it active, so
+    // re-picking a folder reopens it rather than duplicating it.
+    await this.projects?.create(root)
     return root
   }
 
-  /** The remembered workspace root, or null when none has been chosen. */
-  async current(): Promise<string | null> {
-    const root = (await this.settings.get())['workspaceRoot']
-    return typeof root === 'string' ? root : null
+  /**
+   * The active project's root, or null when no project is open. This drives the
+   * UI (the file tree, the git panel) only — it is never what an agent turn
+   * confines to, which resolves from the turn's own session instead.
+   */
+  async activeRoot(): Promise<string | null> {
+    return (await this.projects?.activeRoot()) ?? null
   }
 
-  /** A pruned, capped listing of the current root (dirs first per level). */
-  async tree(): Promise<TreeEntry[]> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  /** A pruned, capped listing of the given root (dirs first per level). */
+  async tree(root: string): Promise<TreeEntry[]> {
     const entries: TreeEntry[] = []
     await this.walk(root, root, entries)
     return entries
@@ -82,18 +99,18 @@ export class Workspace {
    * `read()` (confined + binary/size-guarded) for contents, so it inherits every
    * confinement guarantee and never scans outside the root.
    */
-  async search(query: string, opts?: { maxHits?: number }): Promise<SearchResult> {
+  async search(root: string, query: string, opts?: { maxHits?: number }): Promise<SearchResult> {
     const needle = query.toLowerCase()
     if (!needle) return { hits: [], truncated: false, filesScanned: 0 }
     const maxHits = opts?.maxHits ?? MAX_SEARCH_HITS
-    const files = (await this.tree()).filter((e) => e.kind === 'file' && e.readable)
+    const files = (await this.tree(root)).filter((e) => e.kind === 'file' && e.readable)
     const hits: SearchHit[] = []
     let filesScanned = 0
     for (const f of files) {
       if (hits.length >= maxHits) return { hits, truncated: true, filesScanned }
       let text: string
       try {
-        ({ text } = await this.read(f.relPath))
+        ({ text } = await this.read(root, f.relPath))
       } catch {
         continue // binary/too-large/unreadable — skip, never fail the whole search
       }
@@ -148,10 +165,7 @@ export class Workspace {
   }
 
   /** Read one text file under the root, enforcing confinement (spec §A.2). */
-  async read(relPath: string): Promise<{ relPath: string; text: string }> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
-
+  async read(root: string, relPath: string): Promise<{ relPath: string; text: string }> {
     const realRoot = await realpath(root)
     const candidate = path.resolve(realRoot, relPath)
     let realCandidate: string
@@ -198,9 +212,7 @@ export class Workspace {
   }
 
   /** Current text of a file for computing a diff, or null if it does not exist. */
-  async currentContent(relPath: string): Promise<string | null> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  async currentContent(root: string, relPath: string): Promise<string | null> {
     const target = await this.resolveWritable(root, relPath)
     try {
       return await readFile(target, 'utf8')
@@ -210,9 +222,7 @@ export class Workspace {
   }
 
   /** Apply an approved write, snapshotting the pre-image first (reversible). */
-  async applyWrite(input: WriteInput): Promise<void> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  async applyWrite(root: string, input: WriteInput): Promise<void> {
     const target = await this.resolveWritable(root, input.relPath)
 
     let existed = true
@@ -231,9 +241,7 @@ export class Workspace {
   }
 
   /** Restore every pre-image recorded for a turn (newest first). */
-  async revertTurn(turnId: string): Promise<number> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  async revertTurn(root: string, turnId: string): Promise<number> {
     const cps = (await this.checkpoints?.list(turnId)) ?? []
     let reverted = 0
     for (const cp of cps) {

@@ -26,18 +26,18 @@ afterEach(async () => { await rm(base, { recursive: true, force: true }) })
 
 describe('Workspace.applyWrite', () => {
   it('overwrites an existing file inside the root', async () => {
-    await ws.applyWrite({ relPath: 'a.txt', content: 'changed', turnId: 't1', callId: 'c1' })
+    await ws.applyWrite(root, { relPath: 'a.txt', content: 'changed', turnId: 't1', callId: 'c1' })
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('changed')
   })
 
   it('creates a new file inside the root', async () => {
-    await ws.applyWrite({ relPath: 'new.txt', content: 'hi', turnId: 't1', callId: 'c1' })
+    await ws.applyWrite(root, { relPath: 'new.txt', content: 'hi', turnId: 't1', callId: 'c1' })
     expect(await readFile(path.join(root, 'new.txt'), 'utf8')).toBe('hi')
   })
 
   it('refuses to write outside the root', async () => {
     await expect(
-      ws.applyWrite({ relPath: '../escape.txt', content: 'x', turnId: 't1', callId: 'c1' }),
+      ws.applyWrite(root, { relPath: '../escape.txt', content: 'x', turnId: 't1', callId: 'c1' }),
     ).rejects.toMatchObject({ code: 'outside-root' })
     // Nothing was written to the sibling location.
     await expect(stat(path.join(base, 'escape.txt'))).rejects.toBeTruthy()
@@ -46,22 +46,22 @@ describe('Workspace.applyWrite', () => {
 
 describe('Workspace.revertTurn', () => {
   it('restores an overwritten file to its pre-image', async () => {
-    await ws.applyWrite({ relPath: 'a.txt', content: 'changed', turnId: 't1', callId: 'c1' })
-    const n = await ws.revertTurn('t1')
+    await ws.applyWrite(root, { relPath: 'a.txt', content: 'changed', turnId: 't1', callId: 'c1' })
+    const n = await ws.revertTurn(root, 't1')
     expect(n).toBe(1)
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
   })
 
   it('deletes a file that did not exist before the write', async () => {
-    await ws.applyWrite({ relPath: 'created.txt', content: 'hi', turnId: 't2', callId: 'c1' })
-    await ws.revertTurn('t2')
+    await ws.applyWrite(root, { relPath: 'created.txt', content: 'hi', turnId: 't2', callId: 'c1' })
+    await ws.revertTurn(root, 't2')
     await expect(stat(path.join(root, 'created.txt'))).rejects.toBeTruthy()
   })
 
   it('reverts multiple edits in one turn', async () => {
-    await ws.applyWrite({ relPath: 'a.txt', content: 'v2', turnId: 't3', callId: 'c1' })
-    await ws.applyWrite({ relPath: 'b.txt', content: 'newb', turnId: 't3', callId: 'c2' })
-    const n = await ws.revertTurn('t3')
+    await ws.applyWrite(root, { relPath: 'a.txt', content: 'v2', turnId: 't3', callId: 'c1' })
+    await ws.applyWrite(root, { relPath: 'b.txt', content: 'newb', turnId: 't3', callId: 'c2' })
+    const n = await ws.revertTurn(root, 't3')
     expect(n).toBe(2)
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
     await expect(stat(path.join(root, 'b.txt'))).rejects.toBeTruthy()

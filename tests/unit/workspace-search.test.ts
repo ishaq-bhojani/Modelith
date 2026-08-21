@@ -27,7 +27,7 @@ afterAll(async () => { if (root) await rm(path.dirname(root), { recursive: true,
 
 describe('Workspace.search', () => {
   it('finds a case-insensitive substring across files with line numbers', async () => {
-    const res = await ws.search('needlevalue')
+    const res = await ws.search(root, 'needlevalue')
     const locations = res.hits.map((h) => `${h.relPath}:${h.line}`)
     expect(locations).toContain('src/a.ts:1')
     expect(locations).toContain('src/b.ts:2')
@@ -36,23 +36,23 @@ describe('Workspace.search', () => {
   })
 
   it('prunes ignored directories (node_modules is never scanned)', async () => {
-    const res = await ws.search('needlevalue')
+    const res = await ws.search(root, 'needlevalue')
     expect(res.hits.some((h) => h.relPath.includes('node_modules'))).toBe(false)
   })
 
   it('skips binary files', async () => {
-    const res = await ws.search('nee')
+    const res = await ws.search(root, 'nee')
     expect(res.hits.some((h) => h.relPath === 'bin.dat')).toBe(false)
   })
 
   it('caps hits and flags truncation', async () => {
-    const res = await ws.search('e', { maxHits: 1 }) // 'e' is common
+    const res = await ws.search(root, 'e', { maxHits: 1 }) // 'e' is common
     expect(res.hits.length).toBe(1)
     expect(res.truncated).toBe(true)
   })
 
   it('returns no hits and does not throw for an empty query', async () => {
-    const res = await ws.search('')
+    const res = await ws.search(root, '')
     expect(res.hits).toEqual([])
     expect(res.truncated).toBe(false)
   })

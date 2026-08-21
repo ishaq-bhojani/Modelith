@@ -6,7 +6,7 @@ import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
 import type { Workspace } from '../workspace/service.js'
 import type { McpManager } from '../mcp/manager.js'
-import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
+import type { Attachment, ChatMessage, ProjectMeta, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
 
 const PROJECT_HINT =
   'A project folder is open. Use list_dir, search_files, and read_file to explore it yourself before proposing edits; do not ask the user to paste files.'
@@ -55,6 +55,11 @@ export interface StreamEngineDeps {
   maxContextTokens?: number
   /** Present when agentic edits are available; absent = tools disabled. */
   workspace?: Workspace
+  /** Resolves a session's project to a filesystem root (see resolveTurnRoot). */
+  projects: {
+    rootOf(projectId: string | undefined): Promise<string | null>
+    list(): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
+  }
   /** Present when MCP servers may contribute tools (mcp-client spec §3). */
   mcp?: McpManager
 }
@@ -260,6 +265,37 @@ export class StreamEngine {
     this.active.delete(raceId)
   }
 
+  /**
+   * The filesystem root one turn is confined to — a function of the SESSION,
+   * resolved once at turn start (projects spec, "Where the agent's root comes
+   * from").
+   *
+   * A session that belongs to a project uses that project's root, and nothing
+   * else: if the project has been removed the answer is `null`, never some
+   * other project's folder. That is what makes a mid-turn project switch
+   * harmless — the active project is not an input here.
+   *
+   * A session that belongs to NO project — one started before its folder was
+   * opened, or before this app had projects at all — is filed into the active
+   * project now, once, and then resolved the same way as any other. This is the
+   * spec's "a new chat belongs to the active project", applied at the first
+   * turn that actually needs a root rather than at creation. It is a one-time
+   * assignment, not a per-call fallback: from here on the root is a pure
+   * function of the session, so switching projects mid-turn still cannot
+   * retarget anything. With no active project there is nothing to file into and
+   * the answer is `null` — the workspace tools then report "no workspace",
+   * exactly as they do before any folder is picked.
+   */
+  private async resolveTurnRoot(sessionId: string): Promise<string | null> {
+    const session = (await this.deps.store.list()).find((s) => s.id === sessionId)
+    if (session?.projectId !== undefined) return this.deps.projects.rootOf(session.projectId)
+    const { projects, activeId } = await this.deps.projects.list()
+    const active = projects.find((p) => p.id === activeId)
+    if (!active) return null
+    await this.deps.store.setProject(sessionId, active.id)
+    return active.root
+  }
+
   private async run(streamId: string, input: StartInput, controller: AbortController): Promise<void> {
     const { store, readKey, resolveProvider } = this.deps
     const { sessionId } = input
@@ -297,8 +333,11 @@ export class StreamEngine {
     // Agentic edits are available only when explicitly requested AND a
     // workspace is wired; otherwise this stays a plain chat with no tools.
     const agent = input.agent === true && this.deps.workspace !== undefined
-    // Terminal/git tools need a concrete root to run in; resolve it once.
-    const root = agent ? await this.deps.workspace!.current() : null
+    // The turn's root. Resolved once, here, and passed down for the whole turn.
+    // Reading it per tool call would let a project switch mid-turn retarget an
+    // in-flight write: the user approves an edit in one project and it lands in
+    // another.
+    const root = agent ? await this.resolveTurnRoot(sessionId) : null
     // In agent mode, offer edit tools, terminal/git tools (when a root exists),
     // plus any connected MCP server tools.
     const mcpTools = agent ? (this.deps.mcp?.toolSpecs() ?? []) : []
@@ -381,6 +420,7 @@ export class StreamEngine {
         if (controller.signal.aborted) return
         const outcome = await executeTool(call.name, call.arguments, call.id, {
           workspace: this.deps.workspace!,
+          root,
           turnId,
           requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller, turnId),
           requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller, turnId),
