@@ -6,7 +6,7 @@ import type { SessionStore } from '../sessions/store.js'
 import type { FetchLike, Provider } from '../providers/types.js'
 import type { Workspace } from '../workspace/service.js'
 import type { McpManager } from '../mcp/manager.js'
-import type { Attachment, ChatMessage, ProjectMeta, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
+import type { Attachment, ChatMessage, ProviderError, StreamEnvelope, StreamEvent, ToolCall, Usage } from '../../shared/types.js'
 
 const PROJECT_HINT =
   'A project folder is open. Use list_dir, search_files, and read_file to explore it yourself before proposing edits; do not ask the user to paste files.'
@@ -55,10 +55,15 @@ export interface StreamEngineDeps {
   maxContextTokens?: number
   /** Present when agentic edits are available; absent = tools disabled. */
   workspace?: Workspace
-  /** Resolves a session's project to a filesystem root (see resolveTurnRoot). */
+  /**
+   * Resolves a session's project to a filesystem root (see resolveTurnRoot).
+   *
+   * Deliberately narrowed to `rootOf` alone: without `list()` the engine
+   * cannot even ask which project is active, so no future change here can
+   * reintroduce the active project as an input to a turn's confinement.
+   */
   projects: {
     rootOf(projectId: string | undefined): Promise<string | null>
-    list(): Promise<{ projects: ProjectMeta[]; activeId: string | null }>
   }
   /** Present when MCP servers may contribute tools (mcp-client spec §3). */
   mcp?: McpManager
@@ -275,39 +280,37 @@ export class StreamEngine {
    * other project's folder. That is what makes a mid-turn project switch
    * harmless — the active project is not an input here.
    *
-   * A session that belongs to NO project is filed into the active project —
-   * but ONLY when it is a genuinely new chat, one whose entire history is the
-   * user message this turn just appended. That is the spec's "a new chat
-   * belongs to the active project", applied at the first turn that actually
-   * needs a root rather than at creation, which covers the ordinary
-   * start-chatting-then-open-a-folder flow. It is a one-time assignment, not a
-   * per-call fallback: from here on the root is a pure function of the session,
-   * so switching projects mid-turn still cannot retarget anything.
+   * A session that belongs to NO project has NO root. It is never adopted into
+   * the active project here, and this method never writes to the session index
+   * (design owner's ruling, whole-branch review I4). Two reasons:
    *
-   * The history check is load-bearing, not a nicety. An absent `projectId` does
-   * NOT mean "new chat" — `SessionStore.clearProject` (how removing a project
-   * unfiles its conversations) and `setProject(id, undefined)` (how "Move to
-   * project… → None" works) both DELETE the field. Without this check, closing
-   * project A would hand a long conversation about A's code to whatever project
-   * happens to be active, and every legacy Unfiled chat would silently jump
-   * into the active project on its first agent turn — the guess that Unfiled
-   * exists to avoid.
+   * 1. A `projectId` write inside the streaming engine is a write inside the
+   *    very code path the confinement argument rests on. Making this a pure
+   *    read — session → `projectId` → root — keeps the engine a reader of
+   *    project membership and nothing more.
+   * 2. Every gate on "is this a new chat?" that could be written here is
+   *    wrong somewhere. An absent `projectId` does NOT mean "new chat":
+   *    `SessionStore.clearProject` (how removing a project unfiles its
+   *    conversations) and `setProject(id, undefined)` (how "Move to project…
+   *    → None" works) both DELETE the field. A history-length gate covers
+   *    those, but not a *fresh* chat the user deliberately moved to Unfiled
+   *    before its first turn — that one would be silently re-filed, reverting
+   *    a control the UI ships.
    *
-   * With no active project, or nothing to adopt, the answer is `null` — the
-   * workspace tools then report "no workspace", exactly as they do before any
-   * folder is picked.
+   * Filing a chat into a project is therefore an explicit user action in the
+   * renderer: `newSession()` stamps the active project at creation, and
+   * activating a project stamps an open chat that is unfiled AND has no
+   * history (`stampOpenSession` in the renderer store), which is what keeps
+   * the ordinary start-chatting-then-open-a-folder flow working.
+   *
+   * If the session's project has been removed the answer is `null`, never some
+   * other project's folder — and with no project at all the answer is `null`
+   * too, so the workspace tools report "no workspace", exactly as they do
+   * before any folder is picked.
    */
   private async resolveTurnRoot(sessionId: string): Promise<string | null> {
     const session = (await this.deps.store.list()).find((s) => s.id === sessionId)
-    if (session?.projectId !== undefined) return this.deps.projects.rootOf(session.projectId)
-    // run() appends this turn's user message before calling us, so a brand-new
-    // chat has exactly one message here and anything older has more.
-    if ((await this.deps.store.load(sessionId)).length > 1) return null
-    const { projects, activeId } = await this.deps.projects.list()
-    const active = projects.find((p) => p.id === activeId)
-    if (!active) return null
-    await this.deps.store.setProject(sessionId, active.id)
-    return active.root
+    return this.deps.projects.rootOf(session?.projectId)
   }
 
   private async run(streamId: string, input: StartInput, controller: AbortController): Promise<void> {

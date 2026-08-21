@@ -47,7 +47,7 @@ const build = (provider: Provider) => {
     store,
     resolveProvider: () => provider,
     // No workspace is wired here, so these turns never resolve a root.
-    projects: { rootOf: async () => null, list: async () => ({ projects: [], activeId: null }) },
+    projects: { rootOf: async () => null },
   })
 }
 
@@ -160,7 +160,7 @@ describe('StreamEngine', () => {
       readKey: async () => null,
       store,
       resolveProvider: () => fakeProvider([{ type: 'done' }]),
-      projects: { rootOf: async () => null, list: async () => ({ projects: [], activeId: null }) },
+      projects: { rootOf: async () => null },
     })
     await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi' })
     await waitFor(() => emitted.length > 0)
@@ -182,7 +182,7 @@ describe('StreamEngine', () => {
       readKey: async () => null,
       store,
       resolveProvider: () => keylessProvider,
-      projects: { rootOf: async () => null, list: async () => ({ projects: [], activeId: null }) },
+      projects: { rootOf: async () => null },
     })
     await engine.start({ sessionId: s.id, providerId: 'keyless', model: 'm', content: 'hi' })
     await waitFor(() => emitted.some((e) => e.event.type === 'done'))
@@ -390,7 +390,7 @@ describe('StreamEngine failover', () => {
         if (!p) throw new Error(`no provider ${id}`)
         return p
       },
-      projects: { rootOf: async () => null, list: async () => ({ projects: [], activeId: null }) },
+      projects: { rootOf: async () => null },
     })
   }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -143,7 +143,7 @@ describe("a turn's root comes from its own session", () => {
   it('never adopts a pre-existing unfiled chat', async () => {
     await projects.create(rootA)
     // The spec is explicit that Unfiled exists so the app does not guess which
-    // project a months-old chat belonged to. Only a NEW chat may be adopted.
+    // project a months-old chat belonged to.
     expect(await listDirResultFor(withHistory)).toBe('No workspace folder is open.')
   })
 
@@ -151,8 +151,39 @@ describe("a turn's root comes from its own session", () => {
     expect(await listDirResultFor()).toBe('No workspace folder is open.')
   })
 
-  it('files a NEW chat into the active project on its first turn', async () => {
+  // I4 (design owner's ruling): turn-start adoption is GONE from the engine.
+  // `resolveTurnRoot` is a pure read — session → projectId → root — so every
+  // `projectId` write originates from an explicit user action in the renderer
+  // rather than a side effect of sending. The old `history.length > 1` gate
+  // could not see a genuinely fresh chat the user had deliberately moved to
+  // Unfiled (New chat → Move to project → None → send re-filed it silently),
+  // and it put a session-index WRITE inside the streaming engine, which is
+  // where the whole confinement argument lives.
+  //
+  // The start-a-chat-then-open-a-folder flow is preserved by the renderer
+  // stamping an unfiled, history-free session when a project becomes active
+  // (see tests/unit/renderer-store.test.ts, "stamping the open chat").
+  it('does not file an unfiled chat into the active project, even on its first turn', async () => {
     await projects.create(rootA)
-    expect(await listDirResultFor()).toContain('only-in-a.txt')
+    expect(await listDirResultFor()).toBe('No workspace folder is open.')
+  })
+
+  it('writes nothing to the session index while resolving a root', async () => {
+    await projects.create(rootA)
+    const dir = await mkdtemp(join(tmpdir(), 'oc-turnroot-nowrite-'))
+    const sessions = new SessionStore(dir)
+    const session = await sessions.create('t')
+    const setProject = vi.spyOn(sessions, 'setProject')
+    const engine = new StreamEngine({
+      emit: () => {}, readKey: async () => 'k', store: sessions,
+      resolveProvider: () => listDirProvider(), workspace, projects,
+    })
+    await engine.start({ sessionId: session.id, providerId: 'fake', model: 'm', content: 'go', agent: true })
+    for (let i = 0; i < 600; i++) {
+      if ((await sessions.load(session.id)).some((m) => m.role === 'tool')) break
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    expect(setProject).not.toHaveBeenCalled()
+    expect((await sessions.list()).find((s) => s.id === session.id)?.projectId).toBeUndefined()
   })
 })
