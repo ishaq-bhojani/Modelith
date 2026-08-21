@@ -233,6 +233,9 @@ export class Workspace {
       turnId: input.turnId,
       callId: input.callId,
       relPath: input.relPath,
+      // The root this write landed in, so revert can restore it here and
+      // nowhere else — see Checkpoint.root.
+      root,
       existed,
       prevBase64: existed ? prev.toString('base64') : '',
     })
@@ -240,13 +243,25 @@ export class Workspace {
     await writeFile(target, input.content, 'utf8')
   }
 
-  /** Restore every pre-image recorded for a turn (newest first). */
-  async revertTurn(root: string, turnId: string): Promise<number> {
+  /**
+   * Restore every pre-image recorded for a turn (newest first).
+   *
+   * Deliberately takes NO root: each checkpoint carries the root its write
+   * landed in, and is restored there. A caller-supplied root would be the
+   * active project's — so reverting a turn from one project while another was
+   * open would write the first project's pre-images over the second project's
+   * files at the same relative paths, destroying work in a project the user was
+   * not even looking at.
+   */
+  async revertTurn(turnId: string): Promise<number> {
     const cps = (await this.checkpoints?.list(turnId)) ?? []
     let reverted = 0
     for (const cp of cps) {
+      // No recorded root (a checkpoint from before roots were recorded): skip
+      // it. Guessing a root is exactly the destructive behaviour above.
+      if (!cp.root) continue
       let target: string
-      try { target = await this.resolveWritable(root, cp.relPath) } catch { continue }
+      try { target = await this.resolveWritable(cp.root, cp.relPath) } catch { continue }
       if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
       else await unlink(target).catch(() => {})
       reverted++

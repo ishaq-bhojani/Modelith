@@ -47,23 +47,45 @@ describe('Workspace.applyWrite', () => {
 describe('Workspace.revertTurn', () => {
   it('restores an overwritten file to its pre-image', async () => {
     await ws.applyWrite(root, { relPath: 'a.txt', content: 'changed', turnId: 't1', callId: 'c1' })
-    const n = await ws.revertTurn(root, 't1')
+    const n = await ws.revertTurn('t1')
     expect(n).toBe(1)
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
   })
 
   it('deletes a file that did not exist before the write', async () => {
     await ws.applyWrite(root, { relPath: 'created.txt', content: 'hi', turnId: 't2', callId: 'c1' })
-    await ws.revertTurn(root, 't2')
+    await ws.revertTurn('t2')
     await expect(stat(path.join(root, 'created.txt'))).rejects.toBeTruthy()
   })
 
   it('reverts multiple edits in one turn', async () => {
     await ws.applyWrite(root, { relPath: 'a.txt', content: 'v2', turnId: 't3', callId: 'c1' })
     await ws.applyWrite(root, { relPath: 'b.txt', content: 'newb', turnId: 't3', callId: 'c2' })
-    const n = await ws.revertTurn(root, 't3')
+    const n = await ws.revertTurn('t3')
     expect(n).toBe(2)
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
     await expect(stat(path.join(root, 'b.txt'))).rejects.toBeTruthy()
+  })
+})
+
+describe('Workspace.revertTurn across projects', () => {
+  it('restores into the project the write happened in, not the active one', async () => {
+    // A second project, holding a DIFFERENT file at the same relative path.
+    const other = path.join(base, 'other-project')
+    await mkdir(other, { recursive: true })
+    await writeFile(path.join(other, 'a.txt'), 'the other project')
+
+    // A turn edits project A's a.txt, so the checkpoint belongs to project A.
+    await ws.applyWrite(root, { relPath: 'a.txt', content: 'changed', turnId: 't9', callId: 'c1' })
+
+    // The user switches to the other project and only then hits Revert. The
+    // pre-image must go back where it came from: resolving it against whatever
+    // is active would overwrite an unrelated project's file at the same path,
+    // silently destroying work in a project the user was not even looking at.
+    const n = await ws.revertTurn('t9')
+
+    expect(n).toBe(1)
+    expect(await readFile(path.join(other, 'a.txt'), 'utf8')).toBe('the other project')
+    expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
   })
 })

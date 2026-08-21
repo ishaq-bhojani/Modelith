@@ -175,10 +175,10 @@ export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undef
     if (!root) throw new Error('No project is open.')
     return workspace.read(root, WorkspaceReadSchema.parse(raw).relPath)
   }))
-  ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping(async (_e, raw: unknown) => {
-    const root = await workspace.activeRoot()
-    if (!root) throw new Error('No project is open.')
-    return workspace.revertTurn(root, WorkspaceRevertSchema.parse(raw).turnId)
+  // Revert takes no root: each checkpoint restores into the root its write
+  // landed in, so switching project before hitting Revert cannot redirect it.
+  ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping((_e, raw: unknown) => {
+    return workspace.revertTurn(WorkspaceRevertSchema.parse(raw).turnId)
   }))
 }
 
