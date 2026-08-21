@@ -35,7 +35,7 @@ export interface ModelithBridge {
     chooseWinner(raceId: string, columnId: string): Promise<void>
   }
   sessions: {
-    list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[] }[]>
+    list(): Promise<{ id: string; title: string; updatedAt: number; pinned?: boolean; archived?: boolean; tags?: string[]; projectId?: string }[]>
     load(id: string): Promise<ChatMessage[]>
     create(title: string): Promise<{ id: string }>
     delete(id: string): Promise<void>

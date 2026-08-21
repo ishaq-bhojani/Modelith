@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProviderError, ProviderSummary, StreamEvent, UpdateState, WorkspaceTreeEntry } from '@shared/types'
+import type { Attachment, ChatMessage, GitStatus, McpServerStatus, Mode, ProjectMeta, ProviderError, ProviderSummary, StreamEvent, UpdateState, WorkspaceTreeEntry } from '@shared/types'
 import { scanSecrets, type SecretCategory } from '@shared/secret-scan'
 import { commandMatchesAllowedPrefix } from '@shared/command-safety'
 import { encodeSelection } from '../canvas/selection.js'
@@ -15,6 +15,8 @@ interface SessionMeta {
   pinned?: boolean
   archived?: boolean
   tags?: string[]
+  /** The project this session belongs to. Absent means Unfiled (projects spec). */
+  projectId?: string
 }
 export interface Fallback { providerId: string; model: string }
 
@@ -146,6 +148,9 @@ interface AppState {
   } | null
   /** Set when send is paused because the draft looks like it contains secrets. */
   pendingSecret: SecretCategory[] | null
+  /** Projects and which is active (projects spec). */
+  projects: ProjectMeta[]
+  activeProjectId: string | null
 
   openSettings(): void
   closeSettings(): void
@@ -213,6 +218,13 @@ interface AppState {
    */
   reportError(err: unknown): void
   loadSessions(): Promise<void>
+  /** Projects (projects spec). */
+  loadProjects(): Promise<void>
+  createProject(): Promise<void>
+  renameProject(id: string, name: string): Promise<void>
+  removeProject(id: string): Promise<void>
+  setActiveProject(id: string | null): Promise<void>
+  moveSession(id: string, projectId: string | null): Promise<void>
   loadProviders(): Promise<void>
   loadSettings(): Promise<void>
   setFallbacks(fallbacks: Fallback[]): Promise<void>
@@ -286,6 +298,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   raceTargets: [],
   race: null,
   pendingSecret: null,
+  projects: [],
+  activeProjectId: null,
 
   openSettings() { set({ settingsOpen: true }) },
   closeSettings() { set({ settingsOpen: false }) },
@@ -660,6 +674,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  async loadProjects() {
+    try {
+      const { projects, activeId } = await window.modelith.projects.list()
+      set({ projects, activeProjectId: activeId })
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async createProject() {
+    try {
+      const { projects, activeId } = await window.modelith.projects.create()
+      set({ projects, activeProjectId: activeId })
+      await get().initWorkspace()
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async setActiveProject(id) {
+    try {
+      const { projects, activeId } = await window.modelith.projects.setActive(id)
+      set({ projects, activeProjectId: activeId })
+      await get().initWorkspace()
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async renameProject(id, name) {
+    try {
+      const { projects, activeId } = await window.modelith.projects.rename(id, name)
+      set({ projects, activeProjectId: activeId })
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async removeProject(id) {
+    try {
+      const { projects, activeId } = await window.modelith.projects.remove(id)
+      set({ projects, activeProjectId: activeId })
+      await get().loadSessions()
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  async moveSession(id, projectId) {
+    try {
+      await window.modelith.sessions.setProject(id, projectId)
+      await get().loadSessions()
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+
   // Selects the first provider (and its first model) only when nothing is
   // chosen yet, or the current selection no longer exists. This is what lets
   // the E2E fake provider (registered first under MODELITH_FAKE_PROVIDER)
@@ -706,6 +760,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   async newSession() {
     try {
       const { id } = await window.modelith.sessions.create('New chat')
+      // File the new chat under the active project before the sidebar reloads,
+      // so it lands in the right group immediately instead of appearing under
+      // Unfiled and jumping on the next reload. With no active project the
+      // session stays Unfiled, which is correct (deviation from task-5-brief.md,
+      // which does not stamp projectId at creation — see task-5-report.md).
+      const activeProjectId = get().activeProjectId
+      if (activeProjectId !== null) await window.modelith.sessions.setProject(id, activeProjectId)
       await get().loadSessions()
       await get().selectSession(id)
     } catch (err) {

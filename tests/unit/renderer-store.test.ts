@@ -187,3 +187,52 @@ describe('trust-for-this-turn', () => {
     expect(useAppStore.getState().trustedTurn).toBe(true)
   })
 })
+
+describe('newSession()', () => {
+  // Ruling (task-5-brief.md doesn't cover this): a new chat must land in the
+  // active project immediately, so the e2e that clicks new-session and checks
+  // the sidebar group without sending a message can pass. newSession() stamps
+  // projectId itself, before loadSessions() reloads the sidebar.
+  it('files a new chat under the active project before sessions reload', async () => {
+    const calls: string[] = []
+    const setProject = vi.fn().mockImplementation(async () => { calls.push('setProject') })
+    const list = vi.fn().mockImplementation(async () => { calls.push('list'); return [] })
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({ id: 's-new' }),
+          setProject,
+          list,
+          load: vi.fn().mockResolvedValue([]),
+        },
+      },
+    }
+    useAppStore.setState({ activeProjectId: 'p1', sessions: [], activeSessionId: null, messages: [] })
+
+    await useAppStore.getState().newSession()
+
+    expect(setProject).toHaveBeenCalledWith('s-new', 'p1')
+    // Must be filed BEFORE the sidebar reloads, or the new chat briefly (or
+    // permanently, if the reload races ahead) shows up under Unfiled.
+    expect(calls).toEqual(['setProject', 'list'])
+  })
+
+  it('leaves a new chat unfiled when there is no active project', async () => {
+    const setProject = vi.fn()
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({ id: 's-new' }),
+          setProject,
+          list: vi.fn().mockResolvedValue([]),
+          load: vi.fn().mockResolvedValue([]),
+        },
+      },
+    }
+    useAppStore.setState({ activeProjectId: null, sessions: [], activeSessionId: null, messages: [] })
+
+    await useAppStore.getState().newSession()
+
+    expect(setProject).not.toHaveBeenCalled()
+  })
+})
