@@ -220,3 +220,13 @@ export interface UpdateState {
    *  chip can stay silent on a background failure but report a requested one. */
   manualCheck: boolean
 }
+
+/** A registered codebase folder that chat sessions can be grouped under
+ *  (projects spec). Owned by `ProjectStore` at `<userData>/projects.json`. */
+export interface ProjectMeta {
+  id: string
+  name: string
+  root: string
+  createdAt: number
+  lastOpenedAt: number
+}
