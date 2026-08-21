@@ -414,3 +414,341 @@ describe('project store actions', () => {
     expect(useAppStore.getState().error?.message).toContain('boom')
   })
 })
+
+// ── C1: the legacy pickWorkspace path must not desynchronise the mirror ─────
+//
+// Whole-branch review C1. `Workspace.pick()` in main creates-and-activates a
+// project, but the Workspace panel's Open/Change buttons went through
+// `pickWorkspace()`, which only ever set workspaceRoot/workspaceTree. There is
+// no push channel and `loadProjects()` runs once on mount, so main and the
+// renderer disagreed until the next launch: the new project had no sidebar
+// group, and `newSession()` kept stamping the STALE activeProjectId — filing a
+// chat into project A while the whole UI showed project B. `resolveTurnRoot`
+// then correctly confined the turn to A, so an approved write landed in a
+// folder the user was not looking at. That is the outcome the spec exists to
+// prevent, reached through a stale mirror rather than a mid-turn switch.
+describe('pickWorkspace (Workspace panel Open/Change)', () => {
+  function bridge(): Record<string, ReturnType<typeof vi.fn>> {
+    const fns: Record<string, ReturnType<typeof vi.fn>> = {
+      create: vi.fn().mockResolvedValue({ projects: [{ id: 'pB', name: 'B', root: '/b', createdAt: 2, lastOpenedAt: 2 }], activeId: 'pB' }),
+      current: vi.fn().mockResolvedValue('/b'),
+      tree: vi.fn().mockResolvedValue([{ relPath: 'x.ts', name: 'x.ts', kind: 'file', readable: true }]),
+      setProject: vi.fn().mockResolvedValue(undefined),
+      sessionsList: vi.fn().mockResolvedValue([]),
+    }
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: { create: fns['create'], list: vi.fn(), setActive: vi.fn(), remove: vi.fn(), rename: vi.fn() },
+        // No `pick` here on purpose: the bridge no longer exposes one, so a
+        // store action that reached for it would throw rather than quietly
+        // reopen the desynchronised path.
+        workspace: { current: fns['current'], tree: fns['tree'] },
+        sessions: { setProject: fns['setProject'], list: fns['sessionsList'], load: vi.fn().mockResolvedValue([]) },
+      },
+    }
+    return fns
+  }
+
+  it('leaves main and the renderer agreeing about which project is active', async () => {
+    bridge()
+    useAppStore.setState({
+      projects: [{ id: 'pA', name: 'A', root: '/a', createdAt: 1, lastOpenedAt: 1 }],
+      activeProjectId: 'pA', workspaceRoot: '/a', workspaceTree: [],
+      sessions: [], activeSessionId: null, messages: [],
+    })
+
+    await useAppStore.getState().pickWorkspace()
+
+    const state = useAppStore.getState()
+    expect(state.workspaceRoot).toBe('/b')
+    // The mirror, not just the root: without this the new project has no
+    // sidebar group and newSession() stamps the old one.
+    expect(state.activeProjectId).toBe('pB')
+    expect(state.projects.map((p) => p.id)).toEqual(['pB'])
+  })
+
+  it('goes through the projects channel, so main creates the project exactly once', async () => {
+    const fns = bridge()
+    useAppStore.setState({ projects: [], activeProjectId: null, sessions: [], activeSessionId: null, messages: [] })
+
+    await useAppStore.getState().pickWorkspace()
+
+    expect(fns['create']).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── I3 + M5: removing a project must not leave a stale root and tree ────────
+describe('removeProject refreshes the workspace', () => {
+  it('re-points the tree at the project that main promoted to active', async () => {
+    const current = vi.fn().mockResolvedValue('/b')
+    const tree = vi.fn().mockResolvedValue([{ relPath: 'b.ts', name: 'b.ts', kind: 'file', readable: true }])
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: { remove: vi.fn().mockResolvedValue({ projects: [{ id: 'pB', name: 'B', root: '/b', createdAt: 2, lastOpenedAt: 2 }], activeId: 'pB' }) },
+        workspace: { current, tree },
+        sessions: { list: vi.fn().mockResolvedValue([]) },
+      },
+    }
+    useAppStore.setState({
+      projects: [{ id: 'pA', name: 'A', root: '/a', createdAt: 1, lastOpenedAt: 1 }],
+      activeProjectId: 'pA', workspaceRoot: '/a',
+      workspaceTree: [{ relPath: 'a.ts', name: 'a.ts', kind: 'file', readable: true }],
+    })
+
+    await useAppStore.getState().removeProject('pA')
+
+    // Otherwise the panel keeps listing A's files under A's name while
+    // workspace:read resolves relPath against B's root — clicking the per-file
+    // add button on src/config.ts attaches a DIFFERENT project's file.
+    expect(useAppStore.getState().workspaceRoot).toBe('/b')
+    expect(useAppStore.getState().workspaceTree.map((e) => e.relPath)).toEqual(['b.ts'])
+  })
+
+  it('clears the root and disables agent mode when the last project is removed', async () => {
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: { remove: vi.fn().mockResolvedValue({ projects: [], activeId: null }) },
+        workspace: { current: vi.fn().mockResolvedValue(null), tree: vi.fn() },
+        sessions: { list: vi.fn().mockResolvedValue([]) },
+      },
+    }
+    useAppStore.setState({
+      projects: [{ id: 'pA', name: 'A', root: '/a', createdAt: 1, lastOpenedAt: 1 }],
+      activeProjectId: 'pA', workspaceRoot: '/a',
+      workspaceTree: [{ relPath: 'a.ts', name: 'a.ts', kind: 'file', readable: true }],
+      agentMode: true,
+    })
+
+    await useAppStore.getState().removeProject('pA')
+
+    expect(useAppStore.getState().workspaceRoot).toBeNull()
+    expect(useAppStore.getState().workspaceTree).toEqual([])
+    // Agent mode with no root leaves every tool answering "No workspace
+    // folder is open." while the composer still says it is on.
+    expect(useAppStore.getState().agentMode).toBe(false)
+  })
+})
+
+// ── I3: initWorkspace must be able to CLEAR, not only set ───────────────────
+describe('initWorkspace', () => {
+  it('clears a stale root and tree when main reports no active project', async () => {
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: { workspace: { current: vi.fn().mockResolvedValue(null), tree: vi.fn() } },
+    }
+    useAppStore.setState({
+      workspaceRoot: '/gone',
+      workspaceTree: [{ relPath: 'a.ts', name: 'a.ts', kind: 'file', readable: true }],
+      agentMode: true,
+    })
+
+    await useAppStore.getState().initWorkspace()
+
+    // The old early-return on !root made this structurally impossible, which
+    // is why setActiveProject(null) had the same bug.
+    expect(useAppStore.getState().workspaceRoot).toBeNull()
+    expect(useAppStore.getState().workspaceTree).toEqual([])
+    expect(useAppStore.getState().agentMode).toBe(false)
+  })
+
+  // M6: a vanished folder must be distinguishable from an empty one.
+  it('flags a project folder that is no longer on disk', async () => {
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        workspace: {
+          current: vi.fn().mockResolvedValue('/unmounted'),
+          tree: vi.fn().mockRejectedValue(new Error("Error invoking remote method 'workspace:tree': Error: workspace-root-missing")),
+        },
+      },
+    }
+    useAppStore.setState({ workspaceRoot: null, workspaceTree: [], workspaceMissing: false, error: null })
+
+    await useAppStore.getState().initWorkspace()
+
+    const state = useAppStore.getState()
+    // The project still lists and stays selected — the folder may come back.
+    expect(state.workspaceRoot).toBe('/unmounted')
+    expect(state.workspaceTree).toEqual([])
+    expect(state.workspaceMissing).toBe(true)
+    // Not a global error banner: the spec asks for an explanatory line in the
+    // otherwise-empty tree.
+    expect(state.error).toBeNull()
+  })
+
+  it('clears the missing flag once the folder reads again', async () => {
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        workspace: {
+          current: vi.fn().mockResolvedValue('/back'),
+          tree: vi.fn().mockResolvedValue([{ relPath: 'a.ts', name: 'a.ts', kind: 'file', readable: true }]),
+        },
+      },
+    }
+    useAppStore.setState({ workspaceRoot: '/back', workspaceTree: [], workspaceMissing: true })
+
+    await useAppStore.getState().initWorkspace()
+
+    expect(useAppStore.getState().workspaceMissing).toBe(false)
+    expect(useAppStore.getState().workspaceTree).toHaveLength(1)
+  })
+})
+
+// ── I4: filing a chat is an explicit user action in the renderer ────────────
+//
+// Turn-start adoption is gone from the streaming engine (see
+// tests/unit/workspace-root.test.ts). What replaces it: when a project becomes
+// ACTIVE, the open chat is stamped — but only when it is unfiled AND has no
+// history. That preserves start a chat, open a folder, send; and gives up only
+// the thing the spec already refuses — guessing which project a chat with
+// history belonged to.
+describe('stamping the open chat when a project becomes active', () => {
+  const PB = { id: 'pB', name: 'B', root: '/b', createdAt: 2, lastOpenedAt: 2 }
+
+  function bridge(): { setProject: ReturnType<typeof vi.fn> } {
+    const setProject = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: {
+          setActive: vi.fn().mockResolvedValue({ projects: [PB], activeId: 'pB' }),
+          create: vi.fn().mockResolvedValue({ projects: [PB], activeId: 'pB' }),
+        },
+        workspace: { current: vi.fn().mockResolvedValue('/b'), tree: vi.fn().mockResolvedValue([]) },
+        sessions: { setProject, list: vi.fn().mockResolvedValue([]), load: vi.fn().mockResolvedValue([]) },
+      },
+    }
+    return { setProject }
+  }
+
+  it('files the fresh, unfiled chat the user is looking at', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [], activeProjectId: null,
+      sessions: [{ id: 's1', title: 'New chat', updatedAt: 1 }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().setActiveProject('pB')
+
+    expect(setProject).toHaveBeenCalledWith('s1', 'pB')
+  })
+
+  it('also files it when the project is created by opening a folder', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [], activeProjectId: null,
+      sessions: [{ id: 's1', title: 'New chat', updatedAt: 1 }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().createProject()
+
+    expect(setProject).toHaveBeenCalledWith('s1', 'pB')
+  })
+
+  it('never touches a chat that already has history', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [], activeProjectId: null,
+      sessions: [{ id: 's1', title: 'Months old', updatedAt: 1 }],
+      activeSessionId: 's1',
+      messages: [{ id: 'm1', role: 'user', content: 'about something else', createdAt: 1 }],
+    })
+
+    await useAppStore.getState().setActiveProject('pB')
+
+    // The spec: Unfiled exists so the app does not guess which project a
+    // months-old chat belonged to.
+    expect(setProject).not.toHaveBeenCalled()
+  })
+
+  it('never re-files a chat that already belongs to a project', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [], activeProjectId: null,
+      sessions: [{ id: 's1', title: 'In A', updatedAt: 1, projectId: 'pA' }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().setActiveProject('pB')
+
+    expect(setProject).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when the project being activated is None', async () => {
+    const setProject = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: { setActive: vi.fn().mockResolvedValue({ projects: [], activeId: null }) },
+        workspace: { current: vi.fn().mockResolvedValue(null), tree: vi.fn() },
+        sessions: { setProject, list: vi.fn().mockResolvedValue([]) },
+      },
+    }
+    useAppStore.setState({
+      projects: [PB], activeProjectId: 'pB',
+      sessions: [{ id: 's1', title: 'New chat', updatedAt: 1 }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().setActiveProject(null)
+
+    expect(setProject).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when no chat is open', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({ projects: [], activeProjectId: null, sessions: [], activeSessionId: null, messages: [] })
+
+    await useAppStore.getState().setActiveProject('pB')
+
+    expect(setProject).not.toHaveBeenCalled()
+  })
+})
+
+// I4, reason 3 of the ruling: "Move to project… → None" must actually stick.
+// Stamping an unfiled, history-free chat when a project becomes active would
+// otherwise undo an explicit choice the moment the user clicked a project row
+// — a shipped control silently reverting, which is the very defect I4 is
+// about, just moved from the engine into the renderer.
+describe('an explicit Move to project → None beats implicit stamping', () => {
+  const PB = { id: 'pB', name: 'B', root: '/b', createdAt: 2, lastOpenedAt: 2 }
+
+  function bridge(): { setProject: ReturnType<typeof vi.fn> } {
+    const setProject = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as { window: unknown }).window = {
+      modelith: {
+        projects: { setActive: vi.fn().mockResolvedValue({ projects: [PB], activeId: 'pB' }) },
+        workspace: { current: vi.fn().mockResolvedValue('/b'), tree: vi.fn().mockResolvedValue([]) },
+        sessions: { setProject, list: vi.fn().mockResolvedValue([{ id: 's1', title: 'New chat', updatedAt: 1 }]) },
+      },
+    }
+    return { setProject }
+  }
+
+  it('does not re-file a chat the user just unfiled by hand', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [PB], activeProjectId: 'pB', unfiledByUser: [],
+      sessions: [{ id: 's1', title: 'New chat', updatedAt: 1, projectId: 'pB' }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().moveSession('s1', null)
+    setProject.mockClear()
+
+    await useAppStore.getState().setActiveProject('pB')
+
+    expect(setProject).not.toHaveBeenCalled()
+  })
+
+  it('files it again once the user moves it into a project by hand', async () => {
+    const { setProject } = bridge()
+    useAppStore.setState({
+      projects: [PB], activeProjectId: 'pB', unfiledByUser: ['s1'],
+      sessions: [{ id: 's1', title: 'New chat', updatedAt: 1 }],
+      activeSessionId: 's1', messages: [],
+    })
+
+    await useAppStore.getState().moveSession('s1', 'pB')
+
+    expect(useAppStore.getState().unfiledByUser).not.toContain('s1')
+  })
+})

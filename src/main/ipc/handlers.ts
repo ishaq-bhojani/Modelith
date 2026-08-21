@@ -158,7 +158,6 @@ export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undef
   // These are the UI's handlers, so they act on the ACTIVE project — the tree
   // and the file the user is looking at. An agent turn never comes through
   // here: it resolves its own root from its session (see StreamEngine).
-  ipcMain.handle(CHANNELS.workspacePick, () => workspace.pick())
   ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.activeRoot())
   ipcMain.handle(CHANNELS.workspaceTree, async () => {
     const root = await workspace.activeRoot()

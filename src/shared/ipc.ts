@@ -43,7 +43,6 @@ export const CHANNELS = {
   updatesInstall: 'updates:install',
   updatesSetEnabled: 'updates:set-enabled',
   updatesChanged: 'updates:changed',
-  workspacePick: 'workspace:pick',
   workspaceCurrent: 'workspace:current',
   workspaceTree: 'workspace:tree',
   workspaceRead: 'workspace:read',

@@ -22,6 +22,7 @@ export function WorkspacePanel(): React.JSX.Element | null {
   const toggle = useAppStore((s) => s.toggleWorkspace)
   const root = useAppStore((s) => s.workspaceRoot)
   const tree = useAppStore((s) => s.workspaceTree)
+  const missing = useAppStore((s) => s.workspaceMissing)
   const pick = useAppStore((s) => s.pickWorkspace)
   const draft = useAppStore((s) => s.draft)
   const setDraft = useAppStore((s) => s.setDraft)
@@ -62,7 +63,17 @@ export function WorkspacePanel(): React.JSX.Element | null {
             <button className="ghost-button" data-testid="workspace-change" onClick={() => void pick()}>Change</button>
           </div>
           <div className="workspace-list">
-            <WorkspaceTree entries={tree} onAddFile={(p) => void addFile(p)} />
+            {/* A folder that is gone reads exactly like an empty one unless it
+                says so. The project is deliberately NOT removed — it may be on
+                a drive that gets mounted again (projects spec, error table). */}
+            {missing ? (
+              <p className="inspector-empty" data-testid="workspace-missing">
+                This folder is not available right now. It may have been moved,
+                renamed, or be on a drive that is not connected.
+              </p>
+            ) : (
+              <WorkspaceTree entries={tree} onAddFile={(p) => void addFile(p)} />
+            )}
           </div>
         </>
       )}

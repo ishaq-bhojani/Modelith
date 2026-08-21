@@ -33,6 +33,19 @@ export function unwrapIpcMessage(message: string): string {
   return m ? m[1]! : message
 }
 
+/**
+ * The sentinel main's `workspace:tree` handler rejects with when the active
+ * project's folder is not on disk (see registerWorkspaceHandlers). A code, not
+ * a prose message, precisely so this match cannot drift with the wording the
+ * user sees.
+ */
+export const WORKSPACE_ROOT_MISSING = 'workspace-root-missing'
+
+function isMissingRootError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err)
+  return unwrapIpcMessage(raw).includes(WORKSPACE_ROOT_MISSING)
+}
+
 function toProviderError(err: unknown): ProviderError {
   const raw = err instanceof Error ? err.message : String(err)
   return { kind: 'unknown', message: unwrapIpcMessage(raw) }
@@ -97,6 +110,25 @@ interface AppState {
   workspaceOpen: boolean
   workspaceRoot: string | null
   workspaceTree: WorkspaceTreeEntry[]
+  /**
+   * The active project's folder is not on disk right now — deleted, renamed,
+   * or on an unmounted drive. The project stays listed and selected (it may
+   * come back, per the projects spec's error table); this is what lets the
+   * panel show an explanatory line instead of the "No files." an empty folder
+   * gets, so the two cases are distinguishable.
+   */
+  workspaceMissing: boolean
+  /**
+   * Sessions the user explicitly moved to "None" this run.
+   *
+   * `stampOpenSession` files an unfiled, history-free chat into a project that
+   * becomes active — which without this would silently undo a deliberate
+   * "Move to project… → None" the moment the user clicked a project row. An
+   * explicit choice beats an implicit one. Not persisted: it is intent about
+   * the chat on screen, and the stamp can only ever fire for a chat that is
+   * both open and still empty.
+   */
+  unfiledByUser: string[]
   /** Side-thread drawer open state + optional seeded quote. Streaming for the
    *  side thread is handled entirely inside SideThread (its own session + event
    *  subscription), so none of the main streaming fields are touched. */
@@ -224,6 +256,10 @@ interface AppState {
   renameProject(id: string, name: string): Promise<void>
   removeProject(id: string): Promise<void>
   setActiveProject(id: string | null): Promise<void>
+  /** Files the open chat into the active project when it is unfiled and has
+   *  no history — the renderer-side replacement for the streaming engine's
+   *  turn-start adoption (see the implementation for why). */
+  stampOpenSession(): Promise<void>
   moveSession(id: string, projectId: string | null): Promise<void>
   /** Resolves to the project's root in main and opens it there — the
    *  renderer never supplies a path (projects spec row menu: Open folder). */
@@ -278,6 +314,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceOpen: false,
   workspaceRoot: null,
   workspaceTree: [],
+  workspaceMissing: false,
+  unfiledByUser: [],
   sideThreadOpen: false,
   sideThreadSeed: '',
   canvasSelection: null,
@@ -309,26 +347,57 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleInspector() { set((s) => ({ inspectorOpen: !s.inspectorOpen })) },
   toggleWorkspace() { set((s) => ({ workspaceOpen: !s.workspaceOpen })) },
 
+  /**
+   * Re-read the workspace main is actually pointing at (the ACTIVE project's
+   * root) and mirror it here.
+   *
+   * It must be able to CLEAR, not only set. The previous early-return on
+   * `!root` made a stale root structurally impossible to remove, which is what
+   * left `removeProject()` showing a removed project's files while
+   * `workspace:read` resolved them against a different project's root, and
+   * what would have bitten `setActiveProject(null)` the same way.
+   *
+   * Agent mode goes off with the root: with no root every tool answers "No
+   * workspace folder is open.", so leaving the toggle lit is a lie the
+   * composer cannot even undo (it disables the control when there is no root).
+   */
   async initWorkspace() {
     try {
       const root = await window.modelith.workspace.current()
-      if (!root) return
-      const tree = await window.modelith.workspace.tree()
-      set({ workspaceRoot: root, workspaceTree: tree, workspaceOpen: true })
+      if (!root) {
+        set({ workspaceRoot: null, workspaceTree: [], workspaceMissing: false, agentMode: false })
+        return
+      }
+      try {
+        const tree = await window.modelith.workspace.tree()
+        set({ workspaceRoot: root, workspaceTree: tree, workspaceMissing: false, workspaceOpen: true })
+      } catch (err) {
+        // A folder that is gone from disk is not a failure to report as an
+        // error banner — the spec keeps the project listed and shows an
+        // explanatory line in an empty tree. Anything else is a real failure.
+        if (!isMissingRootError(err)) throw err
+        set({ workspaceRoot: root, workspaceTree: [], workspaceMissing: true, workspaceOpen: true })
+      }
     } catch (err) {
       set({ error: toProviderError(err) })
     }
   },
 
+  /**
+   * The Workspace panel's Open / Change buttons.
+   *
+   * This goes through the SAME `projects:create` channel the sidebar's ＋ uses
+   * (whole-branch review C1). Main's `Workspace.pick()` creates-and-activates
+   * a project either way; calling the bare `workspace:pick` here set only the
+   * root, so `projects`/`activeProjectId` silently went stale — the new
+   * project got no sidebar group, and `newSession()` kept stamping the
+   * previous project's id while the tree, root label and Git panel all showed
+   * the new folder. A subsequent agent turn then correctly confined itself to
+   * the session's project and landed an approved write in a folder the user
+   * was not looking at.
+   */
   async pickWorkspace() {
-    try {
-      const root = await window.modelith.workspace.pick()
-      if (!root) return
-      const tree = await window.modelith.workspace.tree()
-      set({ workspaceRoot: root, workspaceTree: tree, workspaceOpen: true })
-    } catch (err) {
-      set({ error: toProviderError(err) })
-    }
+    await get().createProject()
   },
   openSideThread(seed) { set({ sideThreadOpen: true, sideThreadSeed: seed }) },
   closeSideThread() { set({ sideThreadOpen: false, sideThreadSeed: '' }) },
@@ -687,6 +756,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { projects, activeId } = await window.modelith.projects.create()
       set({ projects, activeProjectId: activeId })
+      await get().stampOpenSession()
       await get().initWorkspace()
     } catch (err) { set({ error: toProviderError(err) }) }
   },
@@ -694,7 +764,42 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { projects, activeId } = await window.modelith.projects.setActive(id)
       set({ projects, activeProjectId: activeId })
+      await get().stampOpenSession()
       await get().initWorkspace()
+    } catch (err) { set({ error: toProviderError(err) }) }
+  },
+  /**
+   * File the chat on screen into the project that just became active — but
+   * only when it is unfiled AND has no history yet.
+   *
+   * This is what replaces the streaming engine's turn-start adoption
+   * (whole-branch review I4). Keeping it here means every `projectId` write
+   * originates from an explicit user action — creating a chat, opening a
+   * folder, activating a project, or "Move to project…" — rather than from a
+   * side effect of sending, so the engine stays a pure reader of project
+   * membership.
+   *
+   * Both conditions are load-bearing. An absent `projectId` does NOT mean "new
+   * chat": removing a project unfiles its conversations and "Move to project…
+   * → None" deletes the field too, so without the history check this would
+   * re-file exactly the months-old chats the Unfiled group exists to leave
+   * alone. And a session that already names a project is never retargeted —
+   * that is the confinement rule.
+   *
+   * A failure degrades to "left Unfiled", which the user can fix from the row
+   * menu; it must not take the surrounding action down with it.
+   */
+  async stampOpenSession() {
+    const projectId = get().activeProjectId
+    const sessionId = get().activeSessionId
+    if (projectId === null || sessionId === null) return
+    if (get().messages.length > 0) return
+    if (get().unfiledByUser.includes(sessionId)) return
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session || session.projectId !== undefined) return
+    try {
+      await window.modelith.sessions.setProject(sessionId, projectId)
+      await get().loadSessions()
     } catch (err) { set({ error: toProviderError(err) }) }
   },
   async renameProject(id, name) {
@@ -703,16 +808,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ projects, activeProjectId: activeId })
     } catch (err) { set({ error: toProviderError(err) }) }
   },
+  // Main's remove() reassigns activeId to another project (or null), so the
+  // workspace has to be re-read too (review I3/M5). Without it the panel keeps
+  // listing the removed project's files under its name while `workspace:read`
+  // resolves those same relative paths against the NEW active root — the ＋ on
+  // src/config.ts silently attaches a different project's file.
   async removeProject(id) {
     try {
       const { projects, activeId } = await window.modelith.projects.remove(id)
       set({ projects, activeProjectId: activeId })
       await get().loadSessions()
+      await get().initWorkspace()
     } catch (err) { set({ error: toProviderError(err) }) }
   },
   async moveSession(id, projectId) {
     try {
       await window.modelith.sessions.setProject(id, projectId)
+      // Remember (or forget) that this was a deliberate "None", so
+      // stampOpenSession cannot quietly undo it — see `unfiledByUser`.
+      set((s) => ({
+        unfiledByUser: projectId === null
+          ? [...new Set([...s.unfiledByUser, id])]
+          : s.unfiledByUser.filter((x) => x !== id),
+      }))
       await get().loadSessions()
     } catch (err) { set({ error: toProviderError(err) }) }
   },

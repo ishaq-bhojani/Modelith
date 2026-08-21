@@ -8,12 +8,16 @@ import { launchApp } from './launch.js'
 let app: ElectronApplication
 const rootA = mkdtempSync(join(tmpdir(), 'oc-proj-a-'))
 const rootB = mkdtempSync(join(tmpdir(), 'oc-proj-b-'))
+// Opened through the Workspace panel's own Open/Change button rather than the
+// sidebar ＋, which is the path review C1 found desynchronised.
+const rootC = mkdtempSync(join(tmpdir(), 'oc-proj-c-'))
 
 // Distinct on-disk markers so the workspace tree can prove which root it is
 // showing, and so the "nothing on disk is touched" assertion has something
 // concrete to check for after a project is removed.
 writeFileSync(join(rootA, 'a-marker.txt'), 'a')
 writeFileSync(join(rootB, 'b-marker.txt'), 'b')
+writeFileSync(join(rootC, 'c-marker.txt'), 'c')
 
 test.beforeAll(async () => { app = await launchApp({ MODELITH_WORKSPACE_ROOT: rootA }) })
 test.afterAll(async () => { await app.close() })
@@ -181,4 +185,46 @@ test('removing a project leaves its sessions intact under Unfiled and removes th
   // Removing a project forgets the folder; it must never touch the folder itself.
   expect(existsSync(rootA)).toBe(true)
   expect(existsSync(join(rootA, 'a-marker.txt'))).toBe(true)
+})
+
+// Whole-branch review C1. The Workspace panel's Open / Change buttons went
+// through the legacy `workspace:pick` path, which set only the root and tree.
+// Main creates-and-activates a project there, so the renderer's project mirror
+// silently went stale: no sidebar group for the folder now on screen, and
+// `newSession()` still stamping the PREVIOUS project's id. The next agent turn
+// then correctly confined itself to the session's project and landed an
+// approved write in a folder the user was not looking at.
+//
+// The five e2e specs that already drive this path (workspace, project-mode,
+// agentic-edits, terminal-git, mcp) all passed throughout, because none of
+// them looks at the sidebar afterwards. This one does.
+test('opening a folder from the Workspace panel is visible in the sidebar (review C1)', async () => {
+  const page = await app.firstWindow()
+  await setNextPickedFolder(rootC)
+
+  const panel = page.getByTestId('workspace-panel')
+  if (!(await panel.isVisible().catch(() => false))) await page.getByTestId('open-workspace').click()
+  await expect(panel).toBeVisible()
+
+  // "Change" when a folder is already open, "Open Folder…" when none is.
+  const change = page.getByTestId('workspace-change')
+  if (await change.isVisible().catch(() => false)) await change.click()
+  else await page.getByTestId('workspace-open').click()
+
+  // The tree follows the new folder — that part always worked.
+  await expect(page.getByTestId('workspace-tree')).toContainText('c-marker.txt', { timeout: 8000 })
+
+  // …and so must the sidebar: a group for it, marked active.
+  const rowC = page.getByTestId('project-row').filter({ hasText: /oc-proj-c-/ })
+  await expect(rowC).toBeVisible()
+  await expect(rowC).toHaveAttribute('aria-current', 'true')
+
+  // The consequence that made C1 a merge blocker: with a stale mirror, this
+  // chat was stamped with the previously active project while every piece of
+  // UI showed the new one.
+  await page.getByTestId('new-session').click()
+  await renameSession(page, 'New chat', 'session-in-C')
+  await expect(sessionRow(page, projectGroup(page, /oc-proj-c-/), 'session-in-C')).toBeVisible()
+  await expect(sessionRow(page, projectGroup(page, /oc-proj-b-/), 'session-in-C')).toHaveCount(0)
+  await expect(sessionRow(page, page.getByTestId('unfiled-group'), 'session-in-C')).toHaveCount(0)
 })

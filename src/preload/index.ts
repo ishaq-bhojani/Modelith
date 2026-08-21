@@ -65,10 +65,16 @@ export interface ModelithBridge {
     get(): Promise<Record<string, unknown>>
     set(patch: Record<string, unknown>): Promise<void>
   }
-  /** Read-only workspace folder access (spec §A). The root is chosen and held
-   *  by main; the renderer only ever passes a root-relative path. */
+  /**
+   * Read-only workspace folder access (spec §A). The root is chosen and held
+   * by main; the renderer only ever passes a root-relative path.
+   *
+   * There is deliberately NO folder picker here. Opening a folder goes through
+   * `projects.create()` — the one entry point that both creates-and-activates
+   * the project in main AND returns the fresh list, so the renderer's project
+   * mirror cannot go stale behind it (whole-branch review C1).
+   */
   workspace: {
-    pick(): Promise<string | null>
     current(): Promise<string | null>
     tree(): Promise<WorkspaceTreeEntry[]>
     read(relPath: string): Promise<{ relPath: string; text: string }>
@@ -179,7 +185,6 @@ const bridge: ModelithBridge = {
     set: (patch) => ipcRenderer.invoke(CHANNELS.settingsSet, patch),
   },
   workspace: {
-    pick: () => ipcRenderer.invoke(CHANNELS.workspacePick),
     current: () => ipcRenderer.invoke(CHANNELS.workspaceCurrent),
     tree: () => ipcRenderer.invoke(CHANNELS.workspaceTree),
     read: (relPath) => ipcRenderer.invoke(CHANNELS.workspaceRead, { relPath }),
