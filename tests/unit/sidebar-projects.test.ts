@@ -229,3 +229,62 @@ describe('Sidebar projects — open folder', () => {
     expect(setActive).not.toHaveBeenCalled()
   })
 })
+
+// Whole-branch review M7: with projects present and nothing matching the
+// filter, the empty state rendered ABOVE the project groups — a line saying
+// there is nothing here, sitting on top of the headings it is talking about.
+describe('Sidebar empty state placement', () => {
+  let container: HTMLDivElement
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    installBridge()
+  })
+
+  /** Document order of the empty-state line vs. the first project group. */
+  function emptyStateComesAfterGroups(): boolean {
+    const empty = container.querySelector('.sidebar-empty')!
+    const firstGroup = container.querySelector('[data-testid="project-group"]')!
+    return (firstGroup.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  }
+
+  it('renders the no-matches line below the project groups, not above them', async () => {
+    useAppStore.setState({
+      projects: PROJECTS,
+      activeProjectId: 'p1',
+      sessions: [{ id: 's1', title: 'In Modelith', updatedAt: 3, projectId: 'p1' }],
+      activeSessionId: null,
+      query: 'zzz-nothing-matches',
+    })
+    await render(container)
+
+    expect(container.querySelector('.sidebar-empty')?.textContent).toContain('Nothing matches')
+    expect(container.querySelectorAll('[data-testid="project-group"]').length).toBe(2)
+    expect(emptyStateComesAfterGroups()).toBe(true)
+  })
+
+  it('renders the no-chats-yet line below the project groups too', async () => {
+    useAppStore.setState({
+      projects: PROJECTS,
+      activeProjectId: 'p1',
+      sessions: [],
+      activeSessionId: null,
+      query: '',
+    })
+    await render(container)
+
+    expect(container.querySelector('.sidebar-empty')?.textContent).toContain('No chats yet')
+    expect(emptyStateComesAfterGroups()).toBe(true)
+  })
+
+  it('still shows the empty state on a fresh install with no projects at all', async () => {
+    useAppStore.setState({
+      projects: [], activeProjectId: null, sessions: [], activeSessionId: null, query: '',
+    })
+    await render(container)
+
+    expect(container.querySelector('.sidebar-empty')?.textContent).toContain('No chats yet')
+    expect(container.querySelectorAll('[data-testid="project-group"]').length).toBe(0)
+  })
+})

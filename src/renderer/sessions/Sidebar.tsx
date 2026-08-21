@@ -271,14 +271,6 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       <div className="session-list">
-        {visible.length === 0 ? (
-          <p className="sidebar-empty">
-            {sessions.length === 0
-              ? 'No chats yet. Start one to see it here.'
-              : `Nothing matches “${query.trim()}”.`}
-          </p>
-        ) : null}
-
         {projects.map((project: ProjectMeta) => {
           const forProject = visible.filter((s) => s.projectId === project.id)
           return (
@@ -293,6 +285,19 @@ export function Sidebar(): React.JSX.Element {
             <div className="session-group">Unfiled</div>
             {renderBucketed(unfiled)}
           </div>
+        ) : null}
+
+        {/* After the groups, not before them (review M7): with projects
+            present this line is a footnote about the (empty) groups above it,
+            and reading "No chats yet" on top of a list of project headings is
+            simply the wrong order. On a fresh install there are no groups, so
+            it still lands first. */}
+        {visible.length === 0 ? (
+          <p className="sidebar-empty">
+            {sessions.length === 0
+              ? 'No chats yet. Start one to see it here.'
+              : `Nothing matches “${query.trim()}”.`}
+          </p>
         ) : null}
 
         {archivedCount > 0 ? (
