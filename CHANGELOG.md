@@ -4,6 +4,13 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+### Added
+- **Projects.** Add folders as projects and your chats group under them, so
+  several codebases no longer share one flat list. Switching projects
+  re-points the file tree without re-picking a folder. Existing chats sit
+  under Unfiled and can be moved. Removing a project forgets the folder — no
+  chat is deleted and nothing on disk is touched.
+
 ## 0.4.0 — 2026-08-04
 
 ### Modelith has a face

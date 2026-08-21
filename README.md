@@ -48,6 +48,17 @@ macOS: right-click → *Open*). Signed builds are on the roadmap.
 
 Then open Settings, pick a provider, and paste an API key (Ollama needs none).
 
+### Projects
+
+Add a folder with **+** in the sidebar and it becomes a project; its chats group
+underneath it. Switching projects re-points the file tree without re-picking a
+folder. Chats from before you had projects — or any chat started without one —
+sit under **Unfiled**, and can be moved into a project from the dropdown that
+appears when you hover a chat.
+
+Removing a project forgets the folder. Nothing on disk is touched and no chat is
+deleted; its chats move to Unfiled.
+
 ## Run / build from source
 
 Requires Node **>= 22.19.0**.

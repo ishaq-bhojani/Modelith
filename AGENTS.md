@@ -80,6 +80,10 @@ src/
 - `workspace/` — `service.ts` (confined reads, `search`, `tree`, gated writes,
   checkpoints/revert), `paths.ts` (`isInsideRoot`, `isIgnored`),
   `edit-apply.ts`, `checkpoints.ts`.
+- **`projects/`** — the project list and which is active (`projects.json`).
+  The agent's workspace root is resolved from the **session's** project at turn
+  start, never from the active project: reading it per tool call would let a
+  mid-turn project switch retarget an in-flight write.
 - `mcp/` — stdio JSON-RPC 2.0 client + server manager; tools namespaced
   `mcp__<server>__<tool>`.
 - `terminal/` — `runner.ts` (`runCommand` = shell, gated; `runFile` = arg-vector,
