@@ -5,19 +5,21 @@ import { join } from 'node:path'
 import { StreamEngine } from '../../src/main/chat/stream-engine.js'
 import { SessionStore } from '../../src/main/sessions/store.js'
 import { Workspace } from '../../src/main/workspace/service.js'
+import { ProjectStore } from '../../src/main/projects/store.js'
 import type { Provider } from '../../src/main/providers/types.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 let store: SessionStore
+let projects: ProjectStore
+let projectId: string
 let root: string
 
 beforeEach(async () => {
-  store = new SessionStore(await mkdtemp(join(tmpdir(), 'oc-hint-')))
+  const dir = await mkdtemp(join(tmpdir(), 'oc-hint-'))
+  store = new SessionStore(dir)
   root = await mkdtemp(join(tmpdir(), 'oc-hint-root-'))
+  projects = new ProjectStore(join(dir, 'projects.json'))
+  projectId = (await projects.create(root)).id
 })
 
 async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
@@ -37,9 +39,13 @@ it('appends a discovery hint to the system prompt in agent mode', async () => {
   }
   const engine = new StreamEngine({
     emit: () => {}, readKey: async () => 'k', store, resolveProvider: () => provider,
-    workspace: new Workspace(fakeSettings(root), () => undefined),
+    workspace: new Workspace(() => undefined, undefined, projects),
+    projects,
   } as ConstructorParameters<typeof StreamEngine>[0])
   const s = await store.create('t')
+  // The hint only appears when the turn resolves a root — which comes from the
+  // session's project, so file it first.
+  await store.setProject(s.id, projectId)
   await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'hi', systemPrompt: 'Base.', agent: true })
   await waitFor(() => seenSystem !== '')
   expect(seenSystem).toContain('Base.')

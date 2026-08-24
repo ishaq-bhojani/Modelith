@@ -216,4 +216,37 @@ describe('SessionStore', () => {
     expect(meta?.archived).toBe(true)
     expect(meta?.tags).toEqual(['work', 'urgent'])
   })
+
+  it('creates a session with no project by default, which means Unfiled', async () => {
+    const s = await store.create('t')
+    const [meta] = await store.list()
+    expect(meta?.id).toBe(s.id)
+    expect(meta?.projectId).toBeUndefined()
+  })
+
+  it('moves a session into a project', async () => {
+    const s = await store.create('t')
+    await store.setProject(s.id, 'p1')
+    expect((await store.list())[0]?.projectId).toBe('p1')
+  })
+
+  it('moves a session back to Unfiled', async () => {
+    const s = await store.create('t')
+    await store.setProject(s.id, 'p1')
+    await store.setProject(s.id, undefined)
+    expect((await store.list())[0]?.projectId).toBeUndefined()
+  })
+
+  it('unfiles every session of a removed project, keeping them all', async () => {
+    const a = await store.create('a')
+    const b = await store.create('b')
+    await store.setProject(a.id, 'p1')
+    await store.setProject(b.id, 'p2')
+    await store.clearProject('p1')
+    const list = await store.list()
+    // Removing a project must not delete conversations.
+    expect(list).toHaveLength(2)
+    expect(list.find((s) => s.id === a.id)?.projectId).toBeUndefined()
+    expect(list.find((s) => s.id === b.id)?.projectId).toBe('p2')
+  })
 })

@@ -2,10 +2,10 @@ import { dialog } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { mkdir, readdir, readFile, realpath, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AppSettingsStore } from '../settings/store.js'
 import type { WorkspaceTreeEntry as TreeEntry } from '../../shared/types.js'
 import { isIgnored, isInsideRoot } from './paths.js'
 import type { CheckpointStore } from './checkpoints.js'
+import type { ProjectStore } from '../projects/store.js'
 
 /** Per-file text cap, matching the composer's text-attach ceiling (spec §A.2). */
 const MAX_BYTES = 256 * 1024
@@ -30,25 +30,33 @@ export class WorkspaceError extends Error {
 
 /**
  * Read-only access to a user-chosen workspace folder (spec §A). Every read is
- * confined to the dialog-chosen root: the renderer never supplies the root, and
- * a path that resolves outside it (via `..` or a symlink) is rejected. Nothing
- * is written or executed.
+ * confined to a root the CALLER supplies: the renderer never supplies the root,
+ * and a path that resolves outside it (via `..` or a symlink) is rejected.
+ * Nothing is written or executed.
+ *
+ * The root is an explicit, required first argument on every confined method
+ * rather than something read from global state (projects spec, "Where the
+ * agent's root comes from"). With several projects, reading a global root per
+ * call would let a project switch mid-turn retarget an in-flight tool call —
+ * the user approves a write in project A and it lands in project B. Making the
+ * root required is deliberate: an optional parameter on a confinement boundary
+ * is a bug waiting to be forgotten.
  */
 export class Workspace {
   constructor(
-    private readonly settings: AppSettingsStore,
     private readonly getWindow: () => BrowserWindow | undefined,
     private readonly checkpoints?: CheckpointStore,
+    private readonly projects?: ProjectStore,
   ) {}
 
-  /** Open the native directory picker; persist and return the chosen root. */
+  /** Open the native directory picker; record it as a project and return it. */
   async pick(): Promise<string | null> {
     // Test seam: the native dialog cannot be driven in E2E, so when this env var
     // is set (only in tests) the picker resolves to it directly. It never
     // changes the security model — main still holds the root and confines reads.
     const testRoot = process.env['MODELITH_WORKSPACE_ROOT']
     if (testRoot) {
-      await this.settings.set({ workspaceRoot: testRoot })
+      await this.projects?.create(testRoot)
       return testRoot
     }
     const window = this.getWindow()
@@ -57,20 +65,39 @@ export class Workspace {
       : dialog.showOpenDialog({ properties: ['openDirectory'] }))
     if (result.canceled || result.filePaths.length === 0) return null
     const root = result.filePaths[0]!
-    await this.settings.set({ workspaceRoot: root })
+    // create() reuses a project with the same root and makes it active, so
+    // re-picking a folder reopens it rather than duplicating it.
+    await this.projects?.create(root)
     return root
   }
 
-  /** The remembered workspace root, or null when none has been chosen. */
-  async current(): Promise<string | null> {
-    const root = (await this.settings.get())['workspaceRoot']
-    return typeof root === 'string' ? root : null
+  /**
+   * The active project's root, or null when no project is open. This drives the
+   * UI (the file tree, the git panel) only — it is never what an agent turn
+   * confines to, which resolves from the turn's own session instead.
+   */
+  async activeRoot(): Promise<string | null> {
+    return (await this.projects?.activeRoot()) ?? null
   }
 
-  /** A pruned, capped listing of the current root (dirs first per level). */
-  async tree(): Promise<TreeEntry[]> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  /**
+   * A pruned, capped listing of the given root (dirs first per level).
+   *
+   * A root that is not a readable directory RIGHT NOW — deleted, renamed, or
+   * on an unmounted drive — is reported as `not-found` rather than listed as
+   * empty. `walk` deliberately swallows a failed `readdir` so one unreadable
+   * subdirectory cannot fail the whole tree, but applying that to the root
+   * itself made a vanished project indistinguishable from an empty one (the
+   * projects spec's error table promises "an empty tree with an explanatory
+   * line") and left the IPC handler's ENOENT branch unreachable.
+   */
+  async tree(root: string): Promise<TreeEntry[]> {
+    try {
+      if (!(await stat(root)).isDirectory()) throw new WorkspaceError('not-found')
+    } catch (err) {
+      if (err instanceof WorkspaceError) throw err
+      throw new WorkspaceError('not-found')
+    }
     const entries: TreeEntry[] = []
     await this.walk(root, root, entries)
     return entries
@@ -82,18 +109,18 @@ export class Workspace {
    * `read()` (confined + binary/size-guarded) for contents, so it inherits every
    * confinement guarantee and never scans outside the root.
    */
-  async search(query: string, opts?: { maxHits?: number }): Promise<SearchResult> {
+  async search(root: string, query: string, opts?: { maxHits?: number }): Promise<SearchResult> {
     const needle = query.toLowerCase()
     if (!needle) return { hits: [], truncated: false, filesScanned: 0 }
     const maxHits = opts?.maxHits ?? MAX_SEARCH_HITS
-    const files = (await this.tree()).filter((e) => e.kind === 'file' && e.readable)
+    const files = (await this.tree(root)).filter((e) => e.kind === 'file' && e.readable)
     const hits: SearchHit[] = []
     let filesScanned = 0
     for (const f of files) {
       if (hits.length >= maxHits) return { hits, truncated: true, filesScanned }
       let text: string
       try {
-        ({ text } = await this.read(f.relPath))
+        ({ text } = await this.read(root, f.relPath))
       } catch {
         continue // binary/too-large/unreadable — skip, never fail the whole search
       }
@@ -148,10 +175,7 @@ export class Workspace {
   }
 
   /** Read one text file under the root, enforcing confinement (spec §A.2). */
-  async read(relPath: string): Promise<{ relPath: string; text: string }> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
-
+  async read(root: string, relPath: string): Promise<{ relPath: string; text: string }> {
     const realRoot = await realpath(root)
     const candidate = path.resolve(realRoot, relPath)
     let realCandidate: string
@@ -198,9 +222,7 @@ export class Workspace {
   }
 
   /** Current text of a file for computing a diff, or null if it does not exist. */
-  async currentContent(relPath: string): Promise<string | null> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  async currentContent(root: string, relPath: string): Promise<string | null> {
     const target = await this.resolveWritable(root, relPath)
     try {
       return await readFile(target, 'utf8')
@@ -210,9 +232,7 @@ export class Workspace {
   }
 
   /** Apply an approved write, snapshotting the pre-image first (reversible). */
-  async applyWrite(input: WriteInput): Promise<void> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
+  async applyWrite(root: string, input: WriteInput): Promise<void> {
     const target = await this.resolveWritable(root, input.relPath)
 
     let existed = true
@@ -223,6 +243,9 @@ export class Workspace {
       turnId: input.turnId,
       callId: input.callId,
       relPath: input.relPath,
+      // The root this write landed in, so revert can restore it here and
+      // nowhere else — see Checkpoint.root.
+      root,
       existed,
       prevBase64: existed ? prev.toString('base64') : '',
     })
@@ -230,17 +253,35 @@ export class Workspace {
     await writeFile(target, input.content, 'utf8')
   }
 
-  /** Restore every pre-image recorded for a turn (newest first). */
+  /**
+   * Restore every pre-image recorded for a turn (newest first).
+   *
+   * Deliberately takes NO root: each checkpoint carries the root its write
+   * landed in, and is restored there. A caller-supplied root would be the
+   * active project's — so reverting a turn from one project while another was
+   * open would write the first project's pre-images over the second project's
+   * files at the same relative paths, destroying work in a project the user was
+   * not even looking at.
+   */
   async revertTurn(turnId: string): Promise<number> {
-    const root = await this.current()
-    if (!root) throw new WorkspaceError('no-root')
     const cps = (await this.checkpoints?.list(turnId)) ?? []
     let reverted = 0
     for (const cp of cps) {
+      // No recorded root (a checkpoint from before roots were recorded): skip
+      // it. Guessing a root is exactly the destructive behaviour above.
+      if (!cp.root) continue
       let target: string
-      try { target = await this.resolveWritable(root, cp.relPath) } catch { continue }
-      if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
-      else await unlink(target).catch(() => {})
+      try { target = await this.resolveWritable(cp.root, cp.relPath) } catch { continue }
+      // Count only what actually came back. A delete can fail for the same
+      // ordinary reasons a write can — the path is held open by an editor, or
+      // something else now occupies it — and reporting a file as reverted
+      // while it is still on disk is worse than reporting a partial revert.
+      try {
+        if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
+        else await unlink(target)
+      } catch {
+        continue
+      }
       reverted++
     }
     return reverted

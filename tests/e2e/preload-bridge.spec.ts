@@ -38,3 +38,25 @@ test('the updates bridge offers no way to redirect the update feed', async () =>
   expect(typeof state.currentVersion).toBe('string')
   expect(typeof state.canAutoInstall).toBe('boolean')
 })
+
+test('the projects bridge offers no way to supply a path', async () => {
+  const page = await app.firstWindow()
+  const names = await page.evaluate(() => Object.keys(window.modelith.projects))
+  expect(names.sort()).toEqual(['create', 'list', 'openFolder', 'remove', 'rename', 'setActive'])
+  // A renderer-supplied path would become an agent's confinement boundary.
+  const created = await page.evaluate(() => window.modelith.projects.create.length)
+  expect(created).toBe(0)
+})
+
+// Whole-branch review C1: the Workspace panel's Open/Change buttons used to go
+// through `workspace.pick`, which creates-and-activates a project in main but
+// returned only the root — leaving the renderer's project list and
+// activeProjectId stale, with no sidebar group for the folder now on screen.
+// Opening a folder now has exactly ONE entry point, `projects.create`, which
+// returns the fresh { projects, activeId }. This keeps the second one from
+// coming back.
+test('the workspace bridge exposes no folder picker', async () => {
+  const page = await app.firstWindow()
+  const names = await page.evaluate(() => Object.keys(window.modelith.workspace))
+  expect(names.sort()).toEqual(['current', 'read', 'revert', 'tree'])
+})

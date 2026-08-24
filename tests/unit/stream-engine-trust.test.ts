@@ -5,13 +5,10 @@ import { join } from 'node:path'
 import { StreamEngine } from '../../src/main/chat/stream-engine.js'
 import { SessionStore } from '../../src/main/sessions/store.js'
 import { Workspace } from '../../src/main/workspace/service.js'
+import { ProjectStore } from '../../src/main/projects/store.js'
 import type { Provider } from '../../src/main/providers/types.js'
 import type { StreamEnvelope } from '../../src/shared/types.js'
-import type { AppSettingsStore } from '../../src/main/settings/store.js'
 
-function fakeSettings(root: string): AppSettingsStore {
-  return { get: async () => ({ workspaceRoot: root }), set: async () => {} } as unknown as AppSettingsStore
-}
 
 // Emits TWO write_file calls in one turn, then finishes once results return.
 function twoWriteProvider(): Provider {
@@ -38,6 +35,8 @@ async function waitFor(pred: () => boolean | Promise<boolean>, timeoutMs = 3000)
 }
 
 let store: SessionStore
+let projects: ProjectStore
+let projectId: string
 let root: string
 let emitted: StreamEnvelope[]
 
@@ -45,8 +44,17 @@ beforeEach(async () => {
   const dir = await mkdtemp(join(tmpdir(), 'oc-trust-'))
   store = new SessionStore(dir)
   root = await mkdtemp(join(tmpdir(), 'oc-trust-root-'))
+  projects = new ProjectStore(join(dir, 'projects.json'))
+  projectId = (await projects.create(root)).id
   emitted = []
 })
+
+/** A session that belongs to the project — that is where its root comes from. */
+async function newSession(): Promise<{ id: string }> {
+  const s = await store.create('t')
+  await store.setProject(s.id, projectId)
+  return s
+}
 
 function build(): StreamEngine {
   return new StreamEngine({
@@ -54,13 +62,14 @@ function build(): StreamEngine {
     readKey: async () => 'k',
     store,
     resolveProvider: () => twoWriteProvider(),
-    workspace: new Workspace(fakeSettings(root), () => undefined),
+    workspace: new Workspace(() => undefined, undefined, projects),
+    projects,
   } as ConstructorParameters<typeof StreamEngine>[0])
 }
 
 describe('trust-for-this-turn', () => {
   it('applies the rest of the turn after one trusting accept, emitting only one gate', async () => {
-    const s = await store.create('t')
+    const s = await newSession()
     const engine = build()
     await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'go', agent: true })
 
@@ -82,7 +91,7 @@ describe('trust-for-this-turn', () => {
   })
 
   it('does not carry trust into a second turn (gate returns)', async () => {
-    const s = await store.create('t')
+    const s = await newSession()
     const engine = build()
     await engine.start({ sessionId: s.id, providerId: 'fake', model: 'm', content: 'go', agent: true })
     await waitFor(() => emitted.some((e) => e.event.type === 'tool_pending'))

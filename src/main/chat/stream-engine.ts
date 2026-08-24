@@ -55,6 +55,16 @@ export interface StreamEngineDeps {
   maxContextTokens?: number
   /** Present when agentic edits are available; absent = tools disabled. */
   workspace?: Workspace
+  /**
+   * Resolves a session's project to a filesystem root (see resolveTurnRoot).
+   *
+   * Deliberately narrowed to `rootOf` alone: without `list()` the engine
+   * cannot even ask which project is active, so no future change here can
+   * reintroduce the active project as an input to a turn's confinement.
+   */
+  projects: {
+    rootOf(projectId: string | undefined): Promise<string | null>
+  }
   /** Present when MCP servers may contribute tools (mcp-client spec §3). */
   mcp?: McpManager
 }
@@ -260,6 +270,49 @@ export class StreamEngine {
     this.active.delete(raceId)
   }
 
+  /**
+   * The filesystem root one turn is confined to — a function of the SESSION,
+   * resolved once at turn start (projects spec, "Where the agent's root comes
+   * from").
+   *
+   * A session that belongs to a project uses that project's root, and nothing
+   * else: if the project has been removed the answer is `null`, never some
+   * other project's folder. That is what makes a mid-turn project switch
+   * harmless — the active project is not an input here.
+   *
+   * A session that belongs to NO project has NO root. It is never adopted into
+   * the active project here, and this method never writes to the session index
+   * (design owner's ruling, whole-branch review I4). Two reasons:
+   *
+   * 1. A `projectId` write inside the streaming engine is a write inside the
+   *    very code path the confinement argument rests on. Making this a pure
+   *    read — session → `projectId` → root — keeps the engine a reader of
+   *    project membership and nothing more.
+   * 2. Every gate on "is this a new chat?" that could be written here is
+   *    wrong somewhere. An absent `projectId` does NOT mean "new chat":
+   *    `SessionStore.clearProject` (how removing a project unfiles its
+   *    conversations) and `setProject(id, undefined)` (how "Move to project…
+   *    → None" works) both DELETE the field. A history-length gate covers
+   *    those, but not a *fresh* chat the user deliberately moved to Unfiled
+   *    before its first turn — that one would be silently re-filed, reverting
+   *    a control the UI ships.
+   *
+   * Filing a chat into a project is therefore an explicit user action in the
+   * renderer: `newSession()` stamps the active project at creation, and
+   * activating a project stamps an open chat that is unfiled AND has no
+   * history (`stampOpenSession` in the renderer store), which is what keeps
+   * the ordinary start-chatting-then-open-a-folder flow working.
+   *
+   * If the session's project has been removed the answer is `null`, never some
+   * other project's folder — and with no project at all the answer is `null`
+   * too, so the workspace tools report "no workspace", exactly as they do
+   * before any folder is picked.
+   */
+  private async resolveTurnRoot(sessionId: string): Promise<string | null> {
+    const session = (await this.deps.store.list()).find((s) => s.id === sessionId)
+    return this.deps.projects.rootOf(session?.projectId)
+  }
+
   private async run(streamId: string, input: StartInput, controller: AbortController): Promise<void> {
     const { store, readKey, resolveProvider } = this.deps
     const { sessionId } = input
@@ -297,8 +350,11 @@ export class StreamEngine {
     // Agentic edits are available only when explicitly requested AND a
     // workspace is wired; otherwise this stays a plain chat with no tools.
     const agent = input.agent === true && this.deps.workspace !== undefined
-    // Terminal/git tools need a concrete root to run in; resolve it once.
-    const root = agent ? await this.deps.workspace!.current() : null
+    // The turn's root. Resolved once, here, and passed down for the whole turn.
+    // Reading it per tool call would let a project switch mid-turn retarget an
+    // in-flight write: the user approves an edit in one project and it lands in
+    // another.
+    const root = agent ? await this.resolveTurnRoot(sessionId) : null
     // In agent mode, offer edit tools, terminal/git tools (when a root exists),
     // plus any connected MCP server tools.
     const mcpTools = agent ? (this.deps.mcp?.toolSpecs() ?? []) : []
@@ -381,6 +437,7 @@ export class StreamEngine {
         if (controller.signal.aborted) return
         const outcome = await executeTool(call.name, call.arguments, call.id, {
           workspace: this.deps.workspace!,
+          root,
           turnId,
           requestApproval: (edit) => this.requestApproval(streamId, sessionId, edit, controller, turnId),
           requestConfirm: (confirm) => this.requestConfirm(streamId, sessionId, confirm, controller, turnId),

@@ -24,6 +24,7 @@ export function App(): React.JSX.Element {
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
   const loadSessions = useAppStore((s) => s.loadSessions)
+  const loadProjects = useAppStore((s) => s.loadProjects)
   const loadProviders = useAppStore((s) => s.loadProviders)
   const loadPlatform = useAppStore((s) => s.loadPlatform)
   const loadUpdates = useAppStore((s) => s.loadUpdates)
@@ -43,6 +44,7 @@ export function App(): React.JSX.Element {
   const openSideThread = useAppStore((s) => s.openSideThread)
 
   useEffect(() => { void loadSessions() }, [loadSessions])
+  useEffect(() => { void loadProjects() }, [loadProjects])
   useEffect(() => { void loadProviders() }, [loadProviders])
   useEffect(() => { void loadPlatform() }, [loadPlatform])
   useEffect(() => { void loadSettings() }, [loadSettings])

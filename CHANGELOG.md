@@ -4,6 +4,27 @@ All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
 ## [Unreleased]
 
+### Projects
+Modelith knew about exactly one folder. Anyone using it for more than one
+codebase was doing the bookkeeping in their head — re-opening the right folder
+on every switch, and scanning one flat list for the chat that belonged to it.
+
+- **Add a folder with + in the sidebar** and it becomes a project. Your chats
+  group underneath it, most recently opened first.
+- **Switching projects re-points the file tree** without re-picking a folder.
+- **Each project group collapses**, so a long list of chats in one project
+  does not bury the others.
+- **A project's row menu** offers Rename, Open folder, and Remove.
+- **Removing a project forgets the folder.** Nothing on disk is touched and no
+  chat is deleted — its chats move to Unfiled.
+- **Existing chats sit under Unfiled** and can be moved into a project. Nothing
+  guesses which project a months-old chat belonged to.
+
+The agent's workspace root now comes from the **session's** project, resolved
+once at turn start — never from whichever project happens to be active. That
+means switching projects while a turn is streaming cannot retarget an in-flight
+write into the wrong folder.
+
 ## 0.4.0 — 2026-08-04
 
 ### Modelith has a face

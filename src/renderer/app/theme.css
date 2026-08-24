@@ -705,6 +705,11 @@ body.resizing {
   justify-content: space-between;
   padding: 0 16px 0 20px;
 }
+.sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .wordmark {
   font: 500 17px/1 var(--font-display);
@@ -2544,4 +2549,99 @@ body.resizing {
 .updates-toggle-hint {
   font: 400 12px/1.3 var(--font-body);
   color: var(--text-meta);
+}
+
+/* ============================================================================
+   Projects (sidebar grouping) — projects spec / task-5-brief.md §6.
+   Do not modify .session-row or .session-group above; the project row reuses
+   their tokens and the same accent-bar "selected" convention instead of
+   reinventing one.
+============================================================================ */
+.project-group { display: flex; flex-direction: column; }
+.project-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-meta);
+  font: 600 10.5px/1 var(--font-body);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.project-row:hover { background: var(--hover-soft); }
+.project-row[aria-current='true'] { color: var(--text); }
+/* The same 3px bar .session-row uses, so "selected" reads identically. */
+.project-row[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 3px;
+  height: 14px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.project-collapse {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-meta);
+  padding: 0;
+  cursor: pointer;
+}
+.project-collapse svg {
+  transition: transform 0.12s ease;
+}
+.project-collapse[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-name-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 600 10.5px/1 var(--font-body);
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  outline: none;
+}
+/* Mirrors .session-row:hover/:focus-within .row-actions above — .row-actions
+   itself is shared, only the row that reveals it differs. */
+.project-row:hover .row-actions,
+.project-row:focus-within .row-actions {
+  display: inline-flex;
+}
+.row-action-move {
+  width: auto;
+  max-width: 88px;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  background: var(--hover);
+  color: var(--text-mute);
+  font: 500 10px/1 var(--font-body);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.row-action-move:hover {
+  background: var(--chip);
+  color: var(--text);
 }

@@ -14,6 +14,19 @@ export interface Checkpoint {
   turnId: string
   callId: string
   relPath: string
+  /**
+   * The workspace root the write was applied in, recorded so the pre-image can
+   * only ever go back where it came from. Reverting against whatever root is
+   * active instead would restore one project's pre-images over another
+   * project's identically-named files. Recorded here rather than resolved from
+   * the session at revert time because a checkpoint outlives both: a session
+   * can be moved between projects, and a project can be removed (which is
+   * non-destructive and leaves its folder on disk) while its checkpoints stay.
+   *
+   * Optional only because checkpoints written before roots were recorded exist
+   * on disk; revert skips those rather than guessing a root for them.
+   */
+  root?: string
   /** False when the file did not exist before the write (revert => delete it). */
   existed: boolean
   /** The pre-image bytes, base64; empty when !existed. */

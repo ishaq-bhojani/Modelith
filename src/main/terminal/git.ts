@@ -10,7 +10,8 @@ import type { GitFile, GitStatus } from '../../shared/types.js'
 export class GitService {
   constructor(private readonly workspace: Workspace) {}
 
-  private async root(): Promise<string | null> { return this.workspace.current() }
+  // The Git panel is UI: it shows the ACTIVE project, like the file tree.
+  private async root(): Promise<string | null> { return this.workspace.activeRoot() }
 
   async status(): Promise<GitStatus> {
     const root = await this.root()

@@ -13,6 +13,8 @@ export interface SessionMeta {
   archived?: boolean
   /** Free-form tags for filtering. */
   tags?: string[]
+  /** The project this session belongs to. Absent means Unfiled. */
+  projectId?: string
 }
 
 // randomUUID() output (hex digits and hyphens only) always satisfies this.
@@ -152,6 +154,32 @@ export class SessionStore {
 
   async setTags(id: string, tags: string[]): Promise<void> {
     return this.mutateEntry(id, (entry) => { entry.tags = tags })
+  }
+
+  /** Move a session between projects. `undefined` returns it to Unfiled. */
+  async setProject(id: string, projectId: string | undefined): Promise<void> {
+    return this.serialize(async () => {
+      const index = await this.readIndex()
+      const entry = index.find((s) => s.id === id)
+      if (!entry) return
+      if (projectId === undefined) delete entry.projectId
+      else entry.projectId = projectId
+      await this.writeIndex(index)
+    })
+  }
+
+  /**
+   * Unfile every session of a removed project. Removing a project forgets the
+   * folder; it must never delete the conversations that happened in it.
+   */
+  async clearProject(projectId: string): Promise<void> {
+    return this.serialize(async () => {
+      const index = await this.readIndex()
+      for (const entry of index) {
+        if (entry.projectId === projectId) delete entry.projectId
+      }
+      await this.writeIndex(index)
+    })
   }
 
   /** Shared index read-modify-write for the metadata setters above. */

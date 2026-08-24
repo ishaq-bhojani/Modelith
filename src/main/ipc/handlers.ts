@@ -29,6 +29,10 @@ import {
   RaceSchema,
   ChooseWinnerSchema,
   UpdatesSetEnabledSchema,
+  ProjectIdSchema,
+  ProjectRenameSchema,
+  ProjectSetActiveSchema,
+  SessionSetProjectSchema,
 } from '../../shared/ipc.js'
 import type { AppInfo } from '../../shared/ipc.js'
 import type { ContextPreview, ContextPreviewEntry } from '../../shared/types.js'
@@ -36,7 +40,8 @@ import { Keystore } from '../secrets/keystore.js'
 import { electronCrypto } from '../secrets/electron-crypto.js'
 import { SessionStore } from '../sessions/store.js'
 import { AppSettingsStore } from '../settings/store.js'
-import { Workspace } from '../workspace/service.js'
+import { ProjectStore } from '../projects/store.js'
+import { Workspace, WorkspaceError } from '../workspace/service.js'
 import { CheckpointStore } from '../workspace/checkpoints.js'
 import { McpManager } from '../mcp/manager.js'
 import { GitService } from '../terminal/git.js'
@@ -75,16 +80,22 @@ export function getSettingsStore(): AppSettingsStore {
   return settingsStoreInstance
 }
 
+let projectStoreInstance: ProjectStore | undefined
+export function getProjectStore(): ProjectStore {
+  projectStoreInstance ??= new ProjectStore(ProjectStore.defaultPath(app.getPath('userData')))
+  return projectStoreInstance
+}
+
 // A single Workspace (with its checkpoint store) shared by the workspace handlers
-// and the chat engine, so reads, gated writes, and revert all confine to the
-// same dialog-chosen root. getWindow is late-bound via a mutable holder.
+// and the chat engine, so reads, gated writes, and revert all confine to a root
+// obtained the same way. getWindow is late-bound via a mutable holder.
 let workspaceInstance: Workspace | undefined
 let workspaceGetWindow: () => BrowserWindow | undefined = () => undefined
 export function getWorkspace(): Workspace {
   workspaceInstance ??= new Workspace(
-    getSettingsStore(),
     () => workspaceGetWindow(),
     new CheckpointStore(join(app.getPath('userData'), 'checkpoints')),
+    getProjectStore(),
   )
   return workspaceInstance
 }
@@ -144,14 +155,92 @@ export function registerSecretHandlers(): void {
 export function registerWorkspaceHandlers(getWindow: () => BrowserWindow | undefined): void {
   workspaceGetWindow = getWindow
   const workspace = getWorkspace()
-  ipcMain.handle(CHANNELS.workspacePick, () => workspace.pick())
-  ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.current())
-  ipcMain.handle(CHANNELS.workspaceTree, () => workspace.tree())
-  ipcMain.handle(CHANNELS.workspaceRead, withZodMapping((_e, raw: unknown) => {
-    return workspace.read(WorkspaceReadSchema.parse(raw).relPath)
+  // These are the UI's handlers, so they act on the ACTIVE project — the tree
+  // and the file the user is looking at. An agent turn never comes through
+  // here: it resolves its own root from its session (see StreamEngine).
+  ipcMain.handle(CHANNELS.workspaceCurrent, () => workspace.activeRoot())
+  ipcMain.handle(CHANNELS.workspaceTree, async () => {
+    const root = await workspace.activeRoot()
+    if (!root) return []
+    try {
+      return await workspace.tree(root)
+    } catch (err) {
+      // A project's folder can vanish — deleted, renamed, or on an unmounted
+      // drive. The spec keeps the project listed (it may come back) and shows
+      // "an empty tree with an explanatory line", so this must NOT collapse to
+      // the empty array an empty folder returns: the renderer would have no
+      // way left to tell the two apart. It rejects with a stable code the
+      // store matches on (WORKSPACE_ROOT_MISSING) and renders as a line in
+      // the panel rather than an error banner.
+      //
+      // The old `err.code === 'ENOENT'` branch here could never fire —
+      // Workspace.walk swallowed the readdir failure and returned [] — which
+      // is why the case reached the user as "No files.".
+      if (err instanceof WorkspaceError && err.code === 'not-found') {
+        throw new Error('workspace-root-missing')
+      }
+      throw err
+    }
+  })
+  ipcMain.handle(CHANNELS.workspaceRead, withZodMapping(async (_e, raw: unknown) => {
+    const root = await workspace.activeRoot()
+    if (!root) throw new Error('No project is open.')
+    return workspace.read(root, WorkspaceReadSchema.parse(raw).relPath)
   }))
+  // Revert takes no root: each checkpoint restores into the root its write
+  // landed in, so switching project before hitting Revert cannot redirect it.
   ipcMain.handle(CHANNELS.workspaceRevert, withZodMapping((_e, raw: unknown) => {
     return workspace.revertTurn(WorkspaceRevertSchema.parse(raw).turnId)
+  }))
+}
+
+export function registerProjectHandlers(): void {
+  const projects = getProjectStore()
+  const sessions = getSessionStore()
+
+  ipcMain.handle(CHANNELS.projectsList, () => projects.list())
+  ipcMain.handle(CHANNELS.projectCreate, async () => {
+    // The path comes from the dialog inside Workspace.pick(), never from the
+    // renderer. pick() already creates-or-reuses the project and makes it
+    // active, so a cancelled dialog simply leaves the list unchanged and the
+    // renderer re-renders the same state.
+    await getWorkspace().pick()
+    return projects.list()
+  })
+  ipcMain.handle(CHANNELS.projectRename, withZodMapping(async (_e, raw: unknown) => {
+    const { id, name } = ProjectRenameSchema.parse(raw)
+    await projects.rename(id, name)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.projectRemove, withZodMapping(async (_e, raw: unknown) => {
+    const { id } = ProjectIdSchema.parse(raw)
+    // Order matters: unfile the sessions first, so a crash between the two
+    // leaves sessions pointing at a project that still exists rather than one
+    // that does not.
+    await sessions.clearProject(id)
+    await projects.remove(id)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.projectSetActive, withZodMapping(async (_e, raw: unknown) => {
+    await projects.setActive(ProjectSetActiveSchema.parse(raw).id)
+    return projects.list()
+  }))
+  ipcMain.handle(CHANNELS.sessionSetProject, withZodMapping(async (_e, raw: unknown) => {
+    const { id, projectId } = SessionSetProjectSchema.parse(raw)
+    await sessions.setProject(id, projectId ?? undefined)
+  }))
+  ipcMain.handle(CHANNELS.projectOpenFolder, withZodMapping(async (_e, raw: unknown) => {
+    const { id } = ProjectIdSchema.parse(raw)
+    // rootOf resolves via the project store, never a renderer-supplied path
+    // (see the schema comment above) — it returns null both for an id that
+    // matches no project and for one whose project was removed, so an id
+    // naming no project is a silent no-op, not a throw.
+    const root = await projects.rootOf(id)
+    if (!root) return
+    // The folder can be gone from disk (moved/deleted outside the app) while
+    // the project still lists — shell.openPath must degrade quietly rather
+    // than reject the IPC call or surface as an unhandled rejection.
+    await shell.openPath(root).catch(() => {})
   }))
 }
 
@@ -171,6 +260,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | undefined)
     maxContextTokens: MAX_CONTEXT_TOKENS,
     // Enables agentic edits (gated writes) when a turn opts in.
     workspace: getWorkspace(),
+    // Resolves the turn's confinement root from its own session's project.
+    projects: getProjectStore(),
     // Contributes MCP server tools to agent turns (gated per call).
     mcp: getMcpManager(),
   })

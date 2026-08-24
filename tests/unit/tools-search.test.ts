@@ -3,9 +3,11 @@ import { executeTool, isKnownTool, TOOL_SPECS } from '../../src/main/chat/tools.
 import type { ToolDeps } from '../../src/main/chat/tools.js'
 import type { SearchResult } from '../../src/main/workspace/service.js'
 
-function deps(search: (q: string) => Promise<SearchResult>): ToolDeps {
+function deps(search: (root: string, q: string) => Promise<SearchResult>): ToolDeps {
   return {
     workspace: { search } as unknown as ToolDeps['workspace'],
+    // The turn's root, resolved from its session before any tool runs.
+    root: '/ws',
     turnId: 't1',
     requestApproval: async () => ({ action: 'reject' }),
   }
@@ -19,7 +21,7 @@ describe('search_files tool', () => {
 
   it('formats hits as relPath:line: text and auto-runs (no approval)', async () => {
     const out = await executeTool('search_files', JSON.stringify({ query: 'foo' }), 'c1', deps(
-      async () => ({ hits: [{ relPath: 'src/a.ts', line: 3, text: 'const foo = 1' }], truncated: false, filesScanned: 1 }),
+      async (_root, _q) => ({ hits: [{ relPath: 'src/a.ts', line: 3, text: 'const foo = 1' }], truncated: false, filesScanned: 1 }),
     ))
     expect(out.isError).toBe(false)
     expect(out.result).toContain('src/a.ts:3: const foo = 1')
@@ -27,14 +29,14 @@ describe('search_files tool', () => {
 
   it('notes truncation', async () => {
     const out = await executeTool('search_files', JSON.stringify({ query: 'foo' }), 'c1', deps(
-      async () => ({ hits: [{ relPath: 'a', line: 1, text: 'foo' }], truncated: true, filesScanned: 9 }),
+      async (_root, _q) => ({ hits: [{ relPath: 'a', line: 1, text: 'foo' }], truncated: true, filesScanned: 9 }),
     ))
     expect(out.result.toLowerCase()).toContain('truncat')
   })
 
   it('reports no matches clearly', async () => {
     const out = await executeTool('search_files', JSON.stringify({ query: 'zzz' }), 'c1', deps(
-      async () => ({ hits: [], truncated: false, filesScanned: 4 }),
+      async (_root, _q) => ({ hits: [], truncated: false, filesScanned: 4 }),
     ))
     expect(out.isError).toBe(false)
     expect(out.result.toLowerCase()).toContain('no matches')
