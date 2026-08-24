@@ -2,7 +2,7 @@
 
 All notable changes to Modelith are recorded here. Dates are ISO (UTC).
 
-## [Unreleased]
+## 0.5.0 — 2026-08-24
 
 ### Projects
 Modelith knew about exactly one folder. Anyone using it for more than one
