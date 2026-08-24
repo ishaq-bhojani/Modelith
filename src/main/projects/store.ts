@@ -75,6 +75,22 @@ export class ProjectStore {
     return [...projects].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
   }
 
+  /**
+   * A `lastOpenedAt` strictly newer than every project already stored.
+   *
+   * `Date.now()` alone is not enough: it has millisecond resolution, and
+   * creating or activating a project can easily land in the same millisecond
+   * as the previous one. Two projects then tie, `sort` returns 0, and the
+   * stable sort keeps the OLDER one on top — so "most recently opened first"
+   * fails for the exact action the user just performed. Clamping up by one
+   * makes the ordering a property of the operation rather than of how fast
+   * the machine is.
+   */
+  private nextOpenedAt(projects: ProjectMeta[]): number {
+    const newest = projects.reduce((max, p) => Math.max(max, p.lastOpenedAt), 0)
+    return Math.max(Date.now(), newest + 1)
+  }
+
   async list(): Promise<{ projects: ProjectMeta[]; activeId: string | null }> {
     const data = await this.read()
     return { projects: this.sort(data.projects), activeId: data.activeId }
@@ -87,17 +103,16 @@ export class ProjectStore {
       // creating a duplicate that would split its sessions across two groups.
       const existing = data.projects.find((p) => p.root === root)
       if (existing) {
-        existing.lastOpenedAt = Date.now()
+        existing.lastOpenedAt = this.nextOpenedAt(data.projects)
         await this.write({ ...data, activeId: existing.id })
         return existing
       }
-      const now = Date.now()
       const project: ProjectMeta = {
         id: randomUUID(),
         name: name ?? basename(root),
         root,
-        createdAt: now,
-        lastOpenedAt: now,
+        createdAt: Date.now(),
+        lastOpenedAt: this.nextOpenedAt(data.projects),
       }
       await this.write({ projects: [project, ...data.projects], activeId: project.id })
       return project
@@ -127,7 +142,7 @@ export class ProjectStore {
     return this.serialize(async () => {
       const data = await this.read()
       const project = data.projects.find((p) => p.id === id)
-      if (project) project.lastOpenedAt = Date.now()
+      if (project) project.lastOpenedAt = this.nextOpenedAt(data.projects)
       await this.write({ ...data, activeId: project ? project.id : null })
     })
   }

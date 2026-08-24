@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,6 +61,24 @@ describe('ProjectStore', () => {
     await store.setActive(a.id)
     const ids = (await store.list()).projects.map((p) => p.id)
     expect(ids).toEqual([a.id, b.id])
+  })
+
+  it('still orders the just-opened project first when the clock does not tick', async () => {
+    // Date.now() is millisecond-resolution and these operations are fast
+    // enough to share one, which is how CI caught this: with equal
+    // lastOpenedAt the stable sort kept the OLDER project on top, so "most
+    // recently opened first" quietly failed for the very action the user just
+    // took. Freezing the clock makes that tie certain rather than lucky.
+    const frozen = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    try {
+      const a = await store.create('/a')
+      const b = await store.create('/b')
+      await store.setActive(a.id)
+      const ids = (await store.list()).projects.map((p) => p.id)
+      expect(ids).toEqual([a.id, b.id])
+    } finally {
+      frozen.mockRestore()
+    }
   })
 
   it('resolves a root by project id', async () => {
