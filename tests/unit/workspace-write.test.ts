@@ -99,6 +99,21 @@ describe('Workspace.revertTurn across projects', () => {
     expect(await readFile(path.join(root, 'a.txt'), 'utf8')).toBe('original')
   })
 
+  it('does not count a delete it could not perform', async () => {
+    // The turn created a file; by revert time something else holds that path
+    // (here a non-empty directory, which unlink refuses — on Windows an open
+    // editor handle does the same with EPERM/EBUSY). The revert must not claim
+    // to have undone a write that is still on disk.
+    await ws.applyWrite(root, { relPath: 'created.txt', content: 'hi', turnId: 't12', callId: 'c1' })
+    await rm(path.join(root, 'created.txt'))
+    await mkdir(path.join(root, 'created.txt'), { recursive: true })
+    await writeFile(path.join(root, 'created.txt', 'inside.txt'), 'blocks unlink')
+
+    await expect(ws.revertTurn('t12')).resolves.toBe(0)
+    // And it still did not throw, so the rest of the turn could be reverted.
+    expect(await stat(path.join(root, 'created.txt'))).toBeTruthy()
+  })
+
   it('skips a checkpoint whose recorded root is gone from disk', async () => {
     const vanishing = path.join(base, 'unmounted')
     await mkdir(vanishing, { recursive: true })

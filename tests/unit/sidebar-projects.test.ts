@@ -18,7 +18,10 @@ function installBridge(): void {
       create: vi.fn(), rename: vi.fn(), remove: vi.fn(), setActive: vi.fn(),
       openFolder: vi.fn().mockResolvedValue(undefined),
     },
-    sessions: { setProject: vi.fn().mockResolvedValue(undefined) },
+    sessions: {
+      setProject: vi.fn().mockResolvedValue(undefined),
+      load: vi.fn().mockResolvedValue([]),
+    },
   }
 }
 
@@ -286,5 +289,61 @@ describe('Sidebar empty state placement', () => {
 
     expect(container.querySelector('.sidebar-empty')?.textContent).toContain('No chats yet')
     expect(container.querySelectorAll('[data-testid="project-group"]').length).toBe(0)
+  })
+})
+
+describe('Sidebar keyboard: nested controls', () => {
+  let container: HTMLDivElement
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    installBridge()
+    useAppStore.setState({
+      projects: PROJECTS,
+      activeProjectId: 'p1',
+      sessions: [{ id: 's1', title: 'In Modelith', updatedAt: 3, projectId: 'p1' }],
+      activeSessionId: null,
+      query: '',
+    } as never)
+  })
+
+  const bridge = () => (window as unknown as { modelith: {
+    projects: { setActive: ReturnType<typeof vi.fn> }
+    sessions: { load: ReturnType<typeof vi.fn> }
+  } }).modelith
+
+  const press = async (el: Element, key: string) => {
+    await act(async () => {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    })
+  }
+
+  // A row that is itself role="button" also sees the keydowns of every control
+  // nested inside it. Handling them there calls preventDefault(), which cancels
+  // the click the browser synthesizes for Enter/Space on a real button — so the
+  // nested control does nothing and the row activates instead.
+  it('does not activate the project when its collapse toggle is keyed', async () => {
+    await render(container)
+    bridge().projects.setActive.mockClear()
+    const collapse = container.querySelector('[data-testid="project-collapse"]')!
+    await press(collapse, ' ')
+    expect(bridge().projects.setActive).not.toHaveBeenCalled()
+  })
+
+  it('does not activate the project when its remove button is keyed', async () => {
+    await render(container)
+    bridge().projects.setActive.mockClear()
+    await press(container.querySelector('[data-testid="project-remove"]')!, 'Enter')
+    expect(bridge().projects.setActive).not.toHaveBeenCalled()
+  })
+
+  it('does not open the session when its move-to-project dropdown is keyed', async () => {
+    await render(container)
+    bridge().sessions.load.mockClear()
+    // Space is how a keyboard user opens a <select>. Swallowed here, the only
+    // UI for filing a chat into a project is mouse-only.
+    await press(container.querySelector('[data-testid="move-session"]')!, ' ')
+    expect(bridge().sessions.load).not.toHaveBeenCalled()
   })
 })

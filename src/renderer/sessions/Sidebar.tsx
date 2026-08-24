@@ -133,6 +133,11 @@ export function Sidebar(): React.JSX.Element {
         onClick={() => { if (!isEditing) void select(session.id) }}
         onKeyDown={(e) => {
           if (isEditing) return
+          // Only the row's own keydowns — see ProjectGroup.tsx. Handling a
+          // nested control's keydown here preventDefault()s the click the
+          // browser would synthesize for it, so the pin/archive/rename/move/
+          // delete controls would do nothing and open the session instead.
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             void select(session.id)
@@ -196,6 +201,10 @@ export function Sidebar(): React.JSX.Element {
                 aria-label={`Move ${session.title} to a project`}
                 value={session.projectId ?? ''}
                 onClick={(e) => e.stopPropagation()}
+                // Space/Alt+Down is how a keyboard user opens a <select>;
+                // without this the row would swallow it (belt and braces
+                // alongside the row's own target check).
+                onKeyDown={(e) => e.stopPropagation()}
                 onChange={(e) => {
                   e.stopPropagation()
                   void moveSession(session.id, e.target.value || null)

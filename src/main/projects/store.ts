@@ -12,6 +12,14 @@ function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ENOENT'
 }
 
+/** Shape guard for the parsed file — see `read`. */
+function isProjectsFile(value: unknown): value is ProjectsFile {
+  if (typeof value !== 'object' || value === null) return false
+  const { projects, activeId } = value as Partial<ProjectsFile>
+  if (!Array.isArray(projects)) return false
+  return activeId === null || typeof activeId === 'string'
+}
+
 /**
  * The project list and which one is active, at `<userData>/projects.json`.
  *
@@ -39,11 +47,20 @@ export class ProjectStore {
       if (isEnoent(err)) return { projects: [], activeId: null }
       throw new Error(`Projects at ${this.filePath} could not be read: ${String(err)}`)
     }
+    let parsed: unknown
     try {
-      return JSON.parse(raw) as ProjectsFile
+      parsed = JSON.parse(raw)
     } catch {
       throw new Error(`Projects at ${this.filePath} is corrupt and could not be parsed.`)
     }
+    // Valid JSON of the wrong shape is corruption too, and it has to be caught
+    // HERE. Cast straight to ProjectsFile and a file like `{}` or `null`
+    // reaches sort() as `undefined`, which throws "projects is not iterable" —
+    // the one file the design says must fail loudly failing obscurely instead.
+    if (!isProjectsFile(parsed)) {
+      throw new Error(`Projects at ${this.filePath} is corrupt: unexpected contents.`)
+    }
+    return parsed
   }
 
   private async write(data: ProjectsFile): Promise<void> {

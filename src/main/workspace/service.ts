@@ -272,8 +272,16 @@ export class Workspace {
       if (!cp.root) continue
       let target: string
       try { target = await this.resolveWritable(cp.root, cp.relPath) } catch { continue }
-      if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
-      else await unlink(target).catch(() => {})
+      // Count only what actually came back. A delete can fail for the same
+      // ordinary reasons a write can — the path is held open by an editor, or
+      // something else now occupies it — and reporting a file as reverted
+      // while it is still on disk is worse than reporting a partial revert.
+      try {
+        if (cp.existed) await writeFile(target, Buffer.from(cp.prevBase64, 'base64'))
+        else await unlink(target)
+      } catch {
+        continue
+      }
       reverted++
     }
     return reverted

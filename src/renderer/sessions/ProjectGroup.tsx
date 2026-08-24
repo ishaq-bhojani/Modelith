@@ -57,6 +57,13 @@ export function ProjectGroup({
         onClick={() => { if (!isEditing) void setActiveProject(project.id) }}
         onKeyDown={(e) => {
           if (isEditing) return
+          // Only the row's OWN keydowns. The collapse/rename/open/remove
+          // buttons nested inside it are real buttons whose Enter/Space the
+          // browser turns into a click — but that click is a default action,
+          // so the preventDefault() below would cancel it and activate the
+          // project instead, leaving every one of them keyboard-dead. Their
+          // onClick handlers stopPropagation; nothing stops the keydown.
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             void setActiveProject(project.id)

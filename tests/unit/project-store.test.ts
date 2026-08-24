@@ -89,4 +89,18 @@ describe('ProjectStore', () => {
     // Unlike preferences, this is user data whose silent loss is confusing.
     await expect(store.list()).rejects.toThrow(/corrupt/i)
   })
+
+  it('treats a file of the wrong shape as corrupt, not as a crash', async () => {
+    // Parses cleanly, but carries no project list — a hand-edit, a half-synced
+    // cloud copy, a file from another version. Without a shape check this
+    // reaches sort() and throws "undefined is not iterable", so the one file
+    // the design says must fail loudly and legibly fails obscurely instead.
+    await writeFile(file, '{}', 'utf8')
+    await expect(store.list()).rejects.toThrow(/corrupt/i)
+  })
+
+  it('treats a non-object file as corrupt', async () => {
+    await writeFile(file, 'null', 'utf8')
+    await expect(store.list()).rejects.toThrow(/corrupt/i)
+  })
 })
